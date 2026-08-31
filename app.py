@@ -7,8 +7,6 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
 import urllib.parse
 from datetime import datetime
-import psycopg2
-import psycopg2.extras
 
 PORT = int(os.environ.get("PORT", 8099))
 DB_FILE = "lagerbestand.csv"
@@ -20,62 +18,10 @@ ORDERS_FILE = "bestellungen.csv"
 USER_AUTH = "admin"
 PASS_AUTH = "kadewe2026"
 
-# Подключение к PostgreSQL на Render
-def get_db_connection():
-    database_url = os.environ.get("DATABASE_URL")
-    if database_url:
-        try:
-            return psycopg2.connect(database_url, cursor_factory=psycopg2.extras.DictCursor)
-        except Exception:
-            return None
-    return None
-
-# Безопасное чтение данных (PostgreSQL с корректным fallback)
+# Чтение данных из локального файла (который вы можете легко выгружать из Google Таблиц в формате CSV)
 def read_db():
-    conn = get_db_connection()
     products = []
-    db_queried = False
-    
-    if conn:
-        try:
-            db_queried = True
-            cur = conn.cursor()
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS lager (
-                    id SERIAL PRIMARY KEY,
-                    item_id TEXT,
-                    sap TEXT,
-                    name TEXT,
-                    kat TEXT,
-                    menge INT,
-                    soll_menge INT,
-                    min_monat INT,
-                    preis FLOAT
-                );
-            """)
-            conn.commit()
-            
-            cur.execute("SELECT item_id, sap, name, kat, menge, soll_menge, min_monat, preis FROM lager")
-            rows = cur.fetchall()
-            for row in rows:
-                products.append({
-                    "id": row["item_id"],
-                    "sap": row["sap"],
-                    "name": row["name"],
-                    "kat": row["kat"],
-                    "menge": row["menge"],
-                    "soll_menge": row["soll_menge"],
-                    "min_monat": row["min_monat"],
-                    "preis": row["preis"]
-                })
-            cur.close()
-            conn.close()
-            return products
-        except Exception as e:
-            print(f"Ошибка чтения базы PostgreSQL: {e}")
-
-    # Локальное чтение из CSV выполняется только при отсутствии подключения к БД
-    if not db_queried and os.path.exists(DB_FILE):
+    if os.path.exists(DB_FILE):
         try:
             with open(DB_FILE, mode='r', encoding='utf-8-sig') as f:
                 reader = csv.reader(f, delimiter=';')
@@ -92,38 +38,29 @@ def read_db():
                             "min_monat": int(row[6].strip() or 2),
                             "preis": float(row[7].strip().replace(',', '.') or 0.0)
                         })
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Ошибка чтения файла склада: {e}")
     return products
 
-# Сохранение данных (PostgreSQL с fallback на CSV)
+# Сохранение данных в локальный файл
 def save_db(products_list):
-    conn = get_db_connection()
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute("DELETE FROM lager")
-            for p in products_list:
-                cur.execute("""
-                    INSERT INTO lager (item_id, sap, name, kat, menge, soll_menge, min_monat, preis)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                """, (p["id"], p.get("sap", "-"), p["name"], p["kat"], p["menge"], p.get("soll_menge", 5), p.get("min_monat", 2), p["preis"]))
-            conn.commit()
-            cur.close()
-            conn.close()
-            return
-        except Exception as e:
-            print(f"Ошибка сохранения в базу PostgreSQL: {e}")
-
-    # Локальное сохранение в CSV
     try:
         with open(DB_FILE, mode='w', encoding='utf-8-sig', newline='') as f:
             writer = csv.writer(f, delimiter=';')
             writer.writerow(["Produkt-ID", "SAP-Nummer", "Name", "Kategorie", "Menge", "Mindestbestand", "Mindestbestand (Monat)", "Verkaufspreis (EUR)"])
             for p in products_list:
-                writer.writerow([p["id"], p.get("sap", "-"), p["name"], p["kat"], p["menge"], p.get("soll_menge", 5), p.get("min_monat", 2), p["preis"]])
-    except Exception:
-        pass
+                writer.writerow([
+                    p["id"], 
+                    p.get("sap", "-"), 
+                    p["name"], 
+                    p["kat"], 
+                    p["menge"], 
+                    p.get("soll_menge", 5), 
+                    p.get("min_monat", 2), 
+                    p["preis"]
+                ])
+    except Exception as e:
+        print(f"Ошибка сохранения файла склада: {e}")
 
 # Чтение и запись заказов
 def read_orders():
@@ -139,8 +76,12 @@ def read_orders():
                         if "." in status_val or status_val == "" or status_val.isdigit():
                             status_val = "Unterwegs"
                         orders.append({
-                            "order_id": row[0].strip(), "date": row[1].strip(), "p_id": row[2].strip(),
-                            "name": row[3].strip(), "qty": int(row[4].strip() or 0), "status": status_val
+                            "order_id": row[0].strip(), 
+                            "date": row[1].strip(), 
+                            "p_id": row[2].strip(),
+                            "name": row[3].strip(), 
+                            "qty": int(row[4].strip() or 0), 
+                            "status": status_val
                         })
         except Exception:
             pass
