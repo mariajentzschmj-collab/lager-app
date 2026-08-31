@@ -1,10 +1,12 @@
-import os
 import csv
 import json
 import base64
+import os
+import webbrowser
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import parse_qs
 import urllib.parse
 from datetime import datetime
-from http.server import BaseHTTPRequestHandler, HTTPServer
 import psycopg2
 import psycopg2.extras
 
@@ -14,20 +16,67 @@ REVENUE_FILE = "umsatz_bericht.csv"
 GOALS_FILE = "finanz_ziele.csv"
 ORDERS_FILE = "bestellungen.csv"
 
+# Настройки авторизации
+USER_AUTH = "admin"
+PASS_AUTH = "kadewe2026"
+
 # Подключение к PostgreSQL на Render
 def get_db_connection():
     database_url = os.environ.get("DATABASE_URL")
     if database_url:
-        return psycopg2.connect(database_url, cursor_factory=psycopg2.extras.DictCursor)
+        try:
+            return psycopg2.connect(database_url, cursor_factory=psycopg2.extras.DictCursor)
+        except Exception:
+            return None
     return None
 
-# Функция чтения данных (берет из базы PostgreSQL на Render или из файла локально)
+# Безопасное чтение данных (PostgreSQL с корректным fallback)
 def read_db():
     conn = get_db_connection()
-    if not conn:
-        # Локальное чтение из CSV, если базы нет
-        products = []
-        if os.path.exists(DB_FILE):
+    products = []
+    db_queried = False
+    
+    if conn:
+        try:
+            db_queried = True
+            cur = conn.cursor()
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS lager (
+                    id SERIAL PRIMARY KEY,
+                    item_id TEXT,
+                    sap TEXT,
+                    name TEXT,
+                    kat TEXT,
+                    menge INT,
+                    soll_menge INT,
+                    min_monat INT,
+                    preis FLOAT
+                );
+            """)
+            conn.commit()
+            
+            cur.execute("SELECT item_id, sap, name, kat, menge, soll_menge, min_monat, preis FROM lager")
+            rows = cur.fetchall()
+            for row in rows:
+                products.append({
+                    "id": row["item_id"],
+                    "sap": row["sap"],
+                    "name": row["name"],
+                    "kat": row["kat"],
+                    "menge": row["menge"],
+                    "soll_menge": row["soll_menge"],
+                    "min_monat": row["min_monat"],
+                    "preis": row["preis"]
+                })
+            cur.close()
+            conn.close()
+            return products
+        except Exception as e:
+            print(f"Ошибка чтения базы PostgreSQL: {e}")
+
+    # Локальное чтение из CSV выполняется только при отсутствии подключения к БД
+    if not db_queried and os.path.exists(DB_FILE):
+        try:
             with open(DB_FILE, mode='r', encoding='utf-8-sig') as f:
                 reader = csv.reader(f, delimiter=';')
                 header = next(reader, None)
@@ -38,104 +87,137 @@ def read_db():
                             "sap": row[1].strip(),
                             "name": row[2].strip(),
                             "kat": row[3].strip(),
-                            "menge": int(row[4] or 0),
-                            "soll_menge": int(row[5] or 0),
-                            "min_monat": int(row[6] or 23),
-                            "preis": float(row[7] or 0.0)
+                            "menge": int(row[4].strip() or 0),
+                            "soll_menge": int(row[5].strip() or 5),
+                            "min_monat": int(row[6].strip() or 2),
+                            "preis": float(row[7].strip().replace(',', '.') or 0.0)
                         })
-        return products
-    
-    # Чтение из базы PostgreSQL
-    try:
-        cur = conn.cursor()
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS lager (
-                id SERIAL PRIMARY KEY,
-                item_id TEXT,
-                sap TEXT,
-                name TEXT,
-                kat TEXT,
-                menge INT,
-                soll_menge INT,
-                min_monat INT,
-                preis FLOAT
-            );
-        """)
-        conn.commit()
-        
-        cur.execute("SELECT item_id, sap, name, kat, menge, soll_menge, min_monat, preis FROM lager")
-        rows = cur.fetchall()
-        products = []
-        for row in rows:
-            products.append({
-                "id": row["item_id"],
-                "sap": row["sap"],
-                "name": row["name"],
-                "kat": row["kat"],
-                "menge": row["menge"],
-                "soll_menge": row["soll_menge"],
-                "min_monat": row["min_monat"],
-                "preis": row["preis"]
-            })
-        cur.close()
-        conn.close()
-        return products
-    except Exception as e:
-        print(f"Ошибка чтения базы: {e}")
-        return []
+        except Exception:
+            pass
+    return products
 
-# Функция сохранения данных (записывает в базу PostgreSQL на Render или в файл)
+# Сохранение данных (PostgreSQL с fallback на CSV)
 def save_db(products_list):
     conn = get_db_connection()
-    if not conn:
-        # Локальное сохранение в CSV
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM lager")
+            for p in products_list:
+                cur.execute("""
+                    INSERT INTO lager (item_id, sap, name, kat, menge, soll_menge, min_monat, preis)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (p["id"], p.get("sap", "-"), p["name"], p["kat"], p["menge"], p.get("soll_menge", 5), p.get("min_monat", 2), p["preis"]))
+            conn.commit()
+            cur.close()
+            conn.close()
+            return
+        except Exception as e:
+            print(f"Ошибка сохранения в базу PostgreSQL: {e}")
+
+    # Локальное сохранение в CSV
+    try:
         with open(DB_FILE, mode='w', encoding='utf-8-sig', newline='') as f:
             writer = csv.writer(f, delimiter=';')
-            writer.writerow(["ID", "SAP", "Name", "Kat", "Menge", "Soll", "Min", "Preis"])
+            writer.writerow(["Produkt-ID", "SAP-Nummer", "Name", "Kategorie", "Menge", "Mindestbestand", "Mindestbestand (Monat)", "Verkaufspreis (EUR)"])
             for p in products_list:
-                writer.writerow([p["id"], p["sap"], p["name"], p["kat"], p["menge"], p["soll_menge"], p["min_monat"], p["preis"]])
-        return
+                writer.writerow([p["id"], p.get("sap", "-"), p["name"], p["kat"], p["menge"], p.get("soll_menge", 5), p.get("min_monat", 2), p["preis"]])
+    except Exception:
+        pass
 
+# Чтение и запись заказов
+def read_orders():
+    orders = []
+    if os.path.exists(ORDERS_FILE):
+        try:
+            with open(ORDERS_FILE, mode='r', encoding='utf-8-sig') as f:
+                reader = csv.reader(f, delimiter=';')
+                header = next(reader, None)
+                for row in reader:
+                    if row and len(row) >= 6:
+                        status_val = row[5].strip()
+                        if "." in status_val or status_val == "" or status_val.isdigit():
+                            status_val = "Unterwegs"
+                        orders.append({
+                            "order_id": row[0].strip(), "date": row[1].strip(), "p_id": row[2].strip(),
+                            "name": row[3].strip(), "qty": int(row[4].strip() or 0), "status": status_val
+                        })
+        except Exception:
+            pass
+    return orders
+
+def write_orders(orders):
     try:
-        cur = conn.cursor()
-        cur.execute("DELETE FROM lager")
-        for p in products_list:
-            cur.execute("""
-                INSERT INTO lager (item_id, sap, name, kat, menge, soll_menge, min_monat, preis)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """, (p["id"], p["sap"], p["name"], p["kat"], p["menge"], p["soll_menge"], p["min_monat"], p["preis"]))
-        conn.commit()
-        cur.close()
-        conn.close()
-    except Exception as e:
-        print(f"Ошибка сохранения в базу: {e}")
+        with open(ORDERS_FILE, mode='w', newline='', encoding='utf-8-sig') as f:
+            writer = csv.writer(f, delimiter=';')
+            writer.writerow(["Bestellnummer", "Datum", "Produkt-ID", "Name", "Menge", "Status"])
+            for o in orders:
+                writer.writerow([o["order_id"], o["date"], o["p_id"], o["name"], o["qty"], o["status"]])
+    except Exception:
+        pass
 
-# Ваш стандартный класс обработчика запросов сервера
-class SimpleHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        # Здесь работает ваш привычный вывод страниц и интерфейса
-        if self.path == '/':
-            self.send_response(200)
-            self.send_header("Content-type", "text/html; charset=utf-8")
-            self.end_headers()
-            
-            # Получаем данные из базы
-            products = read_db()
-            
-            # Пример простой генерации страницы (вы можете использовать ваш HTML-шаблон)
-            html = f"<html><body><h1>Lagerverwaltung</h1><p>Загружено товаров в базу: {len(products)}</p></body></html>"
-            self.wfile.write(html.encode("utf-8"))
-        else:
-            self.send_response(404)
-            self.end_headers()
+# Чтение и запись целей
+def read_goals():
+    goals = {}
+    if os.path.exists(GOALS_FILE):
+        try:
+            with open(GOALS_FILE, mode='r', encoding='utf-8-sig') as f:
+                reader = csv.DictReader(f, delimiter=';')
+                for row in reader:
+                    if row and "Monat-Jahr" in row and "Ziel" in row:
+                        goals[row["Monat-Jahr"]] = float(str(row["Ziel"]).replace(',', '.') or 0.0)
+        except Exception:
+            pass
+    return goals
 
-    def do_POST(self):
-        # Здесь обрабатываются сохранения с сайта или загрузка файлов
-        self.send_response(302)
-        self.send_header('Location', '/')
-        self.end_headers()
+def write_goals(goals):
+    try:
+        with open(GOALS_FILE, mode='w', newline='', encoding='utf-8-sig') as f:
+            writer = csv.writer(f, delimiter=';')
+            writer.writerow(["Monat-Jahr", "Ziel"])
+            for k, v in goals.items():
+                writer.writerow([k, f"{v:.2f}".replace('.', ',')])
+    except Exception:
+        pass
 
-if __name__ == "__main__":
-    server = HTTPServer(("0.0.0.0", PORT), SimpleHandler)
-    print(f"Server started on port {PORT}")
-    server.serve_forever()
+def try_float(val):
+    if not val: return 0.0
+    try: return float(str(val).replace(',', '.'))
+    except ValueError: return 0.0
+
+def parse_multipart_generic(body_bytes, boundary, field_name):
+    if not boundary or not body_bytes: return ""
+    try:
+        boundary_bytes = b"--" + boundary.encode('utf-8')
+        parts = body_bytes.split(boundary_bytes)
+        for part in parts:
+            if f'name="{field_name}"'.encode('utf-8') in part:
+                subparts = part.split(b'\r\n\r\n', 1)
+                if len(subparts) == 2:
+                    payload = subparts[1]
+                    if payload.endswith(b'\r\n'): payload = payload[:-2]
+                    if payload.endswith(b'--\r\n'): payload = payload[:-4]
+                    return payload.decode('utf-8-sig', errors='ignore').strip()
+    except Exception: pass
+    return ""
+
+def get_monthly_revenue_map():
+    report = {}
+    if os.path.exists(REVENUE_FILE):
+        try:
+            with open(REVENUE_FILE, mode='r', encoding='utf-8-sig') as f:
+                reader = csv.reader(f, delimiter=';')
+                next(reader, None)
+                for row in reader:
+                    if row and len(row) >= 10:
+                        dt_str = row[0].strip()
+                        n_val = try_float(row[9])
+                        try:
+                            dt = datetime.strptime(dt_str, "%d.%m.%Y %H:%M")
+                            m_key = dt.strftime("%m.%Y")
+                            report[m_key] = report.get(m_key, 0.0) + n_val
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+    return report
