@@ -1,1 +1,4 @@
-gunicorn
+streamlit
+pandas
+supabase
+openpyxl
