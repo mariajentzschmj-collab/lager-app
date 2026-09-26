@@ -1,179 +1,182 @@
-import csv
-import json
-import base64
-import os
-import webbrowser
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import parse_qs
-import urllib.parse
-from datetime import datetime
+import pandas as pd
+import streamlit as st
+from supabase import create_client
 
-PORT = int(os.environ.get("PORT", 8099))
-DB_FILE = "lagerbestand.csv"
-REVENUE_FILE = "umsatz_bericht.csv"
-GOALS_FILE = "finanz_ziele.csv"
-ORDERS_FILE = "bestellungen.csv"
+# Настройка страницы
+st.set_page_config(
+    page_title="KaDeWe Lager — Iittala & Royal Copenhagen", layout="wide"
+)
 
-# Настройки авторизации
-USER_AUTH = "admin"
-PASS_AUTH = "kadewe2026"
+st.title("📦 Lagerverwaltung (5. Etage)")
+st.subheader("Iittala & Royal Copenhagen")
 
-# Чтение данных из локального файла (который вы можете легко выгружать из Google Таблиц в формате CSV)
-def read_db():
-    products = []
-    if os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE, mode='r', encoding='utf-8-sig') as f:
-                reader = csv.reader(f, delimiter=';')
-                header = next(reader, None)
-                for row in reader:
-                    if row and len(row) >= 8:
-                        products.append({
-                            "id": row[0].strip(),
-                            "sap": row[1].strip(),
-                            "name": row[2].strip(),
-                            "kat": row[3].strip(),
-                            "menge": int(row[4].strip() or 0),
-                            "soll_menge": int(row[5].strip() or 5),
-                            "min_monat": int(row[6].strip() or 2),
-                            "preis": float(row[7].strip().replace(',', '.') or 0.0)
-                        })
-        except Exception as e:
-            print(f"Ошибка чтения файла склада: {e}")
-    return products
+# Подключение к Supabase с защитой от сбоев
+supabase = None
+try:
+  url = st.secrets["supabase"]["url"]
+  key = st.secrets["supabase"]["key"]
+  supabase = create_client(url, key)
+except Exception as e:
+  st.warning(
+      "⚠️ Achtung: Keine Verbindung zur Cloud-Datenbank (Supabase). Die"
+      " Anwendung läuft im Offline-Modus."
+  )
 
-# Сохранение данных в локальный файл
-def save_db(products_list):
+
+# Функция для загрузки данных из базы
+def load_data():
+  if supabase is None:
+    return pd.DataFrame(columns=["id", "name", "brand", "quantity", "price"])
+  try:
+    response = supabase.table("inventory").select("*").execute()
+    if response.data:
+      return pd.DataFrame(response.data)
+  except Exception as e:
+    st.error(f"Fehler beim Laden der Daten: {e}")
+  return pd.DataFrame(columns=["id", "name", "brand", "quantity", "price"])
+
+
+df = load_data()
+
+# --- SEITENMENÜ ---
+st.sidebar.header("⚙️ Lagersteuerung")
+action = st.sidebar.radio(
+    "Aktion auswählen:",
+    [
+        "📊 Bestände anzeigen",
+        "➕ Artikel hinzufügen",
+        "📉 Artikel reduzieren (Verkauf)",
+        "📁 Katalog aus Datei hochladen",
+    ],
+)
+
+# 1. BESTÄNDE ANZEIGEN
+if action == "📊 Bestände anzeigen":
+  st.header("📋 Aktuelles Sortiment")
+  if df.empty:
+    st.info(
+        "Das Lager ist leer oder keine Verbindung zur Datenbank möglich."
+    )
+  else:
+    search_query = st.text_input(
+        "🔍 Artikel nach Name suchen (Suche eingeben):"
+    )
+    filtered_df = df
+    if search_query:
+      filtered_df = df[
+          df["name"].str.contains(search_query, case=False, na=False)
+      ]
+
+    st.dataframe(filtered_df, use_container_width=True)
+
+# 2. ARTIKEL HINZUFÜGEN
+elif action == "➕ Artikel hinzufügen":
+  st.header("✨ Neuen Artikel hinzufügen")
+
+  with st.form("add_form"):
+    new_name = st.text_input(
+        "Artikelname (z. B. Iittala Ultima Thule / Royal Copenhagen)"
+    )
+    new_brand = st.selectbox(
+        "Marke", ["Iittala", "Royal Copenhagen", "Arabia", "Georg Jensen"]
+    )
+    new_qty = st.number_input("Menge im Lager", min_value=0, value=1)
+    new_price = st.number_input(
+        "Preis (€)", min_value=0.0, value=0.0, format="%.2f"
+    )
+
+    submitted = st.form_submit_button("In Datenbank speichern")
+    if submitted:
+      if new_name:
+        if supabase is not None:
+          data = {
+              "name": new_name,
+              "brand": new_brand,
+              "quantity": int(new_qty),
+              "price": float(new_price),
+          }
+          supabase.table("inventory").insert(data).execute()
+          st.success(f"Artikel '{new_name}' erfolgreich hinzugefügt!")
+          st.rerun()
+        else:
+          st.error(
+              "Keine Verbindung zur Datenbank. Speichern nicht möglich."
+          )
+      else:
+        st.error("Bitte geben Sie einen Artikelnamen ein.")
+
+# 3. ARTIKEL REDUZIEREN (VERKAUF)
+elif action == "📉 Artikel reduzieren (Verkauf)":
+  st.header("🛒 Verkauf / Bestandsreduzierung erfassen")
+
+  if df.empty:
+    st.warning("Keine Artikel zum Reduzieren vorhanden.")
+  else:
+    with st.form("reduce_form"):
+      item_options = df["name"].tolist()
+      selected_item = st.selectbox("Artikel auswählen", item_options)
+
+      current_qty = int(
+          df.loc[df["name"] == selected_item, "quantity"].values[0]
+      )
+      st.write(f"Aktueller Bestand im Lager: **{current_qty} Stk.**")
+
+      reduce_qty = st.number_input(
+          "Wie viele Stk. wurden verkauft / aus dem Lager genommen?",
+          min_value=1,
+          max_value=max(1, current_qty),
+          value=1,
+      )
+
+      submit_reduce = st.form_submit_button("Verkauf bestätigen")
+      if submit_reduce:
+        new_qty = current_qty - int(reduce_qty)
+        if supabase is not None:
+          supabase.table("inventory").update({"quantity": new_qty}).eq(
+              "name", selected_item
+          ).execute()
+          st.success(
+              f"Bestand für '{selected_item}' aktualisiert! Neuer Bestand:"
+              f" {new_qty} Stk."
+          )
+          st.rerun()
+        else:
+          st.error("Keine Verbindung zur Datenbank.")
+
+# 4. KATALOG AUS DATEI HOCHLADEN
+elif action == "📁 Katalog aus Datei hochladen":
+  st.header("📂 Massen-Upload des Katalogs")
+  st.write(
+      "Laden Sie eine Excel- (.xlsx) oder CSV-Datei hoch. Die Spalten im"
+      " Dokument müssen lauten: `name`, `brand`, `quantity`, `price`."
+  )
+
+  uploaded_file = st.file_uploader(
+      "Katalogdatei auswählen", type=["xlsx", "csv"]
+  )
+
+  if uploaded_file is not None:
     try:
-        with open(DB_FILE, mode='w', encoding='utf-8-sig', newline='') as f:
-            writer = csv.writer(f, delimiter=';')
-            writer.writerow(["Produkt-ID", "SAP-Nummer", "Name", "Kategorie", "Menge", "Mindestbestand", "Mindestbestand (Monat)", "Verkaufspreis (EUR)"])
-            for p in products_list:
-                writer.writerow([
-                    p["id"], 
-                    p.get("sap", "-"), 
-                    p["name"], 
-                    p["kat"], 
-                    p["menge"], 
-                    p.get("soll_menge", 5), 
-                    p.get("min_monat", 2), 
-                    p["preis"]
-                ])
+      if uploaded_file.name.endswith(".xlsx"):
+        import openpyxl
+
+        upload_df = pd.read_excel(uploaded_file)
+      else:
+        upload_df = pd.read_csv(uploaded_file)
+
+      st.write("Vorschau der hochgeladenen Datei:")
+      st.dataframe(upload_df.head())
+
+      if st.button("Alles in Supabase-Datenbank hochladen"):
+        if supabase is not None:
+          records = upload_df.to_dict(orient="records")
+          supabase.table("inventory").insert(records).execute()
+          st.success("Katalog erfolgreich in die Datenbank importiert!")
+          st.rerun()
+        else:
+          st.error("Keine Verbindung zur Datenbank.")
     except Exception as e:
-        print(f"Ошибка сохранения файла склада: {e}")
-
-# Чтение и запись заказов
-def read_orders():
-    orders = []
-    if os.path.exists(ORDERS_FILE):
-        try:
-            with open(ORDERS_FILE, mode='r', encoding='utf-8-sig') as f:
-                reader = csv.reader(f, delimiter=';')
-                header = next(reader, None)
-                for row in reader:
-                    if row and len(row) >= 6:
-                        status_val = row[5].strip()
-                        if "." in status_val or status_val == "" or status_val.isdigit():
-                            status_val = "Unterwegs"
-                        orders.append({
-                            "order_id": row[0].strip(), 
-                            "date": row[1].strip(), 
-                            "p_id": row[2].strip(),
-                            "name": row[3].strip(), 
-                            "qty": int(row[4].strip() or 0), 
-                            "status": status_val
-                        })
-        except Exception:
-            pass
-    return orders
-
-def write_orders(orders):
-    try:
-        with open(ORDERS_FILE, mode='w', newline='', encoding='utf-8-sig') as f:
-            writer = csv.writer(f, delimiter=';')
-            writer.writerow(["Bestellnummer", "Datum", "Produkt-ID", "Name", "Menge", "Status"])
-            for o in orders:
-                writer.writerow([o["order_id"], o["date"], o["p_id"], o["name"], o["qty"], o["status"]])
-    except Exception:
-        pass
-
-# Чтение и запись целей
-def read_goals():
-    goals = {}
-    if os.path.exists(GOALS_FILE):
-        try:
-            with open(GOALS_FILE, mode='r', encoding='utf-8-sig') as f:
-                reader = csv.DictReader(f, delimiter=';')
-                for row in reader:
-                    if row and "Monat-Jahr" in row and "Ziel" in row:
-                        goals[row["Monat-Jahr"]] = float(str(row["Ziel"]).replace(',', '.') or 0.0)
-        except Exception:
-            pass
-    return goals
-
-def write_goals(goals):
-    try:
-        with open(GOALS_FILE, mode='w', newline='', encoding='utf-8-sig') as f:
-            writer = csv.writer(f, delimiter=';')
-            writer.writerow(["Monat-Jahr", "Ziel"])
-            for k, v in goals.items():
-                writer.writerow([k, f"{v:.2f}".replace('.', ',')])
-    except Exception:
-        pass
-
-def try_float(val):
-    if not val: return 0.0
-    try: return float(str(val).replace(',', '.'))
-    except ValueError: return 0.0
-
-def parse_multipart_generic(body_bytes, boundary, field_name):
-    if not boundary or not body_bytes: return ""
-    try:
-        boundary_bytes = b"--" + boundary.encode('utf-8')
-        parts = body_bytes.split(boundary_bytes)
-        for part in parts:
-            if f'name="{field_name}"'.encode('utf-8') in part:
-                subparts = part.split(b'\r\n\r\n', 1)
-                if len(subparts) == 2:
-                    payload = subparts[1]
-                    if payload.endswith(b'\r\n'): payload = payload[:-2]
-                    if payload.endswith(b'--\r\n'): payload = payload[:-4]
-                    return payload.decode('utf-8-sig', errors='ignore').strip()
-    except Exception: pass
-    return ""
-
-def get_monthly_revenue_map():
-    report = {}
-    if os.path.exists(REVENUE_FILE):
-        try:
-            with open(REVENUE_FILE, mode='r', encoding='utf-8-sig') as f:
-                reader = csv.reader(f, delimiter=';')
-                next(reader, None)
-                for row in reader:
-                    if row and len(row) >= 10:
-                        dt_str = row[0].strip()
-                        n_val = try_float(row[9])
-                        try:
-                            dt = datetime.strptime(dt_str, "%d.%m.%Y %H:%M")
-                            m_key = dt.strftime("%m.%Y")
-                            report[m_key] = report.get(m_key, 0.0) + n_val
-                        except Exception:
-                            pass
-        except Exception:
-            pass
-    return report
-    class SimpleHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-type", "text/html; charset=utf-8")
-        self.end_headers()
-        self.wfile.write("Lager App is running successfully!".encode("utf-8"))
-
-    def do_POST(self):
-        self.do_GET()
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(("0.0.0.0", port), SimpleHandler)
-    print(f"Server started on port {port}")
-    server.serve_forever()
+      st.error(
+          "Fehler beim Lesen der Datei. Überprüfen Sie die Spaltennamen:"
+          f" {e}"
+      )
