@@ -1,7 +1,6 @@
 import urllib.parse
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 from supabase import create_client
 
 # Настройка страницы
@@ -41,10 +40,10 @@ def load_data():
     return pd.DataFrame(columns=cols)
   try:
     response = supabase.table("inventory").select("*").execute()
-    if response.data:
+    if response.data is not None:
       return pd.DataFrame(response.data)
   except Exception as e:
-    st.info("💡 Datenbank vorübergehend nicht erreichbar.")
+    st.error(f"❌ Fehler beim Laden der Daten: {e}")
   return pd.DataFrame(columns=cols)
 
 
@@ -58,7 +57,7 @@ action = st.sidebar.radio(
         "📊 Bestände anzeigen",
         "➕ Artikel hinzufügen",
         "📉 Artikel reduzieren (Verkauf)",
-        "📷 Kamera-Scanner & Bestandsänderung",
+        "📷 Barcode & Bestand anpassen",
         "📁 Katalog aus Datei hochladen",
         "🖨 QR-Code für Kollegen",
     ],
@@ -111,40 +110,22 @@ elif action == "➕ Artikel hinzufügen":
       elif supabase is None:
         st.error("Keine Verbindung zur Datenbank. Speichern nicht möglich.")
       else:
-        is_duplicate = False
-        duplicate_reason = ""
-
-        if not df.empty:
-          if new_article and (df["article"].astype(str) == new_article).any():
-            is_duplicate = True
-            duplicate_reason = (
-                f"Artikelnummer (SKU) '{new_article}' existiert bereits im Lager!"
-            )
-          elif new_barcode and (df["barcode"].astype(str) == new_barcode).any():
-            is_duplicate = True
-            duplicate_reason = (
-                f"Barcode '{new_barcode}' existiert bereits im Lager!"
-            )
-
-        if is_duplicate:
-          st.error(f"⚠️ Achtung, Duplikat erkannt: {duplicate_reason}")
-        else:
-          try:
-            data = {
-                "article": str(new_article),
-                "name": str(new_name),
-                "brand": str(new_brand),
-                "quantity": int(new_qty),
-                "location": str(new_location),
-                "preis": float(new_preis),
-                "sap": str(new_sap),
-                "barcode": str(new_barcode),
-            }
-            supabase.table("inventory").insert(data).execute()
-            st.success(f"Artikel '{new_name}' erfolgreich hinzugefügt!")
-            st.rerun()
-          except Exception as e:
-            st.error(f"Fehler beim Speichern in die Datenbank: {e}")
+        try:
+          data = {
+              "article": str(new_article),
+              "name": str(new_name),
+              "brand": str(new_brand),
+              "quantity": int(new_qty),
+              "location": str(new_location),
+              "preis": float(new_preis),
+              "sap": str(new_sap),
+              "barcode": str(new_barcode),
+          }
+          supabase.table("inventory").insert(data).execute()
+          st.success(f"Artikel '{new_name}' erfolgreich hinzugefügt!")
+          st.rerun()
+        except Exception as e:
+          st.error(f"Fehler beim Speichern: {e}")
 
 # 3. ARTIKEL REDUZIEREN (VERKAUF)
 elif action == "📉 Artikel reduzieren (Verkauf)":
@@ -187,67 +168,16 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
         else:
           st.error("Keine Verbindung zur Datenbank.")
 
-# 4. KAMERA-SCANNER & BESTANDSÄNDERUNG
-elif action == "📷 Kamera-Scanner & Bestandsänderung":
-  st.header("📷 Barcode scannen & Bestand anpassen")
+# 4. BARCODE & BESTANDSÄNDERUNG (Надежный метод)
+elif action == "📷 Barcode & Bestand anpassen":
+  st.header("📷 Barcode eingeben oder scannen")
   st.write(
-      "Richten Sie die Kamera auf den Strichcode. Nach dem Scan wird der Code"
-      " hier angezeigt:"
+      "Geben Sie den Barcode ein oder scannen Sie ihn direkt am Artikel:"
   )
 
-  scanner_html = """
-    <div style="width: 100%; max-width: 450px; margin: auto; text-align: center;">
-        <div id="reader" style="width: 100%;"></div>
-        <div style="margin-top: 15px; font-size: 20px; font-weight: bold; color: #155724; background: #d4edda; padding: 12px; border: 2px solid #c3e6cb; border-radius: 8px;" id="result">Kamera aktiv – bitte Barcode scannen...</div>
-    </div>
-    <script src="https://unpkg.com/html5-qrcode"></script>
-    <script>
-        function playBeep() {
-            try {
-                let ctx = new (window.AudioContext || window.webkitAudioContext)();
-                let osc = ctx.createOscillator();
-                let gain = ctx.createGain();
-                osc.connect(gain);
-                gain.connect(ctx.destination);
-                osc.type = 'sine';
-                osc.frequency.value = 880; 
-                gain.gain.setValueAtTime(0.3, ctx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.2);
-                osc.start();
-                osc.stop(ctx.currentTime + 0.2);
-            } catch(e) { console.log(e); }
-        }
-
-        function onScanSuccess(decodedText, decodedResult) {
-            playBeep();
-            document.getElementById('result').innerText = "GESCANNT: " + decodedText;
-            
-            // Автоматически передаем значение в текстовое поле Streamlit
-            const inputs = parent.document.querySelectorAll('input[type="text"]');
-            for (let input of inputs) {
-                if (input.value !== undefined) {
-                    // Ищем нужное поле по плейсхолдеру или метке
-                    let label = input.getAttribute('aria-label');
-                    if (label && label.includes("Barcode")) {
-                        input.value = decodedText;
-                        input.dispatchEvent(new Event('input', { bubbles: true }));
-                        break;
-                    }
-                }
-            }
-        }
-
-        let html5QrcodeScanner = new Html5QrcodeScanner(
-            "reader", { fps: 10, qrbox: { width: 250, height: 100 } }, false);
-        html5QrcodeScanner.render(onScanSuccess);
-    </script>
-    """
-  components.html(scanner_html, height=480)
-
-  st.write("---")
   scanned_code = st.text_input(
-      "Gescannter Barcode hier eingeben oder prüfen:",
-      placeholder="Nummer erscheint hier nach dem Scan...",
+      "Barcode eingeben:",
+      placeholder="Ziffern des Barcodes hier eingeben...",
   )
 
   if scanned_code:
@@ -260,13 +190,13 @@ elif action == "📷 Kamera-Scanner & Bestandsänderung":
         item_id = item["id"]
 
         st.success(
-            f"✅ Artikel gefunden: **{item_name}** | Original-Bestand:"
+            f"✅ Gefunden: **{item_name}** | Original-Bestand:"
             f" **{orig_qty} Stk.**"
         )
 
         with st.form("quick_update_form"):
-          st.subheader(f"Bestand anpassen: {item_name}")
-          st.write(f"Aktueller Bestand im Lager: **{orig_qty} Stück**")
+          st.subheader(f"Bestand anpassen für: {item_name}")
+          st.write(f"Aktueller Bestand: **{orig_qty} Stück**")
 
           change_type = st.radio(
               "Aktion wählen:",
