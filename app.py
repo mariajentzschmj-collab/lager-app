@@ -1,4 +1,5 @@
 import urllib.parse
+import numpy as np
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
@@ -169,7 +170,7 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
         else:
           st.error("Keine Verbindung zur Datenbank.")
 
-# 4. LIVE-KAMERA-SCANNER (Прямой ввод и поиск)
+# 4. LIVE-KAMERA-SCANNER
 elif action == "📷 Live-Kamera-Scanner":
   st.header("📷 Live-Barcode-Scanner für Smartphones")
   st.write(
@@ -203,7 +204,6 @@ elif action == "📷 Live-Kamera-Scanner":
         function onScanSuccess(decodedText, decodedResult) {
             playBeep();
             document.getElementById('result').innerText = "Erkannt: " + decodedText;
-            // Копируем в буфер обмена телефона автоматически
             navigator.clipboard.writeText(decodedText);
         }
 
@@ -216,7 +216,6 @@ elif action == "📷 Live-Kamera-Scanner":
 
   st.write("---")
 
-  # Поле поиска, куда можно вставить отсканированный код (или он копируется в буфер)
   with st.form("scan_search_form"):
     scanned_input = st.text_input(
         "Gescannter Barcode (hier einfügen oder tippen):",
@@ -292,7 +291,7 @@ elif action == "📷 Live-Kamera-Scanner":
             " Datenbank gefunden."
         )
 
-# 5. KATALOG AUS DATEI HOCHLADEN
+# 5. KATALOG AUS DATEI HOCHLADEN (С исправлением ошибки NaN)
 elif action == "📁 Katalog aus Datei hochladen":
   st.header("📂 Massen-Upload des Katalogs")
   uploaded_file = st.file_uploader(
@@ -307,6 +306,9 @@ elif action == "📁 Katalog aus Datei hochladen":
         upload_df = pd.read_excel(uploaded_file)
       else:
         upload_df = pd.read_csv(uploaded_file)
+
+      # Заменяем пустые значения (NaN) на None (чтобы база данных не выдавала ошибку)
+      upload_df = upload_df.replace({np.nan: None})
 
       st.write("Vorschau:")
       st.dataframe(upload_df.head())
