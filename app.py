@@ -187,63 +187,59 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
         else:
           st.error("Keine Verbindung zur Datenbank.")
 
-# 4. KAMERA-SCANNER & BESTANDSÄNDERUNG
+# 4. KAMERA-SCANNER & BESTANDSÄNDERUNG (Надежный метод через текстовое поле)
 elif action == "📷 Kamera-Scanner & Bestandsänderung":
   st.header("📷 Barcode scannen & Bestand anpassen")
+  st.write(
+      "Richten Sie die Kamera auf den Strichcode. Kopieren Sie den erkannten"
+      " Code oder nutzen Sie das Feld unten:"
+  )
 
-  # Проверяем, передан ли штрихкод через параметры страницы после сканирования
-  scanned_code = st.query_params.get("barcode", "")
+  # Встраиваем сканер, который выводит код прямо на экран крупным шрифтом
+  scanner_html = """
+    <div style="width: 100%; max-width: 400px; margin: auto; text-align: center;">
+        <div id="reader"></div>
+        <div style="margin-top: 15px; font-size: 20px; font-weight: bold; color: #d9534f; background: #fdf7f7; padding: 12px; border: 2px dashed #d9534f; border-radius: 8px;" id="result">Kamera aktiv – bitte Barcode scannen...</div>
+    </div>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script>
+        function playBeep() {
+            try {
+                let ctx = new (window.AudioContext || window.webkitAudioContext)();
+                let osc = ctx.createOscillator();
+                let gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.type = 'sine';
+                osc.frequency.value = 880; 
+                gain.gain.setValueAtTime(0.3, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.2);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.2);
+            } catch(e) { console.log(e); }
+        }
 
-  if not scanned_code:
-    st.write(
-        "Richten Sie die Kamera auf den Barcode. Nach dem Signalton wird der"
-        " Artikel automatisch geladen."
-    )
+        function onScanSuccess(decodedText, decodedResult) {
+            playBeep();
+            document.getElementById('resultinnerHTML = "";
+            document.getElementById('result').innerText = "GESCANNT: " + decodedText;
+        }
 
-    scanner_html = """
-        <div style="width: 100%; max-width: 400px; margin: auto; text-align: center;">
-            <div id="reader"></div>
-            <div style="margin-top: 15px; font-size: 18px; font-weight: bold; color: #2c3e50; background: #e8f4f8; padding: 10px; border-radius: 8px;" id="result">Warte auf Scan...</div>
-        </div>
-        <script src="https://unpkg.com/html5-qrcode"></script>
-        <script>
-            function playBeep() {
-                try {
-                    let ctx = new (window.AudioContext || window.webkitAudioContext)();
-                    let osc = ctx.createOscillator();
-                    let gain = ctx.createGain();
-                    osc.connect(gain);
-                    gain.connect(ctx.destination);
-                    osc.type = 'sine';
-                    osc.frequency.value = 880; 
-                    gain.gain.setValueAtTime(0.3, ctx.currentTime);
-                    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.2);
-                    osc.start();
-                    osc.stop(ctx.currentTime + 0.2);
-                } catch(e) { console.log(e); }
-            }
+        let html5QrcodeScanner = new Html5QrcodeScanner(
+            "reader", { fps: 10, qrbox: { width: 250, height: 100 } }, false);
+        html5QrcodeScanner.render(onScanSuccess);
+    </script>
+    """
+  components.html(scanner_html, height=430)
 
-            function onScanSuccess(decodedText, decodedResult) {
-                playBeep();
-                document.getElementById('result').innerText = "Gefunden: " + decodedText;
-                // Перезагружаем страницу с переданным штрихкодом
-                setTimeout(function() {
-                    parent.window.location.search = 'barcode=' + encodeURIComponent(decodedText);
-                }, 300);
-            }
+  st.write("---")
+  # Поле для ввода/вставки отсканированного кода
+  scanned_code = st.text_input(
+      "Gescannter Barcode hier eingeben oder einfügen:",
+      placeholder="Nummer wird hier eingetragen...",
+  )
 
-            let html5QrcodeScanner = new Html5QrcodeScanner(
-                "reader", { fps: 10, qrbox: { width: 250, height: 100 } }, false);
-            html5QrcodeScanner.render(onScanSuccess);
-        </script>
-        """
-    components.html(scanner_html, height=430)
-  else:
-    st.success(f"✅ Gescannter Barcode: **{scanned_code}**")
-    if st.button("🔄 Anderen Barcode scannen"):
-      st.query_params.clear()
-      st.rerun()
-
+  if scanned_code:
     if not df.empty and "barcode" in df.columns:
       matched_rows = df[df["barcode"].astype(str) == str(scanned_code)]
       if not matched_rows.empty:
@@ -252,13 +248,13 @@ elif action == "📷 Kamera-Scanner & Bestandsänderung":
         orig_qty = int(item["quantity"])
         item_id = item["id"]
 
-        st.info(
-            f"Gefundener Artikel: **{item_name}** | Original-Bestand:"
+        st.success(
+            f"✅ Artikel gefunden: **{item_name}** | Original-Bestand:"
             f" **{orig_qty} Stk.**"
         )
 
         with st.form("quick_update_form"):
-          st.subheader(f"Bestand anpassen für: {item_name}")
+          st.subheader(f"Bestand anpassen: {item_name}")
           st.write(f"Aktueller Bestand im Lager: **{orig_qty} Stück**")
 
           change_type = st.radio(
@@ -288,7 +284,6 @@ elif action == "📷 Kamera-Scanner & Bestandsänderung":
                     f"Erfolgreich aktualisiert! Neuer Bestand: **{new_qty}"
                     " Stk.**"
                 )
-                st.query_params.clear()
                 st.rerun()
               except Exception as e:
                 st.error(f"Fehler beim Aktualisieren: {e}")
