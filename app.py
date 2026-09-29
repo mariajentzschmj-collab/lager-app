@@ -187,19 +187,18 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
         else:
           st.error("Keine Verbindung zur Datenbank.")
 
-# 4. KAMERA-SCANNER & BESTANDSÄNDERUNG (Надежный метод через текстовое поле)
+# 4. KAMERA-SCANNER & BESTANDSÄNDERUNG
 elif action == "📷 Kamera-Scanner & Bestandsänderung":
   st.header("📷 Barcode scannen & Bestand anpassen")
   st.write(
-      "Richten Sie die Kamera auf den Strichcode. Kopieren Sie den erkannten"
-      " Code oder nutzen Sie das Feld unten:"
+      "Richten Sie die Kamera auf den Strichcode. Nach dem Scan wird der Code"
+      " hier angezeigt:"
   )
 
-  # Встраиваем сканер, который выводит код прямо на экран крупным шрифтом
   scanner_html = """
-    <div style="width: 100%; max-width: 400px; margin: auto; text-align: center;">
-        <div id="reader"></div>
-        <div style="margin-top: 15px; font-size: 20px; font-weight: bold; color: #d9534f; background: #fdf7f7; padding: 12px; border: 2px dashed #d9534f; border-radius: 8px;" id="result">Kamera aktiv – bitte Barcode scannen...</div>
+    <div style="width: 100%; max-width: 450px; margin: auto; text-align: center;">
+        <div id="reader" style="width: 100%;"></div>
+        <div style="margin-top: 15px; font-size: 20px; font-weight: bold; color: #155724; background: #d4edda; padding: 12px; border: 2px solid #c3e6cb; border-radius: 8px;" id="result">Kamera aktiv – bitte Barcode scannen...</div>
     </div>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script>
@@ -221,8 +220,21 @@ elif action == "📷 Kamera-Scanner & Bestandsänderung":
 
         function onScanSuccess(decodedText, decodedResult) {
             playBeep();
-            document.getElementById('resultinnerHTML = "";
             document.getElementById('result').innerText = "GESCANNT: " + decodedText;
+            
+            // Автоматически передаем значение в текстовое поле Streamlit
+            const inputs = parent.document.querySelectorAll('input[type="text"]');
+            for (let input of inputs) {
+                if (input.value !== undefined) {
+                    // Ищем нужное поле по плейсхолдеру или метке
+                    let label = input.getAttribute('aria-label');
+                    if (label && label.includes("Barcode")) {
+                        input.value = decodedText;
+                        input.dispatchEvent(new Event('input', { bubbles: true }));
+                        break;
+                    }
+                }
+            }
         }
 
         let html5QrcodeScanner = new Html5QrcodeScanner(
@@ -230,13 +242,12 @@ elif action == "📷 Kamera-Scanner & Bestandsänderung":
         html5QrcodeScanner.render(onScanSuccess);
     </script>
     """
-  components.html(scanner_html, height=430)
+  components.html(scanner_html, height=480)
 
   st.write("---")
-  # Поле для ввода/вставки отсканированного кода
   scanned_code = st.text_input(
-      "Gescannter Barcode hier eingeben oder einfügen:",
-      placeholder="Nummer wird hier eingetragen...",
+      "Gescannter Barcode hier eingeben oder prüfen:",
+      placeholder="Nummer erscheint hier nach dem Scan...",
   )
 
   if scanned_code:
