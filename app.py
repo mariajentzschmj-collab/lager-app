@@ -169,7 +169,7 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
         else:
           st.error("Keine Verbindung zur Datenbank.")
 
-# 4. LIVE-KAMERA-SCANNER (Браузерный сканер без зависимостей на сервере)
+# 4. LIVE-KAMERA-SCANNER
 elif action == "📷 Live-Kamera-Scanner":
   st.header("📷 Live-Barcode-Scanner für Smartphones")
   st.write(
@@ -177,7 +177,6 @@ elif action == "📷 Live-Kamera-Scanner":
       " erkannt und geladen:"
   )
 
-  # Проверяем переданный код через параметры страницы
   scanned_code = st.query_params.get("barcode", "")
 
   if not scanned_code:
@@ -241,7 +240,7 @@ elif action == "📷 Live-Kamera-Scanner":
 
           st.write(
               f"**{item_name}** | Artikel-Nr: `{item_art}` | Barcode:"
-              f` `{item_bc}` | Original-Bestand: **{orig_qty} Stk.**`
+              f" `{item_bc}` | Original-Bestand: **{orig_qty} Stk.**"
           )
 
           form_key = f"update_form_{item_id}"
