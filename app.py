@@ -1,10 +1,7 @@
 import urllib.parse
-from io import BytesIO
-import cv2
-import numpy as np
 import pandas as pd
-from PIL import Image
 import streamlit as st
+import streamlit.components.v1 as components
 from supabase import create_client
 
 # Настройка страницы
@@ -61,7 +58,7 @@ action = st.sidebar.radio(
         "📊 Bestände anzeigen",
         "➕ Artikel hinzufügen",
         "📉 Artikel reduzieren (Verkauf)",
-        "📷 Kamera-Scanner & Bestand",
+        "📷 Live-Kamera-Scanner",
         "📁 Katalog aus Datei hochladen",
         "🖨 QR-Code für Kollegen",
     ],
@@ -172,68 +169,69 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
         else:
           st.error("Keine Verbindung zur Datenbank.")
 
-# 4. KAMERA-SCANNER MIT OPENCV
-elif action == "📷 Kamera-Scanner & Bestand":
-  st.header("📷 Barcode mit der Handykamera scannen")
+# 4. LIVE-KAMERA-SCANNER (Браузерный сканер без зависимостей на сервере)
+elif action == "📷 Live-Kamera-Scanner":
+  st.header("📷 Live-Barcode-Scanner für Smartphones")
   st.write(
-      "Machen Sie ein Foto vom Strichcode. Das System liest die Nummer"
-      " automatisch aus:"
+      "Richten Sie die Kamera auf den Barcode. Der Code wird automatisch"
+      " erkannt und geladen:"
   )
 
-  camera_photo = st.camera_input("Foto vom Barcode aufnehmen")
+  # Проверяем переданный код через параметры страницы
+  scanned_code = st.query_params.get("barcode", "")
 
-  detected_code = ""
+  if not scanned_code:
+    scanner_html = """
+        <div style="width: 100%; max-width: 450px; margin: auto; text-align: center;">
+            <div id="reader" style="width: 100%;"></div>
+            <div style="margin-top: 15px; font-size: 18px; font-weight: bold; color: #155724; background: #d4edda; padding: 10px; border-radius: 8px;" id="result">Kamera sucht Barcode...</div>
+        </div>
+        <script src="https://unpkg.com/html5-qrcode"></script>
+        <script>
+            function playBeep() {
+                try {
+                    let ctx = new (window.AudioContext || window.webkitAudioContext)();
+                    let osc = ctx.createOscillator();
+                    let gain = ctx.createGain();
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.type = 'sine';
+                    osc.frequency.value = 880; 
+                    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.2);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.2);
+                } catch(e) {}
+            }
 
-  if camera_photo is not None:
-    try:
-      # Превращаем фото из Streamlit в картинку OpenCV
-      bytes_data = camera_photo.getvalue()
-      np_array = np.frombuffer(bytes_data, np.uint8)
-      opencv_image = cv2.imdecode(np_array, cv2.IMREAD_COLOR)
+            function onScanSuccess(decodedText, decodedResult) {
+                playBeep();
+                document.getElementById('result').innerText = "Erkannt: " + decodedText;
+                setTimeout(function() {
+                    parent.window.location.search = 'barcode=' + encodeURIComponent(decodedText);
+                }, 300);
+            }
 
-      # Используем встроенный детектор штрихкодов OpenCV
-      detector = cv2.barcode.BarcodeDetector()
-      retval, decoded_info, decoded_type, points = detector.detectAndDecode(
-          opencv_image
-      )
+            let html5QrcodeScanner = new Html5QrcodeScanner(
+                "reader", { fps: 10, qrbox: { width: 250, height: 100 } }, false);
+            html5QrcodeScanner.render(onScanSuccess);
+        </script>
+        """
+    components.html(scanner_html, height=450)
+  else:
+    st.success(f"✅ Ercannter Barcode: **{scanned_code}**")
+    if st.button("🔄 Anderen Barcode scannen"):
+      st.query_params.clear()
+      st.rerun()
 
-      if retval and decoded_info:
-        # Берем первый распознанный код
-        detected_code = decoded_info[0]
-        st.success(f"🎯 Barcode erfolgreich erkannt: **{detected_code}**")
-      else:
-        st.warning(
-            "⚠️ Auf dem Foto konnte kein Barcode automatisch gelesen werden."
-            " Bitte halten Sie die Kamera näher an den Strichcode oder geben"
-            " Sie die Nummer unten ein."
-        )
-    except Exception as e:
-      st.error(
-          "Hinweis: Barcode-Modul wird geladen. Sie können die Nummer auch"
-          f" manuell eingeben. Fehlerdetails: {e}"
-      )
-
-  # Поле ввода, куда автоматически попадает распознанный код (или можно ввести руками)
-  search_query = st.text_input(
-      "Erkannter oder eingegebener Barcode / Artikelnummer:",
-      value=detected_code,
-      placeholder="Hier erscheint die Nummer...",
-  )
-
-  if search_query:
-    if df.empty:
-      st.warning("Keine Daten in der Tabelle geladen.")
-    else:
-      q = search_query.strip().lower()
+    if not df.empty:
+      q = str(scanned_code).strip().lower()
       matched_rows = df[
           df["barcode"].astype(str).str.lower().str.contains(q, na=False)
           | df["article"].astype(str).str.lower().str.contains(q, na=False)
-          | df["name"].astype(str).str.lower().str.contains(q, na=False)
       ]
 
       if not matched_rows.empty:
-        st.success(f"Gefunden: {len(matched_rows)} Artikel in der Datenbank")
-
         for idx, item in matched_rows.iterrows():
           item_name = item["name"]
           orig_qty = int(item["quantity"])
@@ -243,7 +241,7 @@ elif action == "📷 Kamera-Scanner & Bestand":
 
           st.write(
               f"**{item_name}** | Artikel-Nr: `{item_art}` | Barcode:"
-              f" `{item_bc}` | Original-Bestand: **{orig_qty} Stk.**"
+              f` `{item_bc}` | Original-Bestand: **{orig_qty} Stk.**`
           )
 
           form_key = f"update_form_{item_id}"
@@ -276,15 +274,15 @@ elif action == "📷 Kamera-Scanner & Bestand":
                       f"Erfolgreich aktualisiert! Neuer Bestand: **{new_qty}"
                       " Stk.**"
                   )
+                  st.query_params.clear()
                   st.rerun()
                 except Exception as e:
                   st.error(f"Fehler beim Aktualisieren: {e}")
               else:
                 st.error("Keine Datenbankverbindung.")
-          st.write("---")
       else:
         st.warning(
-            f"⚠️ Kein Artikel mit dem Barcode '{search_query}' in der"
+            f"⚠️ Kein Artikel mit dem Barcode '{scanned_code}' in der"
             " Datenbank gefunden."
         )
 
