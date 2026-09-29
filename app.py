@@ -1,6 +1,7 @@
 import urllib.parse
 import pandas as pd
 import streamlit as st
+from streamlit_zxing import st_zxing
 from supabase import create_client
 
 # Настройка страницы
@@ -22,7 +23,7 @@ except Exception as e:
   pass
 
 
-# Функция для загрузки данных из базы с учетом правильных колонок
+# Функция для загрузки данных из базы
 def load_data():
   cols = [
       "id",
@@ -57,6 +58,7 @@ action = st.sidebar.radio(
         "📊 Bestände anzeigen",
         "➕ Artikel hinzufügen",
         "📉 Artikel reduzieren (Verkauf)",
+        "📷 Barcode scannen",
         "📁 Katalog aus Datei hochladen",
         "🖨 QR-Code für Kollegen",
     ],
@@ -69,12 +71,15 @@ if action == "📊 Bestände anzeigen":
     st.info("Das Lager ist leer oder keine Verbindung zur Datenbank möglich.")
   else:
     search_query = st.text_input(
-        "🔍 Artikel nach Name suchen (Suche eingeben):"
+        "🔍 Artikel nach Name oder Barcode suchen:"
     )
     filtered_df = df
     if search_query:
       filtered_df = df[
           df["name"].str.contains(search_query, case=False, na=False)
+          | df["barcode"].astype(str).str.contains(
+              search_query, case=False, na=False
+          )
       ]
 
     st.dataframe(filtered_df, use_container_width=True)
@@ -106,7 +111,6 @@ elif action == "➕ Artikel hinzufügen":
       elif supabase is None:
         st.error("Keine Verbindung zur Datenbank. Speichern nicht möglich.")
       else:
-        # Проверка на дубликаты
         is_duplicate = False
         duplicate_reason = ""
 
@@ -183,15 +187,30 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
         else:
           st.error("Keine Verbindung zur Datenbank.")
 
-# 4. KATALOG AUS DATEI HOCHLADEN
-elif action == "📁 Katalog aus Datei hochladen":
-  st.header("📂 Massen-Upload des Katalogs")
+# 4. BARCODE SCANNEN
+elif action == "📷 Barcode scannen":
+  st.header("📷 Barcode mit der Handykamera scannen")
   st.write(
-      "Laden Sie eine Excel- (.xlsx) oder CSV-Datei hoch. Die Spalten sollten"
-      " den Namen in der Datenbank entsprechen (`article`, `name`, `brand`,"
-      " `quantity`, `location`, `preis`, `sap`, `barcode`)."
+      "Richten Sie die Kamera Ihres Smartphones auf den Barcode des Produkts."
   )
 
+  scanned_barcode = st_zxing()
+
+  if scanned_barcode:
+    st.success(f"Erannter Barcode: **{scanned_barcode}**")
+    if not df.empty and "barcode" in df.columns:
+      matched_item = df[df["barcode"].astype(str) == str(scanned_barcode)]
+      if not matched_item.empty:
+        st.write("Gefundener Artikel in der Datenbank:")
+        st.dataframe(matched_item, use_container_width=True)
+      else:
+        st.warning(
+            "Kein Artikel mit diesem Barcode in der Datenbank gefunden."
+        )
+
+# 5. KATALOG AUS DATEI HOCHLADEN
+elif action == "📁 Katalog aus Datei hochladen":
+  st.header("📂 Massen-Upload des Katalogs")
   uploaded_file = st.file_uploader(
       "Katalogdatei auswählen", type=["xlsx", "csv"]
   )
@@ -222,7 +241,7 @@ elif action == "📁 Katalog aus Datei hochladen":
     except Exception as e:
       st.error(f"Fehler beim Lesen der Datei: {e}")
 
-# 5. QR-CODE FÜR KOLLEGEN
+# 6. QR-CODE FÜR KOLLEGEN
 elif action == "🖨 QR-Code für Kollegen":
   st.header("🖨 QR-Code für den schnellen Zugriff vom Smartphone")
   st.write(
@@ -231,7 +250,6 @@ elif action == "🖨 QR-Code für Kollegen":
   )
 
   app_url = "https://mtcbfvpjnxlkvvtuknyv.streamlit.app"
-
   encoded_url = urllib.parse.quote(app_url)
   qr_image_url = (
       f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={encoded_url}"
