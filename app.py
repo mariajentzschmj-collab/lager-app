@@ -169,68 +169,75 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
         else:
           st.error("Keine Verbindung zur Datenbank.")
 
-# 4. LIVE-KAMERA-SCANNER
+# 4. LIVE-KAMERA-SCANNER (Прямой ввод и поиск)
 elif action == "📷 Live-Kamera-Scanner":
   st.header("📷 Live-Barcode-Scanner für Smartphones")
   st.write(
-      "Richten Sie die Kamera auf den Barcode. Der Code wird automatisch"
-      " erkannt und geladen:"
+      "Richten Sie die Kamera auf den Barcode. Kopieren Sie den erkannten"
+      " Code und fügen Sie ihn unten ein:"
   )
 
-  scanned_code = st.query_params.get("barcode", "")
+  scanner_html = """
+    <div style="width: 100%; max-width: 450px; margin: auto; text-align: center;">
+        <div id="reader" style="width: 100%;"></div>
+        <div style="margin-top: 15px; font-size: 18px; font-weight: bold; color: #155724; background: #d4edda; padding: 10px; border-radius: 8px;" id="result">Kamera aktiv – bitte Barcode scannen...</div>
+    </div>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script>
+        function playBeep() {
+            try {
+                let ctx = new (window.AudioContext || window.webkitAudioContext)();
+                let osc = ctx.createOscillator();
+                let gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.type = 'sine';
+                osc.frequency.value = 880; 
+                gain.gain.setValueAtTime(0.3, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.2);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.2);
+            } catch(e) {}
+        }
 
-  if not scanned_code:
-    scanner_html = """
-        <div style="width: 100%; max-width: 450px; margin: auto; text-align: center;">
-            <div id="reader" style="width: 100%;"></div>
-            <div style="margin-top: 15px; font-size: 18px; font-weight: bold; color: #155724; background: #d4edda; padding: 10px; border-radius: 8px;" id="result">Kamera sucht Barcode...</div>
-        </div>
-        <script src="https://unpkg.com/html5-qrcode"></script>
-        <script>
-            function playBeep() {
-                try {
-                    let ctx = new (window.AudioContext || window.webkitAudioContext)();
-                    let osc = ctx.createOscillator();
-                    let gain = ctx.createGain();
-                    osc.connect(gain);
-                    gain.connect(ctx.destination);
-                    osc.type = 'sine';
-                    osc.frequency.value = 880; 
-                    gain.gain.setValueAtTime(0.3, ctx.currentTime);
-                    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.2);
-                    osc.start();
-                    osc.stop(ctx.currentTime + 0.2);
-                } catch(e) {}
-            }
+        function onScanSuccess(decodedText, decodedResult) {
+            playBeep();
+            document.getElementById('result').innerText = "Erkannt: " + decodedText;
+            // Копируем в буфер обмена телефона автоматически
+            navigator.clipboard.writeText(decodedText);
+        }
 
-            function onScanSuccess(decodedText, decodedResult) {
-                playBeep();
-                document.getElementById('result').innerText = "Erkannt: " + decodedText;
-                setTimeout(function() {
-                    parent.window.location.search = 'barcode=' + encodeURIComponent(decodedText);
-                }, 300);
-            }
+        let html5QrcodeScanner = new Html5QrcodeScanner(
+            "reader", { fps: 10, qrbox: { width: 250, height: 100 } }, false);
+        html5QrcodeScanner.render(onScanSuccess);
+    </script>
+    """
+  components.html(scanner_html, height=430)
 
-            let html5QrcodeScanner = new Html5QrcodeScanner(
-                "reader", { fps: 10, qrbox: { width: 250, height: 100 } }, false);
-            html5QrcodeScanner.render(onScanSuccess);
-        </script>
-        """
-    components.html(scanner_html, height=450)
-  else:
-    st.success(f"✅ Ercannter Barcode: **{scanned_code}**")
-    if st.button("🔄 Anderen Barcode scannen"):
-      st.query_params.clear()
-      st.rerun()
+  st.write("---")
 
-    if not df.empty:
-      q = str(scanned_code).strip().lower()
+  # Поле поиска, куда можно вставить отсканированный код (или он копируется в буфер)
+  with st.form("scan_search_form"):
+    scanned_input = st.text_input(
+        "Gescannter Barcode (hier einfügen oder tippen):",
+        placeholder="Nummer hier einfügen...",
+    )
+    search_btn = st.form_submit_button("In Datenbank suchen")
+
+  if search_btn and scanned_input:
+    if df.empty:
+      st.warning("Keine Daten in der Tabelle geladen.")
+    else:
+      q = str(scanned_input).strip().lower()
       matched_rows = df[
           df["barcode"].astype(str).str.lower().str.contains(q, na=False)
           | df["article"].astype(str).str.lower().str.contains(q, na=False)
+          | df["name"].astype(str).str.lower().str.contains(q, na=False)
       ]
 
       if not matched_rows.empty:
+        st.success(f"Gefunden: {len(matched_rows)} Artikel")
+
         for idx, item in matched_rows.iterrows():
           item_name = item["name"]
           orig_qty = int(item["quantity"])
@@ -273,15 +280,15 @@ elif action == "📷 Live-Kamera-Scanner":
                       f"Erfolgreich aktualisiert! Neuer Bestand: **{new_qty}"
                       " Stk.**"
                   )
-                  st.query_params.clear()
                   st.rerun()
                 except Exception as e:
                   st.error(f"Fehler beim Aktualisieren: {e}")
               else:
                 st.error("Keine Datenbankverbindung.")
+          st.write("---")
       else:
         st.warning(
-            f"⚠️ Kein Artikel mit dem Barcode '{scanned_code}' in der"
+            f"⚠️ Kein Artikel mit dem Barcode '{scanned_input}' in der"
             " Datenbank gefunden."
         )
 
