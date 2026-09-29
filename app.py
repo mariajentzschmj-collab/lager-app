@@ -69,7 +69,7 @@ action = st.sidebar.radio(
 if action == "📊 Bestände anzeigen":
   st.header("📋 Aktuelles Sortiment")
   if df.empty:
-    st.info("Das Lager ist leer или keine Verbindung zur Datenbank möglich.")
+    st.info("Das Lager ist leer oder keine Verbindung zur Datenbank möglich.")
   else:
     search_query = st.text_input(
         "🔍 Artikel nach Name, Artikelnummer oder Barcode suchen:"
@@ -123,8 +123,10 @@ elif action == "➕ Artikel hinzufügen":
               "sap": str(new_sap),
               "barcode": str(new_barcode),
           }
-          supabase.table("inventory").insert(data).execute()
-          st.success(f"Artikel '{new_name}' erfolgreich hinzugefügt!")
+          supabase.table("inventory").upsert(
+              data, on_conflict="article"
+          ).execute()
+          st.success(f"Artikel '{new_name}' erfolgreich gespeichert!")
           st.rerun()
         except Exception as e:
           st.error(f"Fehler beim Speichern: {e}")
@@ -301,9 +303,9 @@ elif action == "📷 Live-Kamera-Scanner":
             " Datenbank gefunden."
         )
 
-# 5. KATALOG AUS DATEI HOCHLADEN
+# 5. KATALOG AUS DATEI HOCHLADEN (С защитой от дубликатов)
 elif action == "📁 Katalog aus Datei hochladen":
-  st.header("📂 Massen-Upload des Katalogs")
+  st.header("📂 Massen-Upload des Katalogs (mit Dubletten-Schutz)")
   uploaded_file = st.file_uploader(
       "Katalogdatei auswählen", type=["xlsx", "csv"]
   )
@@ -317,6 +319,7 @@ elif action == "📁 Katalog aus Datei hochladen":
       else:
         upload_df = pd.read_csv(uploaded_file)
 
+      # Автоматическое переименование колонок под структуру Supabase
       column_mapping = {
           "Produkt-ID": "article",
           "SAP-Nummer": "sap",
@@ -336,20 +339,34 @@ elif action == "📁 Katalog aus Datei hochladen":
             "preis",
         ] + list(upload_df.columns[4:])
 
+      # Устранение NaN для совместимости с JSON
       upload_df = upload_df.replace({np.nan: None})
 
-      st.write("Vorschau (zu importierende Daten):")
+      # Удаление дубликатов внутри самого файла по артикулу
+      if "article" in upload_df.columns:
+        upload_df = upload_df.drop_duplicates(subset=["article"], keep="last")
+
+      st.write("Vorschau (bereinigte Daten ohne Duplikate):")
       st.dataframe(upload_df.head())
 
-      if st.button("Alles in Supabase-Datenbank hochladen"):
+      if st.button("Katalog in Supabase aktualisieren (Upsert)"):
         if supabase is not None:
           try:
             records = upload_df.to_dict(orient="records")
-            supabase.table("inventory").insert(records).execute()
-            st.success("Erfolgreich importiert!")
+            # Использование upsert по колонке article для предотвращения дубликатов
+            supabase.table("inventory").upsert(
+                records, on_conflict="article"
+            ).execute()
+            st.success(
+                "Katalog erfolgreich hochgeladen! Doppelte Einträge wurden"
+                " vermieden."
+            )
             st.rerun()
           except Exception as e:
-            st.error(f"Fehler beim Hochladen: {e}")
+            st.error(
+                f"Fehler beim Hochladen: {e}. (Tipp: Stellen Sie sicher, dass"
+                " 'article' in Supabase als Unique markiert ist)"
+            )
         else:
           st.error("Keine Verbindung zur Datenbank.")
     except Exception as e:
