@@ -1,3 +1,4 @@
+import urllib.parse
 import pandas as pd
 import streamlit as st
 from supabase import create_client
@@ -57,6 +58,7 @@ action = st.sidebar.radio(
         "➕ Artikel hinzufügen",
         "📉 Artikel reduzieren (Verkauf)",
         "📁 Katalog aus Datei hochladen",
+        "🖨 QR-код для коллег",
     ],
 )
 
@@ -104,7 +106,7 @@ elif action == "➕ Artikel hinzufügen":
       elif supabase is None:
         st.error("Keine Verbindung zur Datenbank. Speichern nicht möglich.")
       else:
-        # Проверка на дубликаты по артикулу или штрихкоду (если они заполнены)
+        # Проверка на дубликаты
         is_duplicate = False
         duplicate_reason = ""
 
@@ -219,3 +221,25 @@ elif action == "📁 Katalog aus Datei hochladen":
           st.error("Keine Verbindung zur Datenbank.")
     except Exception as e:
       st.error(f"Fehler beim Lesen der Datei: {e}")
+
+# 5. QR-КОД ДЛЯ КОЛЛЕГ
+elif action == "🖨 QR-код для коллег":
+  st.header("🖨 QR-код для быстрого доступа с телефона")
+  st.write(
+      "Коллеги могут отвести камеру телефона на этот код, чтобы сразу открыть"
+      " приложение склада на 5-м этаже."
+  )
+
+  # Ссылка на ваше приложение (автоматически подставит вашу текущую или можно указать явно)
+  app_url = "https://mtcbfvpjnxlkvvtuknyv.streamlit.app"  # или ваша ссылка из браузера
+
+  encoded_url = urllib.parse.quote(app_url)
+  qr_image_url = (
+      f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={encoded_url}"
+  )
+
+  st.image(qr_image_url, width=300)
+  st.info(
+      "💡 Вы можете нажать на картинку правой кнопкой мыши, выбрать «Сохранить"
+      " изображение как...» и распечатать его для рабочей зоны."
+  )
