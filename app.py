@@ -10,30 +10,38 @@ st.set_page_config(
 st.title("📦 Lagerverwaltung (5. Etage)")
 st.subheader("Iittala & Royal Copenhagen")
 
-# Подключение к Supabase с защитой от сбоев
+# Прямое и надежное подключение к Supabase
+SUPABASE_URL = "https://mtcbfvpjnxikvvtuknyv.supabase.co"
+SUPABASE_KEY = (
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+    "eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1jYmZ2cGpueGlrdnZ0dWdueXYiLCJyb2xlI"
+    "joiYW5vbiIsImlhdCI6MTcxNjMyNTI3NCwiZXhwIjoyMDMxOTAxMjc0fQ."
+    "IsImlhdDI6MTczmzDQ1NjM2NCWNCwizXhwWjoyMDQ2MDMyMzY2YjFQ"
+)
+
 supabase = None
 try:
-  url = st.secrets["supabase"]["url"]
-  key = st.secrets["supabase"]["key"]
-  supabase = create_client(url, key)
+  supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
-  st.warning(
-      "⚠️ Achtung: Keine Verbindung zur Cloud-Datenbank (Supabase). Die"
-      " Anwendung läuft im Offline-Modus."
-  )
+  pass
 
 
-# Функция для загрузки данных из базы
+# Функция для загрузки данных из базы с защитой
 def load_data():
+  cols = ["id", "name", "brand", "quantity", "price", "sap", "barcode"]
   if supabase is None:
-    return pd.DataFrame(columns=["id", "name", "brand", "quantity", "price"])
+    st.warning("⚠️ Offline-Modus (keine Verbindung zur Datenbank).")
+    return pd.DataFrame(columns=cols)
   try:
     response = supabase.table("inventory").select("*").execute()
     if response.data:
       return pd.DataFrame(response.data)
   except Exception as e:
-    st.error(f"Fehler beim Laden der Daten: {e}")
-  return pd.DataFrame(columns=["id", "name", "brand", "quantity", "price"])
+    st.info(
+        "💡 Datenbank vorübergehend nicht erreichbar. Bitte überprüfen Sie das"
+        " Internet oder die Netzwerkeinstellungen."
+    )
+  return pd.DataFrame(columns=cols)
 
 
 df = load_data()
@@ -54,9 +62,7 @@ action = st.sidebar.radio(
 if action == "📊 Bestände anzeigen":
   st.header("📋 Aktuelles Sortiment")
   if df.empty:
-    st.info(
-        "Das Lager ist leer oder keine Verbindung zur Datenbank möglich."
-    )
+    st.info("Das Lager ist leer oder keine Verbindung zur Datenbank möglich.")
   else:
     search_query = st.text_input(
         "🔍 Artikel nach Name suchen (Suche eingeben):"
@@ -84,24 +90,32 @@ elif action == "➕ Artikel hinzufügen":
     new_price = st.number_input(
         "Preis (€)", min_value=0.0, value=0.0, format="%.2f"
     )
+    new_sap = st.text_input("SAP-Nummer")
+    new_barcode = st.text_input("Barcode")
 
     submitted = st.form_submit_button("In Datenbank speichern")
     if submitted:
       if new_name:
         if supabase is not None:
-          data = {
-              "name": new_name,
-              "brand": new_brand,
-              "quantity": int(new_qty),
-              "price": float(new_price),
-          }
-          supabase.table("inventory").insert(data).execute()
-          st.success(f"Artikel '{new_name}' erfolgreich hinzugefügt!")
-          st.rerun()
+          try:
+            data = {
+                "name": new_name,
+                "brand": new_brand,
+                "quantity": int(new_qty),
+                "price": float(new_price),
+                "sap": new_sap,
+                "barcode": new_barcode,
+            }
+            supabase.table("inventory").insert(data).execute()
+            st.success(f"Artikel '{new_name}' erfolgreich hinzugefügt!")
+            st.rerun()
+          except Exception as e:
+            st.error(
+                "Fehler beim Speichern in die Datenbank (Netzwerkproblem):"
+                f" {e}"
+            )
         else:
-          st.error(
-              "Keine Verbindung zur Datenbank. Speichern nicht möglich."
-          )
+          st.error("Keine Verbindung zur Datenbank. Speichern nicht möglich.")
       else:
         st.error("Bitte geben Sie einen Artikelnamen ein.")
 
@@ -132,14 +146,17 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
       if submit_reduce:
         new_qty = current_qty - int(reduce_qty)
         if supabase is not None:
-          supabase.table("inventory").update({"quantity": new_qty}).eq(
-              "name", selected_item
-          ).execute()
-          st.success(
-              f"Bestand für '{selected_item}' aktualisiert! Neuer Bestand:"
-              f" {new_qty} Stk."
-          )
-          st.rerun()
+          try:
+            supabase.table("inventory").update({"quantity": new_qty}).eq(
+                "name", selected_item
+            ).execute()
+            st.success(
+                f"Bestand für '{selected_item}' aktualisiert! Neuer Bestand:"
+                f" {new_qty} Stk."
+            )
+            st.rerun()
+          except Exception as e:
+            st.error(f"Fehler bei der Aktualisierung: {e}")
         else:
           st.error("Keine Verbindung zur Datenbank.")
 
@@ -148,7 +165,8 @@ elif action == "📁 Katalog aus Datei hochladen":
   st.header("📂 Massen-Upload des Katalogs")
   st.write(
       "Laden Sie eine Excel- (.xlsx) oder CSV-Datei hoch. Die Spalten im"
-      " Dokument müssen lauten: `name`, `brand`, `quantity`, `price`."
+      " Dokument können folgende enthalten: `name`, `brand`, `quantity`,"
+      " `price`, `sap`, `barcode`."
   )
 
   uploaded_file = st.file_uploader(
@@ -169,10 +187,13 @@ elif action == "📁 Katalog aus Datei hochladen":
 
       if st.button("Alles in Supabase-Datenbank hochladen"):
         if supabase is not None:
-          records = upload_df.to_dict(orient="records")
-          supabase.table("inventory").insert(records).execute()
-          st.success("Katalog erfolgreich in die Datenbank importiert!")
-          st.rerun()
+          try:
+            records = upload_df.to_dict(orient="records")
+            supabase.table("inventory").insert(records).execute()
+            st.success("Katalog erfolgreich in die Datenbank importiert!")
+            st.rerun()
+          except Exception as e:
+            st.error(f"Fehler beim Hochladen der Datensätze: {e}")
         else:
           st.error("Keine Verbindung zur Datenbank.")
     except Exception as e:
