@@ -57,7 +57,7 @@ action = st.sidebar.radio(
         "📊 Bestände anzeigen",
         "➕ Artikel hinzufügen",
         "📉 Artikel reduzieren (Verkauf)",
-        "Barcode & Bestand anpassen",
+        "📷 Kamera-Scanner & Bestand",
         "📁 Katalog aus Datei hochladen",
         "🖨 QR-Code für Kollegen",
     ],
@@ -70,15 +70,15 @@ if action == "📊 Bestände anzeigen":
     st.info("Das Lager ist leer oder keine Verbindung zur Datenbank möglich.")
   else:
     search_query = st.text_input(
-        "🔍 Artikel nach Name oder Barcode suchen:"
+        "🔍 Artikel nach Name, Artikelnummer oder Barcode suchen:"
     )
     filtered_df = df
     if search_query:
+      q = search_query.strip().lower()
       filtered_df = df[
-          df["name"].str.contains(search_query, case=False, na=False)
-          | df["barcode"].astype(str).str.contains(
-              search_query, case=False, na=False
-          )
+          df["name"].astype(str).str.lower().str.contains(q, na=False)
+          | df["barcode"].astype(str).str.lower().str.contains(q, na=False)
+          | df["article"].astype(str).str.lower().str.contains(q, na=False)
       ]
 
     st.dataframe(filtered_df, use_container_width=True)
@@ -168,72 +168,96 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
         else:
           st.error("Keine Verbindung zur Datenbank.")
 
-# 4. BARCODE & BESTANDSÄNDERUNG
-elif action == "Barcode & Bestand anpassen":
-  st.header("📷 Barcode eingeben oder scannen")
-  st.write("Geben Sie den Barcode ein oder scannen Sie ihn direkt am Artikel:")
+# 4. KAMERA-SCANNER & BESTAND (Встроенная стабильная камера + поиск)
+elif action == "📷 Kamera-Scanner & Bestand":
+  st.header("📷 Barcode mit der Handykamera scannen oder eingeben")
+  st.write(
+      "Nutzen Sie die Kamera für ein Foto des Barcodes oder tippen Sie die"
+      " Nummer ein:"
+  )
 
-  with st.form("barcode_search_form"):
-    scanned_code = st.text_input(
-        "Barcode eingeben:",
-        placeholder="Ziffern des Barcodes hier eingeben...",
+  # Встроенная стабильная камера Streamlit
+  camera_photo = st.camera_input("Kamera starten")
+
+  # Альтернативный ввод цифрами на случай, если штрихкод под рукой
+  manual_code = st.text_input(
+      "Oder Barcode / Artikelnummer manuell eingeben:",
+      placeholder="Nummer eingeben...",
+  )
+
+  search_query = manual_code
+  # Если было сделано фото, подскажем пользователю ввести цифры или использовать поиск
+  if camera_photo is not None:
+    st.info(
+        "📸 Foto aufgenommen! Wenn Ihr Gerät den Barcode anzeigt, geben Sie"
+        " die Ziffern kurz in das Feld oben ein, um den Artikel zu öffnen."
     )
-    search_submitted = st.form_submit_button("Artikel suchen")
 
-  if search_submitted and scanned_code:
-    if not df.empty and "barcode" in df.columns:
-      matched_rows = df[df["barcode"].astype(str) == str(scanned_code)]
+  if search_query:
+    if df.empty:
+      st.warning("Keine Daten in der Tabelle geladen.")
+    else:
+      q = search_query.strip().lower()
+      matched_rows = df[
+          df["barcode"].astype(str).str.lower().str.contains(q, na=False)
+          | df["article"].astype(str).str.lower().str.contains(q, na=False)
+          | df["name"].astype(str).str.lower().str.contains(q, na=False)
+      ]
+
       if not matched_rows.empty:
-        item = matched_rows.iloc[0]
-        item_name = item["name"]
-        orig_qty = int(item["quantity"])
-        item_id = item["id"]
+        st.success(f"Gefunden: {len(matched_rows)} Artikel")
 
-        st.success(
-            f"✅ Gefunden: **{item_name}** | Original-Bestand:"
-            f" **{orig_qty} Stk.**"
-        )
+        for idx, item in matched_rows.iterrows():
+          item_name = item["name"]
+          orig_qty = int(item["quantity"])
+          item_id = item["id"]
+          item_art = item["article"]
+          item_bc = item["barcode"]
 
-        with st.form("quick_update_form"):
-          st.subheader(f"Bestand anpassen für: {item_name}")
-          st.write(f"Aktueller Bestand: **{orig_qty} Stück**")
-
-          change_type = st.radio(
-              "Aktion wählen:",
-              [
-                  "➕ Hinzufügen (Ware zugestellt)",
-                  "➖ Abziehen (Verkauf / Entnahme)",
-              ],
-          )
-          delta_qty = st.number_input(
-              "Anzahl der Stück:", min_value=1, value=1, step=1
+          st.write(
+              f"**{item_name}** | Artikel-Nr: `{item_art}` | Barcode:"
+              f" `{item_bc}` | Original-Bestand: **{orig_qty} Stk.**"
           )
 
-          submitted_quick = st.form_submit_button("Bestand aktualisieren")
-          if submitted_quick:
-            if "Hinzufügen" in change_type:
-              new_qty = orig_qty + int(delta_qty)
-            else:
-              new_qty = max(0, orig_qty - int(delta_qty))
+          form_key = f"update_form_{item_id}"
+          with st.form(form_key):
+            change_type = st.radio(
+                "Aktion:",
+                [
+                    "➕ Hinzufügen (Ware zugestellt)",
+                    "➖ Abziehen (Verkauf / Entnahme)",
+                ],
+                key=f"radio_{item_id}",
+            )
+            delta_qty = st.number_input(
+                "Menge:", min_value=1, value=1, step=1, key=f"num_{item_id}"
+            )
+            submitted_quick = st.form_submit_button("Bestand aktualisieren")
 
-            if supabase is not None:
-              try:
-                supabase.table("inventory").update({"quantity": new_qty}).eq(
-                    "id", item_id
-                ).execute()
-                st.success(
-                    f"Erfolgreich aktualisiert! Neuer Bestand: **{new_qty}"
-                    " Stk.**"
-                )
-                st.rerun()
-              except Exception as e:
-                st.error(f"Fehler beim Aktualisieren: {e}")
-            else:
-              st.error("Keine Datenbankverbindung.")
+            if submitted_quick:
+              if "Hinzufügen" in change_type:
+                new_qty = orig_qty + int(delta_qty)
+              else:
+                new_qty = max(0, orig_qty - int(delta_qty))
+
+              if supabase is not None:
+                try:
+                  supabase.table("inventory").update({"quantity": new_qty}).eq(
+                      "id", item_id
+                  ).execute()
+                  st.success(
+                      f"Erfolgreich aktualisiert! Neuer Bestand: **{new_qty}"
+                      " Stk.**"
+                  )
+                  st.rerun()
+                except Exception as e:
+                  st.error(f"Fehler beim Aktualisieren: {e}")
+              else:
+                st.error("Keine Datenbankverbindung.")
+          st.write("---")
       else:
         st.warning(
-            f"⚠️ Kein Artikel mit dem Barcode '{scanned_code}' in der"
-            " Datenbank gefunden."
+            f"⚠️ Kein Artikel mit dem Suchbegriff '{search_query}' gefunden."
         )
 
 # 5. KATALOG AUS DATEI HOCHLADEN
