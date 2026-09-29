@@ -58,7 +58,7 @@ action = st.sidebar.radio(
         "➕ Artikel hinzufügen",
         "📉 Artikel reduzieren (Verkauf)",
         "📁 Katalog aus Datei hochladen",
-        "🖨 QR-код для коллег",
+        "🖨 QR-Code für Kollegen",
     ],
 )
 
@@ -222,16 +222,15 @@ elif action == "📁 Katalog aus Datei hochladen":
     except Exception as e:
       st.error(f"Fehler beim Lesen der Datei: {e}")
 
-# 5. QR-КОД ДЛЯ КОЛЛЕГ
-elif action == "🖨 QR-код для коллег":
-  st.header("🖨 QR-код для быстрого доступа с телефона")
+# 5. QR-CODE FÜR KOLLEGEN
+elif action == "🖨 QR-Code für Kollegen":
+  st.header("🖨 QR-Code für den schnellen Zugriff vom Smartphone")
   st.write(
-      "Коллеги могут отвести камеру телефона на этот код, чтобы сразу открыть"
-      " приложение склада на 5-м этаже."
+      "Kollegen können die Handykamera auf diesen Code richten, um das"
+      " Lager-App direkt auf der 5. Etage zu öffnen."
   )
 
-  # Ссылка на ваше приложение (автоматически подставит вашу текущую или можно указать явно)
-  app_url = "https://mtcbfvpjnxlkvvtuknyv.streamlit.app"  # или ваша ссылка из браузера
+  app_url = "https://mtcbfvpjnxlkvvtuknyv.streamlit.app"
 
   encoded_url = urllib.parse.quote(app_url)
   qr_image_url = (
@@ -240,6 +239,6 @@ elif action == "🖨 QR-код для коллег":
 
   st.image(qr_image_url, width=300)
   st.info(
-      "💡 Вы можете нажать на картинку правой кнопкой мыши, выбрать «Сохранить"
-      " изображение как...» и распечатать его для рабочей зоны."
+      "💡 Sie können mit der rechten Maustaste auf das Bild klicken, „Bild"
+      " speichern unter...“ wählen und es für den Arbeitsbereich ausdrucken."
   )
