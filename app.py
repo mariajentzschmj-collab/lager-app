@@ -58,7 +58,7 @@ action = st.sidebar.radio(
         "📊 Bestände anzeigen",
         "➕ Artikel hinzufügen",
         "📉 Artikel reduzieren (Verkauf)",
-        "📷 Kamera-Scanner",
+        "📷 Kamera-Scanner & Bestandsänderung",
         "📁 Katalog aus Datei hochladen",
         "🖨 QR-Code für Kollegen",
     ],
@@ -187,18 +187,18 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
         else:
           st.error("Keine Verbindung zur Datenbank.")
 
-# 4. KAMERA-SCANNER MIT TON
-elif action == "📷 Kamera-Scanner":
-  st.header("📷 Barcode mit der Handykamera scannen")
+# 4. KAMERA-SCANNER & BESTANDSÄNDERUNG
+elif action == "📷 Kamera-Scanner & Bestandsänderung":
+  st.header("📷 Barcode scannen & Bestand anpassen")
   st.write(
-      "Richten Sie die Kamera auf den Strichcode. Bei erfolgreichem Scan"
-      " ertönt ein Signalton und der Code wird angezeigt:"
+      "Richten Sie die Kamera auf den Barcode. Nach dem Signalton wird der"
+      " Artikel automatisch geöffnet."
   )
 
   scanner_html = """
     <div style="width: 100%; max-width: 400px; margin: auto; text-align: center;">
         <div id="reader"></div>
-        <div style="margin-top: 15px; font-size: 22px; font-weight: bold; color: #2c3e50; background: #e8f4f8; padding: 10px; border-radius: 8px;" id="result">Warte auf Scan...</div>
+        <div style="margin-top: 15px; font-size: 18px; font-weight: bold; color: #2c3e50; background: #e8f4f8; padding: 10px; border-radius: 8px;" id="result">Warte auf Scan...</div>
     </div>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script>
@@ -220,7 +220,13 @@ elif action == "📷 Kamera-Scanner":
 
         function onScanSuccess(decodedText, decodedResult) {
             playBeep();
-            document.getElementById('result').innerText = "Gescannter Barcode: " + decodedText;
+            document.getElementById('result').innerText = decodedText;
+            // Передаем значение в Streamlit через скрытое поле ввода
+            const inputField = parent.document.querySelector('input[aria-label="Barcode scannen oder eingeben:"]');
+            if (inputField) {
+                inputField.value = decodedText;
+                inputField.dispatchEvent(new Event('input', { bubbles: true }));
+            }
         }
 
         let html5QrcodeScanner = new Html5QrcodeScanner(
@@ -228,20 +234,70 @@ elif action == "📷 Kamera-Scanner":
         html5QrcodeScanner.render(onScanSuccess);
     </script>
     """
-  components.html(scanner_html, height=450)
+  components.html(scanner_html, height=430)
 
   st.write("---")
-  st.write("Gescannter Barcode hier eingeben oder einfügen:")
-  scanned_code = st.text_input("Barcode eingeben:")
+  scanned_code = st.text_input(
+      "Barcode scannen oder eingeben:",
+      key="scanned_input",
+      placeholder="Hier erscheint der Code automatisch...",
+  )
+
   if scanned_code:
     if not df.empty and "barcode" in df.columns:
-      matched_item = df[df["barcode"].astype(str) == str(scanned_code)]
-      if not matched_item.empty:
-        st.success("Gefundener Artikel:")
-        st.dataframe(matched_item, use_container_width=True)
+      matched_rows = df[df["barcode"].astype(str) == str(scanned_code)]
+      if not matched_rows.empty:
+        item = matched_rows.iloc[0]
+        item_name = item["name"]
+        orig_qty = int(item["quantity"])
+        item_id = item["id"]
+
+        st.success(
+            f"✅ Gefunden: **{item_name}** | Original-Bestand:"
+            f" **{orig_qty} Stk.**"
+        )
+
+        with st.form("quick_update_form"):
+          st.subheader(f"Bestand anpassen für: {item_name}")
+          st.write(f"Ursprüngliche Menge im Lager: **{orig_qty} Stück**")
+
+          # Выбор действия: Добавить или Убавить
+          change_type = st.radio(
+              "Aktion wählen:",
+              [
+                  "➕ Hinzufügen (Ware zugestellt)",
+                  "➖ Abziehen (Verkauf / Entnahme)",
+              ],
+          )
+          delta_qty = st.number_input(
+              "Anzahl der Stück:", min_value=1, value=1, step=1
+          )
+
+          submitted_quick = st.form_submit_button("Bestand aktualisieren")
+          if submitted_quick:
+            if "Hinzufügen" in change_type:
+              new_qty = orig_qty + int(delta_qty)
+            else:
+              new_qty = max(0, orig_qty - int(delta_qty))
+
+            if supabase is not None:
+              try:
+                supabase.table("inventory").update({"quantity": new_qty}).eq(
+                    "id", item_id
+                ).execute()
+                st.success(
+                    f"Erfolgreich aktualisiert! Neuer Bestand: **{new_qty}"
+                    " Stk.**"
+                )
+                st.rerun()
+              except Exception as e:
+                st.error(f"Fehler beim Aktualisieren: {e}")
+            else:
+              st.error("Keine Datenbankverbindung.")
       else:
         st.warning(
-            "Kein Artikel mit diesem Barcode in der Datenbank gefunden."
+            f"⚠️ Kein Artikel mit dem Barcode '{scanned_code}' in der"
+            " Datenbank gefunden."
         )
 
 # 5. KATALOG AUS DATEI HOCHLADEN
