@@ -187,15 +187,14 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
         else:
           st.error("Keine Verbindung zur Datenbank.")
 
-# 4. KAMERA-SCANNER (Браузерный сканер штрихкодов)
+# 4. KAMERA-SCANNER MIT TON
 elif action == "📷 Kamera-Scanner":
   st.header("📷 Barcode mit der Handykamera scannen")
   st.write(
-      "Richten Sie die Kamera auf den Strichcode. Der Code wird unten groß"
-      " angezeigt:"
+      "Richten Sie die Kamera auf den Strichcode. Bei erfolgreichem Scan"
+      " ertönt ein Signalton und der Code wird angezeigt:"
   )
 
-  # Встраиваем легкий и надежный JS-сканер через HTML-компонент
   scanner_html = """
     <div style="width: 100%; max-width: 400px; margin: auto; text-align: center;">
         <div id="reader"></div>
@@ -203,9 +202,27 @@ elif action == "📷 Kamera-Scanner":
     </div>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script>
+        function playBeep() {
+            try {
+                let ctx = new (window.AudioContext || window.webkitAudioContext)();
+                let osc = ctx.createOscillator();
+                let gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.type = 'sine';
+                osc.frequency.value = 880; 
+                gain.gain.setValueAtTime(0.3, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.2);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.2);
+            } catch(e) { console.log(e); }
+        }
+
         function onScanSuccess(decodedText, decodedResult) {
+            playBeep();
             document.getElementById('result').innerText = "Gescannter Barcode: " + decodedText;
         }
+
         let html5QrcodeScanner = new Html5QrcodeScanner(
             "reader", { fps: 10, qrbox: { width: 250, height: 100 } }, false);
         html5QrcodeScanner.render(onScanSuccess);
@@ -214,8 +231,8 @@ elif action == "📷 Kamera-Scanner":
   components.html(scanner_html, height=450)
 
   st.write("---")
-  st.write("Введите или вставьте скопированный выше код для поиска:")
-  scanned_code = st.text_input("Gescannter Barcode eingeben:")
+  st.write("Gescannter Barcode hier eingeben oder einfügen:")
+  scanned_code = st.text_input("Barcode eingeben:")
   if scanned_code:
     if not df.empty and "barcode" in df.columns:
       matched_item = df[df["barcode"].astype(str) == str(scanned_code)]
