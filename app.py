@@ -291,7 +291,7 @@ elif action == "📷 Live-Kamera-Scanner":
             " Datenbank gefunden."
         )
 
-# 5. KATALOG AUS DATEI HOCHLADEN (С исправлением ошибки NaN)
+# 5. KATALOG AUS DATEI HOCHLADEN
 elif action == "📁 Katalog aus Datei hochladen":
   st.header("📂 Massen-Upload des Katalogs")
   uploaded_file = st.file_uploader(
@@ -307,10 +307,30 @@ elif action == "📁 Katalog aus Datei hochladen":
       else:
         upload_df = pd.read_csv(uploaded_file)
 
-      # Заменяем пустые значения (NaN) на None (чтобы база данных не выдавала ошибку)
+      # Автоматическое переименование колонок под структуру Supabase
+      column_mapping = {
+          "Produkt-ID": "article",
+          "SAP-Nummer": "sap",
+          "Name": "name",
+          "Verkaufspreis (EUR)": "preis",
+      }
+      upload_df = upload_df.rename(columns=column_mapping)
+
+      if (
+          len(upload_df.columns) >= 4
+          and "article" not in upload_df.columns
+      ):
+        upload_df.columns = [
+            "article",
+            "sap",
+            "name",
+            "preis",
+        ] + list(upload_df.columns[4:])
+
+      # Заменяем пустые значения (NaN) на None для совместимости с JSON
       upload_df = upload_df.replace({np.nan: None})
 
-      st.write("Vorschau:")
+      st.write("Vorschau (zu importierende Daten):")
       st.dataframe(upload_df.head())
 
       if st.button("Alles in Supabase-Datenbank hochladen"):
@@ -321,11 +341,11 @@ elif action == "📁 Katalog aus Datei hochladen":
             st.success("Erfolgreich importiert!")
             st.rerun()
           except Exception as e:
-            st.error(f"Fehler: {e}")
+            st.error(f"Fehler beim Hochladen: {e}")
         else:
-          st.error("Keine Verbindung.")
+          st.error("Keine Verbindung zur Datenbank.")
     except Exception as e:
-      st.error(f"Fehler: {e}")
+      st.error(f"Fehler beim Verarbeiten der Datei: {e}")
 
 # 6. QR-CODE FÜR KOLLEGEN
 elif action == "🖨 QR-Code für Kollegen":
