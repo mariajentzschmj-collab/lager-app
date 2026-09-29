@@ -82,7 +82,7 @@ elif action == "➕ Artikel hinzufügen":
   st.header("✨ Neuen Artikel hinzufügen")
 
   with st.form("add_form"):
-    new_article = st.text_input("Artikelnummer / SKU")
+    new_article = st.text_input("Artikelnummer / SKU", value="")
     new_name = st.text_input(
         "Artikelname (z. B. Iittala Ultima Thule / Royal Copenhagen)"
     )
@@ -90,9 +90,7 @@ elif action == "➕ Artikel hinzufügen":
         "Marke", ["Iittala", "Royal Copenhagen", "Arabia", "Georg Jensen"]
     )
     new_qty = st.number_input("Menge im Lager", min_value=0, value=1)
-    new_location = st.text_input(
-        "Lagerort (z. B. Regal 5, Etage 5)", value="Etage 5"
-    )
+    new_location = st.text_input("Lagerort", value="Etage 5 Lager")
     new_preis = st.number_input(
         "Preis (€)", min_value=0.0, value=0.0, format="%.2f"
     )
@@ -101,28 +99,46 @@ elif action == "➕ Artikel hinzufügen":
 
     submitted = st.form_submit_button("In Datenbank speichern")
     if submitted:
-      if new_name:
-        if supabase is not None:
+      if not new_name:
+        st.error("Bitte geben Sie einen Artikelnamen ein.")
+      elif supabase is None:
+        st.error("Keine Verbindung zur Datenbank. Speichern nicht möglich.")
+      else:
+        # Проверка на дубликаты по артикулу или штрихкоду (если они заполнены)
+        is_duplicate = False
+        duplicate_reason = ""
+
+        if not df.empty:
+          if new_article and (df["article"].astype(str) == new_article).any():
+            is_duplicate = True
+            duplicate_reason = (
+                f"Artikelnummer (SKU) '{new_article}' existiert bereits im Lager!"
+            )
+          elif new_barcode and (df["barcode"].astype(str) == new_barcode).any():
+            is_duplicate = True
+            duplicate_reason = (
+                f"Barcode '{new_barcode}' existiert bereits im Lager!"
+            )
+
+        if is_duplicate:
+          st.error(f"⚠️ Achtung, Duplikat erkannt: {duplicate_reason}")
+        else:
           try:
             data = {
-                "article": new_article,
-                "name": new_name,
-                "brand": new_brand,
+                "article": str(new_article),
+                "name": str(new_name),
+                "brand": str(new_brand),
                 "quantity": int(new_qty),
-                "location": new_location,
+                "location": str(new_location),
                 "preis": float(new_preis),
-                "sap": new_sap,
-                "barcode": new_barcode,
+                "sap": str(new_sap),
+                "barcode": str(new_barcode),
             }
             supabase.table("inventory").insert(data).execute()
             st.success(f"Artikel '{new_name}' erfolgreich hinzugefügt!")
             st.rerun()
           except Exception as e:
             st.error(f"Fehler beim Speichern in die Datenbank: {e}")
-        else:
-          st.error("Keine Verbindung zur Datenbank. Speichern nicht möglich.")
-      else:
-        st.error("Bitte geben Sie einen Artikelnamen ein.")
 
 # 3. ARTIKEL REDUZIEREN (VERKAUF)
 elif action == "📉 Artikel reduzieren (Verkauf)":
