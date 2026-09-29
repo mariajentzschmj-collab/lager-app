@@ -69,7 +69,7 @@ action = st.sidebar.radio(
 if action == "📊 Bestände anzeigen":
   st.header("📋 Aktuelles Sortiment")
   if df.empty:
-    st.info("Das Lager ist leer oder keine Verbindung zur Datenbank möglich.")
+    st.info("Das Lager ist leer или keine Verbindung zur Datenbank möglich.")
   else:
     search_query = st.text_input(
         "🔍 Artikel nach Name, Artikelnummer oder Barcode suchen:"
@@ -140,8 +140,13 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
       item_options = df["name"].tolist()
       selected_item = st.selectbox("Artikel auswählen", item_options)
 
-      current_qty = int(
-          df.loc[df["name"] == selected_item, "quantity"].values[0]
+      current_qty_val = df.loc[
+          df["name"] == selected_item, "quantity"
+      ].values[0]
+      current_qty = (
+          int(current_qty_val)
+          if pd.notna(current_qty_val) and str(current_qty_val).isdigit()
+          else 0
       )
       st.write(f"Aktueller Bestand im Lager: **{current_qty} Stk.**")
 
@@ -239,7 +244,12 @@ elif action == "📷 Live-Kamera-Scanner":
 
         for idx, item in matched_rows.iterrows():
           item_name = item["name"]
-          orig_qty = int(item["quantity"])
+          raw_qty = item["quantity"]
+          orig_qty = (
+              int(raw_qty)
+              if pd.notna(raw_qty) and str(raw_qty).isdigit()
+              else 0
+          )
           item_id = item["id"]
           item_art = item["article"]
           item_bc = item["barcode"]
@@ -307,7 +317,6 @@ elif action == "📁 Katalog aus Datei hochladen":
       else:
         upload_df = pd.read_csv(uploaded_file)
 
-      # Автоматическое переименование колонок под структуру Supabase
       column_mapping = {
           "Produkt-ID": "article",
           "SAP-Nummer": "sap",
@@ -327,7 +336,6 @@ elif action == "📁 Katalog aus Datei hochladen":
             "preis",
         ] + list(upload_df.columns[4:])
 
-      # Заменяем пустые значения (NaN) на None для совместимости с JSON
       upload_df = upload_df.replace({np.nan: None})
 
       st.write("Vorschau (zu importierende Daten):")
