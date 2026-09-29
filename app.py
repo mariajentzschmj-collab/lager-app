@@ -1,17 +1,11 @@
 import urllib.parse
 from io import BytesIO
+import cv2
+import numpy as np
 import pandas as pd
 from PIL import Image
 import streamlit as st
 from supabase import create_client
-
-# Попытка подключить библиотеку распознавания штрихкодов
-try:
-  from pyzbar.pyzbar import decode
-
-  HAS_PYZBAR = True
-except ImportError:
-  HAS_PYZBAR = False
 
 # Настройка страницы
 st.set_page_config(
@@ -178,7 +172,7 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
         else:
           st.error("Keine Verbindung zur Datenbank.")
 
-# 4. KAMERA-SCANNER MIT AUTOMATISCHEM LESEN
+# 4. KAMERA-SCANNER MIT OPENCV
 elif action == "📷 Kamera-Scanner & Bestand":
   st.header("📷 Barcode mit der Handykamera scannen")
   st.write(
@@ -191,29 +185,35 @@ elif action == "📷 Kamera-Scanner & Bestand":
   detected_code = ""
 
   if camera_photo is not None:
-    if HAS_PYZBAR:
-      try:
-        image = Image.open(camera_photo)
-        decoded_objects = decode(image)
-        if decoded_objects:
-          detected_code = decoded_objects[0].data.decode("utf-8")
-          st.success(
-              f"🎯 Barcode erfolgreich erkannt: **{detected_code}**"
-          )
-        else:
-          st.warning(
-              "⚠️ Auf dem Foto konnte kein Barcode automatisch gelesen werden."
-              " Bitte halten Sie die Kamera näher an den Strichcode."
-          )
-      except Exception as e:
-        st.error(f"Fehler beim Lesen des Barcodes: {e}")
-    else:
-      st.info(
-          "💡 Bibliothek 'pyzbar' ist nicht installiert. Bitte geben Sie die"
-          " Nummer unten manuell ein:"
+    try:
+      # Превращаем фото из Streamlit в картинку OpenCV
+      bytes_data = camera_photo.getvalue()
+      np_array = np.frombuffer(bytes_data, np.uint8)
+      opencv_image = cv2.imdecode(np_array, cv2.IMREAD_COLOR)
+
+      # Используем встроенный детектор штрихкодов OpenCV
+      detector = cv2.barcode.BarcodeDetector()
+      retval, decoded_info, decoded_type, points = detector.detectAndDecode(
+          opencv_image
       )
 
-  # Поле ввода, куда автоматически подставляется распознанный код (или можно ввести вручную)
+      if retval and decoded_info:
+        # Берем первый распознанный код
+        detected_code = decoded_info[0]
+        st.success(f"🎯 Barcode erfolgreich erkannt: **{detected_code}**")
+      else:
+        st.warning(
+            "⚠️ Auf dem Foto konnte kein Barcode automatisch gelesen werden."
+            " Bitte halten Sie die Kamera näher an den Strichcode oder geben"
+            " Sie die Nummer unten ein."
+        )
+    except Exception as e:
+      st.error(
+          "Hinweis: Barcode-Modul wird geladen. Sie können die Nummer auch"
+          f" manuell eingeben. Fehlerdetails: {e}"
+      )
+
+  # Поле ввода, куда автоматически попадает распознанный код (или можно ввести руками)
   search_query = st.text_input(
       "Erkannter oder eingegebener Barcode / Artikelnummer:",
       value=detected_code,
