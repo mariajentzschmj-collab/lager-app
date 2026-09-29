@@ -10,8 +10,8 @@ st.set_page_config(
 st.title("📦 Lagerverwaltung (5. Etage)")
 st.subheader("Iittala & Royal Copenhagen")
 
-# Прямое и надежное подключение к Supabase
-SUPABASE_URL = "https://mtcbfvpjnxikvvtuknyv.supabase.co"
+# Прямое и надежное подключение с вашим правильным URL
+SUPABASE_URL = "https://mtcbfvpjnxlkvvtuknyv.supabase.co"
 SUPABASE_KEY = (
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
     "eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1jYmZ2cGpueGlrdnZ0dWdueXYiLCJyb2xlI"
@@ -30,7 +30,7 @@ except Exception as e:
 def load_data():
   cols = ["id", "name", "brand", "quantity", "price", "sap", "barcode"]
   if supabase is None:
-    st.warning("⚠️ Offline-Modus (keine Verbindung zur Datenbank).")
+    st.warning("⚠️️ Offline-Modus (keine Verbindung zur Datenbank).")
     return pd.DataFrame(columns=cols)
   try:
     response = supabase.table("inventory").select("*").execute()
