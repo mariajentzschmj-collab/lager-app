@@ -10,7 +10,7 @@ st.set_page_config(
 st.title("📦 Lagerverwaltung (5. Etage)")
 st.subheader("Iittala & Royal Copenhagen")
 
-# Подключение с новым актуальным ключом
+# Подключение к Supabase
 SUPABASE_URL = "https://mtcbfvpjnxlkvvtuknyv.supabase.co"
 SUPABASE_KEY = "sb_publishable_wChGuVU2FeW23S2bqdYqOg_B9-oMoKs"
 
@@ -21,9 +21,19 @@ except Exception as e:
   pass
 
 
-# Функция для загрузки данных из базы с защитой
+# Функция для загрузки данных из базы с учетом правильных колонок
 def load_data():
-  cols = ["id", "name", "brand", "quantity", "price", "sap", "barcode"]
+  cols = [
+      "id",
+      "article",
+      "name",
+      "brand",
+      "quantity",
+      "location",
+      "preis",
+      "sap",
+      "barcode",
+  ]
   if supabase is None:
     st.warning("⚠️ Offline-Modus (keine Verbindung zur Datenbank).")
     return pd.DataFrame(columns=cols)
@@ -32,10 +42,7 @@ def load_data():
     if response.data:
       return pd.DataFrame(response.data)
   except Exception as e:
-    st.info(
-        "💡 Datenbank vorübergehend nicht erreichbar. Bitte überprüfen Sie das"
-        " Internet oder die Netzwerkeinstellungen."
-    )
+    st.info("💡 Datenbank vorübergehend nicht erreichbar.")
   return pd.DataFrame(columns=cols)
 
 
@@ -75,6 +82,7 @@ elif action == "➕ Artikel hinzufügen":
   st.header("✨ Neuen Artikel hinzufügen")
 
   with st.form("add_form"):
+    new_article = st.text_input("Artikelnummer / SKU")
     new_name = st.text_input(
         "Artikelname (z. B. Iittala Ultima Thule / Royal Copenhagen)"
     )
@@ -82,7 +90,10 @@ elif action == "➕ Artikel hinzufügen":
         "Marke", ["Iittala", "Royal Copenhagen", "Arabia", "Georg Jensen"]
     )
     new_qty = st.number_input("Menge im Lager", min_value=0, value=1)
-    new_price = st.number_input(
+    new_location = st.text_input(
+        "Lagerort (z. B. Regal 5, Etage 5)", value="Etage 5"
+    )
+    new_preis = st.number_input(
         "Preis (€)", min_value=0.0, value=0.0, format="%.2f"
     )
     new_sap = st.text_input("SAP-Nummer")
@@ -94,10 +105,12 @@ elif action == "➕ Artikel hinzufügen":
         if supabase is not None:
           try:
             data = {
+                "article": new_article,
                 "name": new_name,
                 "brand": new_brand,
                 "quantity": int(new_qty),
-                "price": float(new_price),
+                "location": new_location,
+                "preis": float(new_preis),
                 "sap": new_sap,
                 "barcode": new_barcode,
             }
@@ -105,10 +118,7 @@ elif action == "➕ Artikel hinzufügen":
             st.success(f"Artikel '{new_name}' erfolgreich hinzugefügt!")
             st.rerun()
           except Exception as e:
-            st.error(
-                "Fehler beim Speichern in die Datenbank (Netzwerkproblem):"
-                f" {e}"
-            )
+            st.error(f"Fehler beim Speichern in die Datenbank: {e}")
         else:
           st.error("Keine Verbindung zur Datenbank. Speichern nicht möglich.")
       else:
@@ -159,9 +169,9 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
 elif action == "📁 Katalog aus Datei hochladen":
   st.header("📂 Massen-Upload des Katalogs")
   st.write(
-      "Laden Sie eine Excel- (.xlsx) oder CSV-Datei hoch. Die Spalten im"
-      " Dokument können folgende enthalten: `name`, `brand`, `quantity`,"
-      " `price`, `sap`, `barcode`."
+      "Laden Sie eine Excel- (.xlsx) oder CSV-Datei hoch. Die Spalten sollten"
+      " den Namen in der Datenbank entsprechen (`article`, `name`, `brand`,"
+      " `quantity`, `location`, `preis`, `sap`, `barcode`)."
   )
 
   uploaded_file = st.file_uploader(
@@ -192,7 +202,4 @@ elif action == "📁 Katalog aus Datei hochladen":
         else:
           st.error("Keine Verbindung zur Datenbank.")
     except Exception as e:
-      st.error(
-          "Fehler beim Lesen der Datei. Überprüfen Sie die Spaltennamen:"
-          f" {e}"
-      )
+      st.error(f"Fehler beim Lesen der Datei: {e}")
