@@ -1,7 +1,17 @@
 import urllib.parse
+from io import BytesIO
 import pandas as pd
+from PIL import Image
 import streamlit as st
 from supabase import create_client
+
+# Попытка подключить библиотеку распознавания штрихкодов
+try:
+  from pyzbar.pyzbar import decode
+
+  HAS_PYZBAR = True
+except ImportError:
+  HAS_PYZBAR = False
 
 # Настройка страницы
 st.set_page_config(
@@ -168,30 +178,47 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
         else:
           st.error("Keine Verbindung zur Datenbank.")
 
-# 4. KAMERA-SCANNER & BESTAND (Встроенная стабильная камера + поиск)
+# 4. KAMERA-SCANNER MIT AUTOMATISCHEM LESEN
 elif action == "📷 Kamera-Scanner & Bestand":
-  st.header("📷 Barcode mit der Handykamera scannen oder eingeben")
+  st.header("📷 Barcode mit der Handykamera scannen")
   st.write(
-      "Nutzen Sie die Kamera für ein Foto des Barcodes oder tippen Sie die"
-      " Nummer ein:"
+      "Machen Sie ein Foto vom Strichcode. Das System liest die Nummer"
+      " automatisch aus:"
   )
 
-  # Встроенная стабильная камера Streamlit
-  camera_photo = st.camera_input("Kamera starten")
+  camera_photo = st.camera_input("Foto vom Barcode aufnehmen")
 
-  # Альтернативный ввод цифрами на случай, если штрихкод под рукой
-  manual_code = st.text_input(
-      "Oder Barcode / Artikelnummer manuell eingeben:",
-      placeholder="Nummer eingeben...",
-  )
+  detected_code = ""
 
-  search_query = manual_code
-  # Если было сделано фото, подскажем пользователю ввести цифры или использовать поиск
   if camera_photo is not None:
-    st.info(
-        "📸 Foto aufgenommen! Wenn Ihr Gerät den Barcode anzeigt, geben Sie"
-        " die Ziffern kurz in das Feld oben ein, um den Artikel zu öffnen."
-    )
+    if HAS_PYZBAR:
+      try:
+        image = Image.open(camera_photo)
+        decoded_objects = decode(image)
+        if decoded_objects:
+          detected_code = decoded_objects[0].data.decode("utf-8")
+          st.success(
+              f"🎯 Barcode erfolgreich erkannt: **{detected_code}**"
+          )
+        else:
+          st.warning(
+              "⚠️ Auf dem Foto konnte kein Barcode automatisch gelesen werden."
+              " Bitte halten Sie die Kamera näher an den Strichcode."
+          )
+      except Exception as e:
+        st.error(f"Fehler beim Lesen des Barcodes: {e}")
+    else:
+      st.info(
+          "💡 Bibliothek 'pyzbar' ist nicht installiert. Bitte geben Sie die"
+          " Nummer unten manuell ein:"
+      )
+
+  # Поле ввода, куда автоматически подставляется распознанный код (или можно ввести вручную)
+  search_query = st.text_input(
+      "Erkannter oder eingegebener Barcode / Artikelnummer:",
+      value=detected_code,
+      placeholder="Hier erscheint die Nummer...",
+  )
 
   if search_query:
     if df.empty:
@@ -205,7 +232,7 @@ elif action == "📷 Kamera-Scanner & Bestand":
       ]
 
       if not matched_rows.empty:
-        st.success(f"Gefunden: {len(matched_rows)} Artikel")
+        st.success(f"Gefunden: {len(matched_rows)} Artikel in der Datenbank")
 
         for idx, item in matched_rows.iterrows():
           item_name = item["name"]
@@ -257,7 +284,8 @@ elif action == "📷 Kamera-Scanner & Bestand":
           st.write("---")
       else:
         st.warning(
-            f"⚠️ Kein Artikel mit dem Suchbegriff '{search_query}' gefunden."
+            f"⚠️ Kein Artikel mit dem Barcode '{search_query}' in der"
+            " Datenbank gefunden."
         )
 
 # 5. KATALOG AUS DATEI HOCHLADEN
