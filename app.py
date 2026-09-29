@@ -1,6 +1,7 @@
 import urllib.parse
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 from supabase import create_client
 
 # Настройка страницы
@@ -57,7 +58,7 @@ action = st.sidebar.radio(
         "📊 Bestände anzeigen",
         "➕ Artikel hinzufügen",
         "📉 Artikel reduzieren (Verkauf)",
-        "📷 Barcode scannen / suchen",
+        "📷 Kamera-Scanner",
         "📁 Katalog aus Datei hochladen",
         "🖨 QR-Code für Kollegen",
     ],
@@ -186,15 +187,35 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
         else:
           st.error("Keine Verbindung zur Datenbank.")
 
-# 4. BARCODE SCANNEN / SUCHEN
-elif action == "📷 Barcode scannen / suchen":
-  st.header("📷 Schnellsuche per Barcode")
+# 4. KAMERA-SCANNER (Браузерный сканер штрихкодов)
+elif action == "📷 Kamera-Scanner":
+  st.header("📷 Barcode mit der Handykamera scannen")
   st.write(
-      "Tippen Sie den Barcode ein oder nutzen Sie die Scan-Funktion Ihrer"
-      " Handytastatur:"
+      "Richten Sie die Kamera auf den Strichcode. Der Code wird unten groß"
+      " angezeigt:"
   )
 
-  scanned_code = st.text_input("Barcode eingeben oder scannen:")
+  # Встраиваем легкий и надежный JS-сканер через HTML-компонент
+  scanner_html = """
+    <div style="width: 100%; max-width: 400px; margin: auto; text-align: center;">
+        <div id="reader"></div>
+        <div style="margin-top: 15px; font-size: 22px; font-weight: bold; color: #2c3e50; background: #e8f4f8; padding: 10px; border-radius: 8px;" id="result">Warte auf Scan...</div>
+    </div>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script>
+        function onScanSuccess(decodedText, decodedResult) {
+            document.getElementById('result').innerText = "Gescannter Barcode: " + decodedText;
+        }
+        let html5QrcodeScanner = new Html5QrcodeScanner(
+            "reader", { fps: 10, qrbox: { width: 250, height: 100 } }, false);
+        html5QrcodeScanner.render(onScanSuccess);
+    </script>
+    """
+  components.html(scanner_html, height=450)
+
+  st.write("---")
+  st.write("Введите или вставьте скопированный выше код для поиска:")
+  scanned_code = st.text_input("Gescannter Barcode eingeben:")
   if scanned_code:
     if not df.empty and "barcode" in df.columns:
       matched_item = df[df["barcode"].astype(str) == str(scanned_code)]
@@ -222,7 +243,7 @@ elif action == "📁 Katalog aus Datei hochladen":
       else:
         upload_df = pd.read_csv(uploaded_file)
 
-      st.write("Vorschau der hochgeladenen Datei:")
+      st.write("Vorschau:")
       st.dataframe(upload_df.head())
 
       if st.button("Alles in Supabase-Datenbank hochladen"):
@@ -230,23 +251,18 @@ elif action == "📁 Katalog aus Datei hochladen":
           try:
             records = upload_df.to_dict(orient="records")
             supabase.table("inventory").insert(records).execute()
-            st.success("Katalog erfolgreich in die Datenbank importiert!")
+            st.success("Erfolgreich importiert!")
             st.rerun()
           except Exception as e:
-            st.error(f"Fehler beim Hochladen der Datensätze: {e}")
+            st.error(f"Fehler: {e}")
         else:
-          st.error("Keine Verbindung zur Datenbank.")
+          st.error("Keine Verbindung.")
     except Exception as e:
-      st.error(f"Fehler beim Lesen der Datei: {e}")
+      st.error(f"Fehler: {e}")
 
 # 6. QR-CODE FÜR KOLLEGEN
 elif action == "🖨 QR-Code für Kollegen":
   st.header("🖨 QR-Code für den schnellen Zugriff vom Smartphone")
-  st.write(
-      "Kollegen können die Handykamera auf diesen Code richten, um das"
-      " Lager-App direkt auf der 5. Etage zu öffnen."
-  )
-
   app_url = "https://mtcbfvpjnxlkvvtuknyv.streamlit.app"
   encoded_url = urllib.parse.quote(app_url)
   qr_image_url = (
@@ -254,7 +270,4 @@ elif action == "🖨 QR-Code für Kollegen":
   )
 
   st.image(qr_image_url, width=300)
-  st.info(
-      "💡 Sie können mit der rechten Maustaste auf das Bild klicken, „Bild"
-      " speichern unter...“ wählen und es für den Arbeitsbereich ausdrucken."
-  )
+  st.info("Rechtsklick -> Bild speichern unter... zum Ausdrucken.")
