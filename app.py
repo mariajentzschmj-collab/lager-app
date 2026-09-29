@@ -43,7 +43,11 @@ def load_data():
   try:
     response = supabase.table("inventory").select("*").execute()
     if response.data is not None:
-      return pd.DataFrame(response.data)
+      df_res = pd.DataFrame(response.data)
+      # Если колонки quantity нет, создаем её
+      if "quantity" not in df_res.columns:
+        df_res["quantity"] = 0
+      return df_res
   except Exception as e:
     st.error(f"❌ Fehler beim Laden der Daten: {e}")
   return pd.DataFrame(columns=cols)
@@ -147,7 +151,8 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
       ].values[0]
       current_qty = (
           int(current_qty_val)
-          if pd.notna(current_qty_val) and str(current_qty_val).isdigit()
+          if pd.notna(current_qty_val)
+          and str(current_qty_val).isdigit()
           else 0
       )
       st.write(f"Aktueller Bestand im Lager: **{current_qty} Stk.**")
@@ -161,7 +166,7 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
 
       submit_reduce = st.form_submit_button("Verkauf bestätigen")
       if submit_reduce:
-        new_qty = current_qty - int(reduce_qty)
+        new_qty = max(0, current_qty - int(reduce_qty))
         if supabase is not None:
           try:
             supabase.table("inventory").update({"quantity": new_qty}).eq(
@@ -295,7 +300,7 @@ elif action == "📷 Live-Kamera-Scanner":
                 except Exception as e:
                   st.error(f"Fehler beim Aktualisieren: {e}")
               else:
-                st.error("Keine Datenbankverbindung.")
+                st.error("Keine Verbindung zur Datenbank.")
           st.write("---")
       else:
         st.warning(
@@ -303,7 +308,7 @@ elif action == "📷 Live-Kamera-Scanner":
             " Datenbank gefunden."
         )
 
-# 5. KATALOG AUS DATEI HOCHLADEN (С защитой от дубликатов)
+# 5. KATALOG AUS DATEI HOCHLADEN
 elif action == "📁 Katalog aus Datei hochladen":
   st.header("📂 Massen-Upload des Katalogs (mit Dubletten-Schutz)")
   uploaded_file = st.file_uploader(
@@ -319,7 +324,6 @@ elif action == "📁 Katalog aus Datei hochladen":
       else:
         upload_df = pd.read_csv(uploaded_file)
 
-      # Автоматическое переименование колонок под структуру Supabase
       column_mapping = {
           "Produkt-ID": "article",
           "SAP-Nummer": "sap",
@@ -339,34 +343,32 @@ elif action == "📁 Katalog aus Datei hochladen":
             "preis",
         ] + list(upload_df.columns[4:])
 
-      # Устранение NaN для совместимости с JSON
+      # Если в файле нет колонки quantity, задаем ей значение по умолчанию 0
+      if "quantity" not in upload_df.columns:
+        upload_df["quantity"] = 0
+      else:
+        upload_df["quantity"] = upload_df["quantity"].fillna(0)
+
       upload_df = upload_df.replace({np.nan: None})
 
-      # Удаление дубликатов внутри самого файла по артикулу
       if "article" in upload_df.columns:
         upload_df = upload_df.drop_duplicates(subset=["article"], keep="last")
 
       st.write("Vorschau (bereinigte Daten ohne Duplikate):")
       st.dataframe(upload_df.head())
 
-      if st.button("Katalog in Supabase aktualisieren (Upsert)"):
+      if st.button("Katalog frisch in Supabase hochladen"):
         if supabase is not None:
           try:
+            # Очищаем старые данные перед загрузкой свежего файла без дубликатов
+            supabase.table("inventory").delete().neq("id", 0).execute()
+
             records = upload_df.to_dict(orient="records")
-            # Использование upsert по колонке article для предотвращения дубликатов
-            supabase.table("inventory").upsert(
-                records, on_conflict="article"
-            ).execute()
-            st.success(
-                "Katalog erfolgreich hochgeladen! Doppelte Einträge wurden"
-                " vermieden."
-            )
+            supabase.table("inventory").insert(records).execute()
+            st.success("Katalog erfolgreich hochgeladen und aktualisiert!")
             st.rerun()
           except Exception as e:
-            st.error(
-                f"Fehler beim Hochladen: {e}. (Tipp: Stellen Sie sicher, dass"
-                " 'article' in Supabase als Unique markiert ist)"
-            )
+            st.error(f"Fehler beim Hochladen: {e}")
         else:
           st.error("Keine Verbindung zur Datenbank.")
     except Exception as e:
