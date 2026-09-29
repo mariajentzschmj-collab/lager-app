@@ -1,7 +1,6 @@
 import urllib.parse
 import pandas as pd
 import streamlit as st
-from streamlit_zxing import st_zxing
 from supabase import create_client
 
 # Настройка страницы
@@ -58,7 +57,7 @@ action = st.sidebar.radio(
         "📊 Bestände anzeigen",
         "➕ Artikel hinzufügen",
         "📉 Artikel reduzieren (Verkauf)",
-        "📷 Barcode scannen",
+        "📷 Barcode scannen / suchen",
         "📁 Katalog aus Datei hochladen",
         "🖨 QR-Code für Kollegen",
     ],
@@ -187,21 +186,20 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
         else:
           st.error("Keine Verbindung zur Datenbank.")
 
-# 4. BARCODE SCANNEN
-elif action == "📷 Barcode scannen":
-  st.header("📷 Barcode mit der Handykamera scannen")
+# 4. BARCODE SCANNEN / SUCHEN
+elif action == "📷 Barcode scannen / suchen":
+  st.header("📷 Schnellsuche per Barcode")
   st.write(
-      "Richten Sie die Kamera Ihres Smartphones auf den Barcode des Produkts."
+      "Tippen Sie den Barcode ein oder nutzen Sie die Scan-Funktion Ihrer"
+      " Handytastatur:"
   )
 
-  scanned_barcode = st_zxing()
-
-  if scanned_barcode:
-    st.success(f"Erannter Barcode: **{scanned_barcode}**")
+  scanned_code = st.text_input("Barcode eingeben oder scannen:")
+  if scanned_code:
     if not df.empty and "barcode" in df.columns:
-      matched_item = df[df["barcode"].astype(str) == str(scanned_barcode)]
+      matched_item = df[df["barcode"].astype(str) == str(scanned_code)]
       if not matched_item.empty:
-        st.write("Gefundener Artikel in der Datenbank:")
+        st.success("Gefundener Artikel:")
         st.dataframe(matched_item, use_container_width=True)
       else:
         st.warning(
