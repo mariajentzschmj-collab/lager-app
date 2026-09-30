@@ -119,6 +119,7 @@ if action == "📊 Bestände anzeigen":
           df["name"].astype(str).str.lower().str.contains(q, na=False)
           | df["barcode"].astype(str).str.lower().str.contains(q, na=False)
           | df["article"].astype(str).str.lower().str.contains(q, na=False)
+          | df["sap"].astype(str).str.lower().str.contains(q, na=False)
       ]
 
     st.dataframe(filtered_df, use_container_width=True)
@@ -167,51 +168,99 @@ elif action == "➕ Artikel hinzufügen":
         except Exception as e:
           st.error(f"Fehler beim Speichern: {e}")
 
-# 3. ARTIKEL REDUZIEREN (VERKAUF)
+# 3. ARTIKEL REDUZIEREN (VERKAUF) - С ПОДДЕРЖКОЙ ВЫБОРА ПО BARCODE И SAP
 elif action == "📉 Artikel reduzieren (Verkauf)":
   st.header("🛒 Verkauf / Bestandsreduzierung erfassen")
 
   if df.empty:
-    st.warning("Keine Artikel zum Reduzieren vorhanden.")
+    st.warning("Keine Artikel im Lager vorhanden.")
   else:
-    with st.form("reduce_form"):
-      item_options = df["name"].tolist()
-      selected_item = st.selectbox("Artikel auswählen", item_options)
+    st.write(
+        "💡 *Sie können den Artikel über den Namen, Barcode oder die"
+        " SAP-Nummer suchen und auswählen.*"
+    )
 
-      current_qty_val = df.loc[
-          df["name"] == selected_item, "quantity"
-      ].values[0]
-      current_qty = (
-          int(current_qty_val)
-          if pd.notna(current_qty_val) and str(current_qty_val).isdigit()
-          else 0
+    # Поле быстрого поиска для сужения списка или прямого ввода
+    sale_search = st.text_input(
+        "🔍 Nach Name, Barcode oder SAP-Nummer filtern:",
+        placeholder="Geben Sie Barcode, SAP oder Name ein...",
+    )
+
+    working_df = df
+    if sale_search:
+      sq = sale_search.strip().lower()
+      working_df = df[
+          df["name"].astype(str).str.lower().str.contains(sq, na=False)
+          | df["barcode"].astype(str).str.lower().str.contains(sq, na=False)
+          | df["sap"].astype(str).str.lower().str.contains(sq, na=False)
+          | df["article"].astype(str).str.lower().str.contains(sq, na=False)
+      ]
+
+    if working_df.empty:
+      st.warning(
+          "⚠️️ Kein Artikel gefunden, der den Suchkriterien entspricht."
       )
-      st.write(f"Aktueller Bestand im Lager: **{current_qty} Stk.**")
+    else:
+      # Формируем информативные опции для выпадающего списка
+      item_options = []
+      for idx, row in working_df.iterrows():
+        name_val = row.get("name", "Unbekannt")
+        barcode_val = row.get("barcode", "-")
+        sap_val = row.get("sap", "-")
+        qty_val = row.get("quantity", 0)
+        display_str = (
+            f"{name_val} | Barcode: {barcode_val} | SAP: {sap_val} (Bestand:"
+            f" {qty_val} Stk.)"
+        )
+        item_options.append(display_str)
 
-      reduce_qty = st.number_input(
-          "Wie viele Stk. wurden verkauft / aus dem Lager genommen?",
-          min_value=1,
-          max_value=max(1, current_qty),
-          value=1,
-      )
+      with st.form("reduce_form"):
+        selected_display = st.selectbox(
+            "Passenden Artikel auswählen:", item_options
+        )
 
-      submit_reduce = st.form_submit_button("Verkauf bestätigen")
-      if submit_reduce:
-        new_qty = current_qty - int(reduce_qty)
-        if supabase is not None:
-          try:
-            supabase.table("inventory").update({"quantity": new_qty}).eq(
-                "name", selected_item
-            ).execute()
-            st.success(
-                f"Bestand für '{selected_item}' aktualisiert! Neuer Bestand:"
-                f" {new_qty} Stk."
-            )
-            st.rerun()
-          except Exception as e:
-            st.error(f"Fehler bei der Aktualisierung: {e}")
-        else:
-          st.error("Keine Verbindung zur Datenbank.")
+        # Находим выбранную строку по точному совпадению строки отображения
+        selected_idx = item_options.index(selected_display)
+        selected_row = working_df.iloc[selected_idx]
+
+        item_id = selected_row["id"]
+        selected_item_name = selected_row["name"]
+        raw_qty = selected_row["quantity"]
+        current_qty = (
+            int(raw_qty)
+            if pd.notna(raw_qty) and str(raw_qty).isdigit()
+            else 0
+        )
+
+        st.info(
+            f"Ausgewählt: **{selected_item_name}** | Aktueller Lagerbestand:"
+            f" **{current_qty} Stk.**"
+        )
+
+        reduce_qty = st.number_input(
+            "Wie viele Stk. wurden verkauft / aus dem Lager genommen?",
+            min_value=1,
+            max_value=max(1, current_qty),
+            value=1,
+        )
+
+        submit_reduce = st.form_submit_button("Verkauf bestätigen")
+        if submit_reduce:
+          new_qty = current_qty - int(reduce_qty)
+          if supabase is not None:
+            try:
+              supabase.table("inventory").update({"quantity": new_qty}).eq(
+                  "id", item_id
+              ).execute()
+              st.success(
+                  f"Bestand für '{selected_item_name}' aktualisiert! Neuer"
+                  f" Bestand: {new_qty} Stk."
+              )
+              st.rerun()
+            except Exception as e:
+              st.error(f"Fehler bei der Aktualisierung: {e}")
+          else:
+            st.error("Keine Verbindung zur Datenbank.")
 
 # 4. LIVE-KAMERA-SCANNER
 elif action == "📷 Live-Kamera-Scanner":
@@ -274,6 +323,7 @@ elif action == "📷 Live-Kamera-Scanner":
       matched_rows = df[
           df["barcode"].astype(str).str.lower().str.contains(q, na=False)
           | df["article"].astype(str).str.lower().str.contains(q, na=False)
+          | df["sap"].astype(str).str.lower().str.contains(q, na=False)
           | df["name"].astype(str).str.lower().str.contains(q, na=False)
       ]
 
@@ -291,10 +341,11 @@ elif action == "📷 Live-Kamera-Scanner":
           item_id = item["id"]
           item_art = item["article"]
           item_bc = item["barcode"]
+          item_sap = item["sap"]
 
           st.write(
-              f"**{item_name}** | Artikel-Nr: `{item_art}` | Barcode:"
-              f" `{item_bc}` | Original-Bestand: **{orig_qty} Stk.**"
+              f"**{item_name}** | Artikel-Nr: `{item_art}` | SAP: `{item_sap}` |"
+              f" Barcode: `{item_bc}` | Original-Bestand: **{orig_qty} Stk.**"
           )
 
           form_key = f"update_form_{item_id}"
@@ -335,7 +386,7 @@ elif action == "📷 Live-Kamera-Scanner":
           st.write("---")
       else:
         st.warning(
-            f"⚠️ Kein Artikel mit dem Barcode '{scanned_input}' in der"
+            f"⚠️ Kein Artikel mit dem Suchbegriff '{scanned_input}' in der"
             " Datenbank gefunden."
         )
 
@@ -427,7 +478,6 @@ elif action == "🖨 Etiketten drucken":
     st.write("---")
     st.subheader("Vorschau des Etiketts:")
 
-    # Ценник с линейным штрихкодом И QR-кодом
     label_html = f"""
         <div style="width: 340px; border: 2px solid #333; padding: 15px; border-radius: 8px; font-family: Arial, sans-serif; background: #ffffff; color: #000000; text-align: center; margin: auto;">
             <div style="font-size: 11px; font-weight: bold; text-transform: uppercase; color: #555555; margin-bottom: 5px; letter-spacing: 1px;">KaDeWe Berlin — 5. Etage</div>
@@ -436,7 +486,6 @@ elif action == "🖨 Etiketten drucken":
             <div style="font-size: 26px; font-weight: bold; color: #000000; margin-bottom: 10px;">{l_preis_str}</div>
             <div style="font-size: 11px; color: #333333; margin-bottom: 8px;">Art.-Nr: <b style="color: #000000;">{l_article}</b></div>
             
-            <!-- Блок с кодами: Линейный штрихкод + QR-код рядом -->
             <div style="display: flex; justify-content: space-around; align-items: center; margin-top: 10px; background: #fafafa; padding: 8px; border-radius: 6px;">
                 <div>
                     <svg id="barcode_preview"></svg>
@@ -447,12 +496,10 @@ elif action == "🖨 Etiketten drucken":
             </div>
         </div>
         
-        <!-- Библиотеки для генерации штрихкода и QR-кода -->
         <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
         <script>
             try {{
-                // Генерация линейного штрихкода
                 JsBarcode("#barcode_preview", "{l_barcode}", {{
                     format: "CODE128",
                     lineColor: "#000000",
@@ -464,7 +511,6 @@ elif action == "🖨 Etiketten drucken":
             }} catch(e) {{}}
 
             try {{
-                // Генерация QR-кода (например, содержит артикул или ссылку)
                 document.getElementById("qrcode_preview").innerHTML = "";
                 new QRCode(document.getElementById("qrcode_preview"), {{
                     text: "{l_article} - {l_name}",
