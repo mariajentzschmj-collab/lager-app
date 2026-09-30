@@ -44,7 +44,6 @@ def check_password():
 
   password = st.text_input("Passwort", type="password")
   if st.button("Anmelden"):
-    # Обновленный пароль
     if password == "kadewe2026":
       st.session_state["password_correct"] = True
       st.session_state["last_active"] = time.time()
@@ -122,17 +121,26 @@ action = st.sidebar.radio(
 
 # 1. BESTÄNDE ANZEIGEN
 if action == "📊 Bestände anzeigen":
-  st.header("📋 Aktuelles Sortiment & Bestandsprüfung")
-  if df.empty:
-    st.info("Das Lager ist leer или keine Verbindung zur Datenbank möglich.")
-  else:
-    search_query = st.text_input(
-        "🔍 Barcode scannen или nach Name / Artikel-Nr. / SAP suchen:",
-        placeholder="Klicken Sie hier und scannen Sie den Barcode...",
+  st.header("📋 Aktuelles Sortiment & Bestände")
+
+  with st.form("search_stock_form"):
+    stock_search = st.text_input(
+        "🔍 Barcode scannen oder nach Name / SAP suchen:",
+        placeholder="Barcode scannen und Enter drücken...",
     )
+    stock_submitted = st.form_submit_button("Suchen")
+
+  if stock_submitted or "stock_search_query" not in st.session_state:
+    st.session_state["stock_search_query"] = stock_search
+
+  active_stock_search = st.session_state.get("stock_search_query", "")
+
+  if df.empty:
+    st.info("Das Lager ist leer oder keine Verbindung zur Datenbank möglich.")
+  else:
     filtered_df = df
-    if search_query:
-      q = search_query.strip().lower()
+    if active_stock_search:
+      q = active_stock_search.strip().lower()
       filtered_df = df[
           df["name"].astype(str).str.lower().str.contains(q, na=False)
           | df["barcode"].astype(str).str.lower().str.contains(q, na=False)
@@ -153,10 +161,17 @@ if action == "📊 Bestände anzeigen":
 elif action == "➕ Artikel hinzufügen":
   st.header("✨ Neuen Artikel hinzufügen oder Bestand aufstocken")
 
-  add_search = st.text_input(
-      "🔍 Bestehenden Artikel per Barcode / SAP suchen (zum Aufstocken):",
-      placeholder="Barcode scannen oder eingeben...",
-  )
+  with st.form("search_add_form"):
+    add_search = st.text_input(
+        "🔍 Bestehenden Artikel per Barcode / SAP suchen (zum Aufstocken):",
+        placeholder="Barcode scannen...",
+    )
+    add_submitted = st.form_submit_button("Artikel suchen")
+
+  if add_submitted or "add_search_query" not in st.session_state:
+    st.session_state["add_search_query"] = add_search
+
+  active_add_search = st.session_state.get("add_search_query", "")
 
   pre_article = ""
   pre_name = ""
@@ -166,8 +181,8 @@ elif action == "➕ Artikel hinzufügen":
   pre_preis = 0.0
   pre_location = "Etage 5 Lager"
 
-  if add_search:
-    aq = add_search.strip().lower()
+  if active_add_search:
+    aq = active_add_search.strip().lower()
     found_items = df[
         df["barcode"].astype(str).str.lower().str.contains(aq, na=False)
         | df["article"].astype(str).str.lower().str.contains(aq, na=False)
@@ -241,9 +256,11 @@ elif action == "➕ Artikel hinzufügen":
               data, on_conflict="article"
           ).execute()
           st.success(
-              f"✅ Artikel '{new_name}' erfolgreich gespeichert с"
+              f"✅ Artikel '{new_name}' erfolgreich gespeichert mit"
               f" **{int(new_qty)} Stk.**!"
           )
+          st.session_state["add_search_query"] = ""
+          st.rerun()
         except Exception as e:
           st.error(f"Fehler beim Speichern: {e}")
 
@@ -251,17 +268,24 @@ elif action == "➕ Artikel hinzufügen":
 elif action == "📉 Artikel reduzieren (Verkauf)":
   st.header("🛒 Verkauf / Bestandsreduzierung erfassen")
 
+  with st.form("search_sale_form"):
+    sale_search = st.text_input(
+        "🔍 Barcode scannen oder nach Name / SAP suchen:",
+        placeholder="Barcode scannen und Enter drücken...",
+    )
+    search_submitted = st.form_submit_button("Suchen")
+
+  if search_submitted or "sale_search_query" not in st.session_state:
+    st.session_state["sale_search_query"] = sale_search
+
+  active_search = st.session_state.get("sale_search_query", "")
+
   if df.empty:
     st.warning("Keine Artikel im Lager vorhanden.")
   else:
-    sale_search = st.text_input(
-        "🔍 Barcode scannen или nach Name / SAP suchen:",
-        placeholder="Scannen Sie den Barcode oder tippen Sie den Namen ein...",
-    )
-
     working_df = df
-    if sale_search:
-      sq = sale_search.strip().lower()
+    if active_search:
+      sq = active_search.strip().lower()
       working_df = df[
           df["name"].astype(str).str.lower().str.contains(sq, na=False)
           | df["barcode"].astype(str).str.lower().str.contains(sq, na=False)
@@ -324,6 +348,8 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
                   f" wurden **{int(reduce_qty)} Stk.** abgezogen. Neuer"
                   f" Bestand: **{new_qty} Stk.**"
               )
+              st.session_state["sale_search_query"] = ""
+              st.rerun()
             except Exception as e:
               st.error(f"Fehler bei der Aktualisierung: {e}")
           else:
@@ -581,18 +607,25 @@ elif action == "📁 Katalog aus Datei hochladen":
 # 6. ETIKETTEN DRUCKEN
 elif action == "🖨 Etiketten drucken":
   st.header("🖨 Mini-Etikett erstellen (1.4 x 4 cm)")
+
+  with st.form("search_label_form"):
+    label_search = st.text_input(
+        "🔍 Artikel nach Name, Barcode oder SAP-Nummer suchen:",
+        placeholder="Geben Sie Barcode, SAP oder Name ein...",
+    )
+    label_submitted = st.form_submit_button("Suchen")
+
+  if label_submitted or "label_search_query" not in st.session_state:
+    st.session_state["label_search_query"] = label_search
+
+  active_label_search = st.session_state.get("label_search_query", "")
+
   if df.empty:
     st.warning("Keine Artikel in der Datenbank vorhanden.")
   else:
-    label_search = st.text_input(
-        "🔍 Artikel nach Name, Barcode или SAP-Nummer suchen:",
-        placeholder="Geben Sie Barcode, SAP oder Name ein...",
-        key="label_search_input",
-    )
-
     label_filtered_df = df
-    if label_search:
-      lq = label_search.strip().lower()
+    if active_label_search:
+      lq = active_label_search.strip().lower()
       label_filtered_df = df[
           df["name"].astype(str).str.lower().str.contains(lq, na=False)
           | df["barcode"].astype(str).str.lower().str.contains(lq, na=False)
