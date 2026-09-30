@@ -113,7 +113,7 @@ action = st.sidebar.radio(
 if action == "📊 Bestände anzeigen":
   st.header("📋 Aktuelles Sortiment")
   if df.empty:
-    st.info("Das Lager ist leer oder keine Verbindung zur Datenbank möglich.")
+    st.info("Das Lager ist leer или keine Verbindung zur Datenbank möglich.")
   else:
     search_query = st.text_input(
         "🔍 Artikel nach Name, Artikelnummer oder Barcode suchen:"
@@ -403,8 +403,9 @@ elif action == "📁 Katalog aus Datei hochladen":
 elif action == "🖨 Etiketten drucken":
   st.header("🖨 Preisschilder & Etiketten erstellen")
   st.write(
-      "Wählen Sie einen Artikel aus, um ein sauberes Etikett mit Name, Preis,"
-      " Artikelnummer und Barcode zum Drucken zu generieren."
+      "Wählen Sie einen Artikel aus, um ein klares Etikett (weißer Hintergrund,"
+      " schwarzer Text) mit Name, Preis, Artikelnummer und Barcode zu"
+      " generieren."
   )
 
   if df.empty:
@@ -433,15 +434,15 @@ elif action == "🖨 Etiketten drucken":
     st.write("---")
     st.subheader("Vorschau des Etiketts:")
 
-    # HTML/CSS шаблон красивого ценника со встроенным генератором штрихкодов
+    # Классический белый ценник с черным текстом
     label_html = f"""
-        <div style="width: 320px; border: 2px solid #333; padding: 15px; border-radius: 8px; font-family: Arial, sans-serif; background: #fff; color: #000; text-align: center; margin: auto;">
-            <div style="font-size: 12px; font-weight: bold; text-transform: uppercase; color: #555; margin-bottom: 5px;">KaDeWe Berlin — 5. Etage</div>
-            <div style="font-size: 14px; font-weight: bold; color: #000; margin-bottom: 2px;">{l_brand}</div>
-            <div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; height: 40px; display: flex; align-items: center; justify-content: center;">{l_name}</div>
-            <div style="font-size: 24px; font-weight: bold; color: #b00; margin-bottom: 10px;">{l_preis_str}</div>
-            <div style="font-size: 11px; margin-bottom: 8px;">Art.-Nr: <b>{l_article}</b></div>
-            <div>
+        <div style="width: 320px; border: 2px solid #333; padding: 15px; border-radius: 8px; font-family: Arial, sans-serif; background: #ffffff; color: #000000; text-align: center; margin: auto;">
+            <div style="font-size: 11px; font-weight: bold; text-transform: uppercase; color: #555555; margin-bottom: 5px; letter-spacing: 1px;">KaDeWe Berlin — 5. Etage</div>
+            <div style="font-size: 13px; font-weight: bold; color: #333333; margin-bottom: 2px; text-transform: uppercase;">{l_brand}</div>
+            <div style="font-size: 15px; font-weight: bold; color: #000000; margin-bottom: 10px; height: 40px; display: flex; align-items: center; justify-content: center;">{l_name}</div>
+            <div style="font-size: 26px; font-weight: bold; color: #b00000; margin-bottom: 10px;">{l_preis_str}</div>
+            <div style="font-size: 11px; color: #333333; margin-bottom: 8px;">Art.-Nr: <b style="color: #000000;">{l_article}</b></div>
+            <div style="background: #ffffff; padding: 5px; border-radius: 4px; display: inline-block;">
                 <svg id="barcode_preview"></svg>
             </div>
         </div>
@@ -451,7 +452,7 @@ elif action == "🖨 Etiketten drucken":
             try {{
                 JsBarcode("#barcode_preview", "{l_barcode}", {{
                     format: "CODE128",
-                    lineColor: "#000",
+                    lineColor: "#000000",
                     width: 1.5,
                     height: 40,
                     displayValue: true,
@@ -461,7 +462,7 @@ elif action == "🖨 Etiketten drucken":
         </script>
         
         <div style="text-align: center; margin-top: 15px;">
-            <button onclick="window.print()" style="background-color: #4CAF50; color: white; padding: 10px 20px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer;">🖨 Etikett drucken / Als PDF speichern</button>
+            <button onclick="window.print()" style="background-color: #4CAF50; color: white; padding: 10px 20px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer;">🖨 Etikett drucken / PDF</button>
         </div>
         
         <style>
@@ -483,7 +484,7 @@ elif action == "🖨 Etiketten drucken":
 
     # Оборачиваем в контейнер для печати
     wrapped_html = f'<div id="print-area">{label_html}</div>'
-    components.html(wrapped_html, height=320)
+    components.html(wrapped_html, height=330)
 
 # 7. QR-CODE FÜR KOLLEGEN
 elif action == "📱 QR-Code für Kollegen":
