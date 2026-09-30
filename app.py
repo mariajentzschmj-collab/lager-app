@@ -162,7 +162,7 @@ def render_camera_scanner_widget(key_suffix=""):
                 Html5QrcodeSupportedFormats.UPC_A,
                 Html5QrcodeSupportedFormats.UPC_E
             ]
-        };
+        }};
 
         let scanner_{key_suffix} = new Html5QrcodeScanner("reader_{key_suffix}", config_{key_suffix}, false);
         scanner_{key_suffix}.render(onScanSuccess_{key_suffix}, (errorMessage) => {{}});
