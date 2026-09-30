@@ -12,7 +12,6 @@ st.set_page_config(
     page_title="KaDeWe Lager — Iittala & Royal Copenhagen", layout="wide"
 )
 
-
 # --- ПАРОЛЬ И ТАЙМЕР АКТИВНОСТИ (5 МИНУТ) ---
 def check_password():
   TIMEOUT_SECONDS = 300  # 5 минут
@@ -163,7 +162,7 @@ def render_camera_scanner_widget(key_suffix=""):
                 Html5QrcodeSupportedFormats.UPC_A,
                 Html5QrcodeSupportedFormats.UPC_E
             ]
-        }};
+        };
 
         let scanner_{key_suffix} = new Html5QrcodeScanner("reader_{key_suffix}", config_{key_suffix}, false);
         scanner_{key_suffix}.render(onScanSuccess_{key_suffix}, (errorMessage) => {{}});
@@ -172,17 +171,15 @@ def render_camera_scanner_widget(key_suffix=""):
   components.html(scanner_html, height=350)
 
 
-# 1. BESTÄNDE ANZEIGEN (С камерой, фильтрами, статистикой и экспортом)
+# 1. BESTÄNDE ANZEIGEN
 if action == "📊 Bestände anzeigen":
   st.header("📋 Aktuelles Sortiment & Bestände")
 
-  # Выпадающий блок с камерой прямо в Bestände
   with st.expander(
       "📷 Kamera-Scanner öffnen (zum schnellen Finden per Barcode)"
   ):
     render_camera_scanner_widget("stock_cam")
 
-  # Фильтры
   col1, col2 = st.columns([2, 1])
   with col1:
     stock_search = st.text_input(
@@ -195,7 +192,6 @@ if action == "📊 Bestände anzeigen":
         ["Alle Marken", "Iittala", "Royal Copenhagen", "Arabia", "Georg Jensen"],
     )
 
-  # Применение фильтров к таблице
   filtered_df = df.copy()
 
   if brand_filter != "Alle Marken":
@@ -215,7 +211,6 @@ if action == "📊 Bestände anzeigen":
         | filtered_df["sap"].astype(str).str.lower().str.contains(q, na=False)
     ]
 
-  # Статистика (Метрики)
   if not filtered_df.empty:
     total_items = filtered_df["quantity"].sum()
     total_value = (filtered_df["quantity"] * filtered_df["preis"]).sum()
@@ -228,11 +223,8 @@ if action == "📊 Bestände anzeigen":
     st.info("Keine Artikel gefunden.")
 
   st.markdown("---")
-
-  # Отображение таблицы
   st.dataframe(filtered_df, use_container_width=True)
 
-  # Кнопка экспорта в Excel
   if not filtered_df.empty:
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -466,15 +458,16 @@ elif action == "🖨 Etiketten drucken":
     if selected_to_print:
       chosen_item = df.iloc[print_options.index(selected_to_print)]
       st.markdown("---")
-      st.subheader("Etiketten-Vorschau:")
+      st.subheader("Etiketten-Vorschau (Höhe 1.5 cm × Breite 4 cm):")
       st.markdown(
           f"""
-            <div style="border: 2px dashed #333; padding: 20px; width: 300px; text-align: center; background: white; color: black; border-radius: 10px;">
-                <h3>{chosen_item.get('brand', 'KaDeWe')}</h3>
-                <p><b>{chosen_item.get('name')}</b></p>
-                <p>SAP: {chosen_item.get('sap', '-')}</p>
-                <h2>{chosen_item.get('preis', 0.0):.2f} €</h2>
-                <p><small>Barcode: {chosen_item.get('barcode', '-')}</small></p>
+            <div style="border: 2px dashed #333; width: 4cm; height: 1.5cm; padding: 3px; box-sizing: border-box; background: white; color: black; border-radius: 2px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden;">
+                <div style="display: flex; justify-content: space-between; font-size: 8px; font-weight: bold; border-bottom: 1px solid #ddd; padding-bottom: 1px;">
+                    <span>{chosen_item.get('brand', 'KaDeWe')}</span>
+                    <span>SAP: {chosen_item.get('sap', '-')}</span>
+                </div>
+                <div style="font-size: 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><b>{chosen_item.get('name')}</b></div>
+                <div style="text-align: right; font-size: 9px; font-weight: bold;">{chosen_item.get('preis', 0.0):.2f} €</div>
             </div>
             """,
           unsafe_allow_html=True,
