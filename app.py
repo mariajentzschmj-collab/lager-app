@@ -12,6 +12,7 @@ st.set_page_config(
     page_title="KaDeWe Lager — Iittala & Royal Copenhagen", layout="wide"
 )
 
+
 # --- ПАРОЛЬ И ТАЙМЕР АКТИВНОСТИ (5 МИНУТ) ---
 def check_password():
   TIMEOUT_SECONDS = 300  # 5 минут
@@ -143,7 +144,7 @@ def render_camera_scanner_widget(key_suffix=""):
                 osc.start();
                 osc.stop(ctx.currentTime + 0.2);
             }} catch(e) {{}}
-        }
+        }}
 
         function onScanSuccess_{key_suffix}(decodedText, decodedResult) {{
             playBeep_{key_suffix}();
@@ -162,7 +163,7 @@ def render_camera_scanner_widget(key_suffix=""):
                 Html5QrcodeSupportedFormats.UPC_A,
                 Html5QrcodeSupportedFormats.UPC_E
             ]
-        };
+        }};
 
         let scanner_{key_suffix} = new Html5QrcodeScanner("reader_{key_suffix}", config_{key_suffix}, false);
         scanner_{key_suffix}.render(onScanSuccess_{key_suffix}, (errorMessage) => {{}});
