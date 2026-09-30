@@ -463,7 +463,7 @@ elif action == "📁 Katalog aus Datei hochladen":
 
 # 6. ETIKETTEN DRUCKEN
 elif action == "🖨 Etiketten drucken":
-  st.header("🖨 Preisschilder & Etiketten erstellen (140x400 mm)")
+  st.header("🖨 Mini-Etikett erstellen (1.4 x 4 cm)")
   if df.empty:
     st.warning("Keine Artikel in der Datenbank vorhanden.")
   else:
@@ -484,7 +484,7 @@ elif action == "🖨 Etiketten drucken":
       ]
 
     if label_filtered_df.empty:
-      st.warning("⚠️ Kein Artikel gefunden.")
+      st.warning("⚠️️ Kein Artikel gefunden.")
     else:
       label_options = []
       for idx, row in label_filtered_df.iterrows():
@@ -505,7 +505,6 @@ elif action == "🖨 Etiketten drucken":
       item_row = label_filtered_df.iloc[selected_label_idx]
 
       l_name = str(item_row.get("name", ""))
-      l_brand = str(item_row.get("brand", ""))
       l_article = str(item_row.get("article", ""))
       l_preis = item_row.get("preis", 0.0)
       try:
@@ -520,24 +519,17 @@ elif action == "🖨 Etiketten drucken":
         l_barcode = l_article
 
       st.write("---")
-      st.subheader("Vorschau des Etiketts (140x400 mm):")
+      st.subheader("Vorschau des Mini-Etiketts (40 x 14 mm):")
 
-      # Обновленный макет под размер 400мм в ширину и 140мм в высоту
+      # Точный размер: ширина 40mm, высота 14mm
       label_html = f"""
-            <div style="width: 400mm; min-height: 140mm; box-sizing: border-box; border: 2px solid #333; padding: 15mm; border-radius: 8px; font-family: Arial, sans-serif; background: #ffffff; color: #000000; text-align: center; margin: auto; display: flex; flex-direction: column; justify-content: space-between;">
-                <div>
-                    <div style="font-size: 16px; font-weight: bold; text-transform: uppercase; color: #555555; margin-bottom: 5mm; letter-spacing: 2px;">KaDeWe Berlin — 5. Etage</div>
-                    <div style="font-size: 24px; font-weight: bold; color: #333333; text-transform: uppercase; margin-bottom: 5mm;">{l_brand}</div>
-                    <div style="font-size: 42px; font-weight: bold; color: #000000; margin: 5mm 0; line-height: 1.2;">{l_name}</div>
+            <div style="width: 40mm; height: 14mm; box-sizing: border-box; border: 1px solid #000; padding: 1mm 2mm; font-family: Arial, sans-serif; background: #ffffff; color: #000000; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; margin: auto;">
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 8px; font-weight: bold; line-height: 1;">
+                    <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 25mm;">{l_name}</span>
+                    <span style="font-size: 9px; color: #000;">{l_preis_str}</span>
                 </div>
-                
-                <div style="margin: 5mm 0;">
-                    <div style="font-size: 64px; font-weight: bold; color: #000000; margin-bottom: 5mm;">{l_preis_str}</div>
-                    <div style="font-size: 18px; color: #333333; margin-bottom: 5mm;">Art.-Nr: <b>{l_article}</b></div>
-                </div>
-
-                <div style="margin-top: auto; background: #fafafa; padding: 10px; border-radius: 6px; display: inline-block; margin-left: auto; margin-right: auto;">
-                    <svg id="barcode_preview"></svg>
+                <div style="text-align: center; line-height: 1;">
+                    <svg id="barcode_preview" style="max-height: 8mm;"></svg>
                 </div>
             </div>
             
@@ -547,22 +539,23 @@ elif action == "🖨 Etiketten drucken":
                     JsBarcode("#barcode_preview", "{l_barcode}", {{
                         format: "CODE128",
                         lineColor: "#000000",
-                        width: 2.5,
-                        height: 90,
+                        width: 1,
+                        height: 22,
                         displayValue: true,
-                        fontSize: 16
+                        fontSize: 7,
+                        margin: 0
                     }});
                 }} catch(e) {{}}
             </script>
             
-            <div style="text-align: center; margin-top: 20px;">
-                <button onclick="window.print()" style="background-color: #4CAF50; color: white; padding: 12px 24px; font-size: 16px; border: none; border-radius: 4px; cursor: pointer;">🖨 Grosses Etikett drucken (140x400mm)</button>
+            <div style="text-align: center; margin-top: 15px;">
+                <button onclick="window.print()" style="background-color: #4CAF50; color: white; padding: 8px 16px; font-size: 14px; border: none; border-radius: 4px; cursor: pointer;">🖨 Etikett drucken (40x14mm)</button>
             </div>
             
             <style>
                 @media print {{
                     @page {{
-                        size: 400mm 140mm;
+                        size: 40mm 14mm;
                         margin: 0;
                     }}
                     body * {{
@@ -575,14 +568,14 @@ elif action == "🖨 Etiketten drucken":
                         position: absolute;
                         left: 0;
                         top: 0;
-                        width: 400mm;
-                        height: 140mm;
+                        width: 40mm;
+                        height: 14mm;
                     }}
                 }}
             </style>
             """
       components.html(
-          f'<div id="print-area">{label_html}</div>', height=550
+          f'<div id="print-area">{label_html}</div>', height=120
       )
 
 # 7. QR-CODE FÜR KOLLEGEN
