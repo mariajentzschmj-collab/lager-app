@@ -10,6 +10,49 @@ st.set_page_config(
     page_title="KaDeWe Lager — Iittala & Royal Copenhagen", layout="wide"
 )
 
+
+# --- ПРОСТАЯ АВТОРИЗАЦИЯ (ЗАЩИТА ПАРОЛЕМ) ---
+def check_password():
+  """Возвращает True, если пользователь ввел правильный пароль."""
+
+  def password_entered():
+    # Можете изменить "kadewe2026" на любой другой секретный пароль для коллег
+    if st.session_state["password"] == "kadewe2026":
+      st.session_state["password_correct"] = True
+      del st.session_state["password"]  # Удаляем пароль из сессии в целях безопасности
+    else:
+      st.session_state["password_correct"] = False
+
+  if "password_correct" not in st.session_state:
+    # Первый вход, запрашиваем пароль
+    st.text_input(
+        "🔑 Bitte Passwort eingeben / Введите пароль для доступа к складу:",
+        type="password",
+        on_change=password_entered,
+        key="password",
+    )
+    return False
+  elif not st.session_state["password_correct"]:
+    # Неверный пароль
+    st.text_input(
+        "🔑 Bitte Passwort eingeben / Введите пароль для доступа к складу:",
+        type="password",
+        on_change=password_entered,
+        key="password",
+    )
+    st.error("❌ Falsches Passwort / Неверный пароль")
+    return False
+  else:
+    # Пароль верный
+    return True
+
+
+# Если пароль не введен, останавливаем выполнение приложения здесь
+if not check_password():
+  st.stop()
+
+
+# --- ОСНОВНОЙ КОД ПРИЛОЖЕНИЯ ---
 st.title("📦 Lagerverwaltung (5. Etage)")
 st.subheader("Iittala & Royal Copenhagen")
 
@@ -43,11 +86,7 @@ def load_data():
   try:
     response = supabase.table("inventory").select("*").execute()
     if response.data is not None:
-      df_res = pd.DataFrame(response.data)
-      # Если колонки quantity нет, создаем её
-      if "quantity" not in df_res.columns:
-        df_res["quantity"] = 0
-      return df_res
+      return pd.DataFrame(response.data)
   except Exception as e:
     st.error(f"❌ Fehler beim Laden der Daten: {e}")
   return pd.DataFrame(columns=cols)
@@ -65,7 +104,8 @@ action = st.sidebar.radio(
         "📉 Artikel reduzieren (Verkauf)",
         "📷 Live-Kamera-Scanner",
         "📁 Katalog aus Datei hochladen",
-        "🖨 QR-Code für Kollegen",
+        "🖨 Etiketten drucken",
+        "📱 QR-Code für Kollegen",
     ],
 )
 
@@ -127,10 +167,8 @@ elif action == "➕ Artikel hinzufügen":
               "sap": str(new_sap),
               "barcode": str(new_barcode),
           }
-          supabase.table("inventory").upsert(
-              data, on_conflict="article"
-          ).execute()
-          st.success(f"Artikel '{new_name}' erfolgreich gespeichert!")
+          supabase.table("inventory").insert(data).execute()
+          st.success(f"Artikel '{new_name}' erfolgreich hinzugefügt!")
           st.rerun()
         except Exception as e:
           st.error(f"Fehler beim Speichern: {e}")
@@ -151,8 +189,7 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
       ].values[0]
       current_qty = (
           int(current_qty_val)
-          if pd.notna(current_qty_val)
-          and str(current_qty_val).isdigit()
+          if pd.notna(current_qty_val) and str(current_qty_val).isdigit()
           else 0
       )
       st.write(f"Aktueller Bestand im Lager: **{current_qty} Stk.**")
@@ -166,7 +203,7 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
 
       submit_reduce = st.form_submit_button("Verkauf bestätigen")
       if submit_reduce:
-        new_qty = max(0, current_qty - int(reduce_qty))
+        new_qty = current_qty - int(reduce_qty)
         if supabase is not None:
           try:
             supabase.table("inventory").update({"quantity": new_qty}).eq(
@@ -300,7 +337,7 @@ elif action == "📷 Live-Kamera-Scanner":
                 except Exception as e:
                   st.error(f"Fehler beim Aktualisieren: {e}")
               else:
-                st.error("Keine Verbindung zur Datenbank.")
+                st.error("Keine Datenbankverbindung.")
           st.write("---")
       else:
         st.warning(
@@ -310,7 +347,7 @@ elif action == "📷 Live-Kamera-Scanner":
 
 # 5. KATALOG AUS DATEI HOCHLADEN
 elif action == "📁 Katalog aus Datei hochladen":
-  st.header("📂 Massen-Upload des Katalogs (mit Dubletten-Schutz)")
+  st.header("📂 Massen-Upload des Katalogs")
   uploaded_file = st.file_uploader(
       "Katalogdatei auswählen", type=["xlsx", "csv"]
   )
@@ -343,29 +380,17 @@ elif action == "📁 Katalog aus Datei hochladen":
             "preis",
         ] + list(upload_df.columns[4:])
 
-      # Если в файле нет колонки quantity, задаем ей значение по умолчанию 0
-      if "quantity" not in upload_df.columns:
-        upload_df["quantity"] = 0
-      else:
-        upload_df["quantity"] = upload_df["quantity"].fillna(0)
-
       upload_df = upload_df.replace({np.nan: None})
 
-      if "article" in upload_df.columns:
-        upload_df = upload_df.drop_duplicates(subset=["article"], keep="last")
-
-      st.write("Vorschau (bereinigte Daten ohne Duplikate):")
+      st.write("Vorschau (zu importierende Daten):")
       st.dataframe(upload_df.head())
 
-      if st.button("Katalog frisch in Supabase hochladen"):
+      if st.button("Alles in Supabase-Datenbank hochladen"):
         if supabase is not None:
           try:
-            # Очищаем старые данные перед загрузкой свежего файла без дубликатов
-            supabase.table("inventory").delete().neq("id", 0).execute()
-
             records = upload_df.to_dict(orient="records")
             supabase.table("inventory").insert(records).execute()
-            st.success("Katalog erfolgreich hochgeladen und aktualisiert!")
+            st.success("Erfolgreich importiert!")
             st.rerun()
           except Exception as e:
             st.error(f"Fehler beim Hochladen: {e}")
@@ -374,9 +399,95 @@ elif action == "📁 Katalog aus Datei hochladen":
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten der Datei: {e}")
 
-# 6. QR-CODE FÜR KOLLEGEN
-elif action == "🖨 QR-Code für Kollegen":
-  st.header("🖨 QR-Code für den schnellen Zugriff vom Smartphone")
+# 6. ETIKETTEN DRUCKEN
+elif action == "🖨 Etiketten drucken":
+  st.header("🖨 Preisschilder & Etiketten erstellen")
+  st.write(
+      "Wählen Sie einen Artikel aus, um ein sauberes Etikett mit Name, Preis,"
+      " Artikelnummer und Barcode zum Drucken zu generieren."
+  )
+
+  if df.empty:
+    st.warning("Keine Artikel in der Datenbank vorhanden.")
+  else:
+    item_options = df["name"].tolist()
+    selected_label_item = st.selectbox(
+        "Artikel für Etikett auswählen:", item_options
+    )
+
+    # Получаем данные выбранного товара
+    item_row = df[df["name"] == selected_label_item].iloc[0]
+    l_name = str(item_row.get("name", ""))
+    l_brand = str(item_row.get("brand", ""))
+    l_article = str(item_row.get("article", ""))
+    l_preis = item_row.get("preis", 0.0)
+    try:
+      l_preis_str = f"{float(l_preis):.2f} €" if pd.notna(l_preis) else "0.00 €"
+    except:
+      l_preis_str = "0.00 €"
+
+    l_barcode = str(item_row.get("barcode", ""))
+    if l_barcode == "nan" or not l_barcode:
+      l_barcode = l_article  # резервный вариант для штрихкода
+
+    st.write("---")
+    st.subheader("Vorschau des Etiketts:")
+
+    # HTML/CSS шаблон красивого ценника со встроенным генератором штрихкодов
+    label_html = f"""
+        <div style="width: 320px; border: 2px solid #333; padding: 15px; border-radius: 8px; font-family: Arial, sans-serif; background: #fff; color: #000; text-align: center; margin: auto;">
+            <div style="font-size: 12px; font-weight: bold; text-transform: uppercase; color: #555; margin-bottom: 5px;">KaDeWe Berlin — 5. Etage</div>
+            <div style="font-size: 14px; font-weight: bold; color: #000; margin-bottom: 2px;">{l_brand}</div>
+            <div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; height: 40px; display: flex; align-items: center; justify-content: center;">{l_name}</div>
+            <div style="font-size: 24px; font-weight: bold; color: #b00; margin-bottom: 10px;">{l_preis_str}</div>
+            <div style="font-size: 11px; margin-bottom: 8px;">Art.-Nr: <b>{l_article}</b></div>
+            <div>
+                <svg id="barcode_preview"></svg>
+            </div>
+        </div>
+        
+        <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+        <script>
+            try {{
+                JsBarcode("#barcode_preview", "{l_barcode}", {{
+                    format: "CODE128",
+                    lineColor: "#000",
+                    width: 1.5,
+                    height: 40,
+                    displayValue: true,
+                    fontSize: 12
+                }});
+            }} catch(e) {{}}
+        </script>
+        
+        <div style="text-align: center; margin-top: 15px;">
+            <button onclick="window.print()" style="background-color: #4CAF50; color: white; padding: 10px 20px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer;">🖨 Etikett drucken / Als PDF speichern</button>
+        </div>
+        
+        <style>
+            @media print {{
+                body * {{
+                    visibility: hidden;
+                }}
+                #print-area, #print-area * {{
+                    visibility: visible;
+                }}
+                #print-area {{
+                    position: absolute;
+                    left: 0;
+                    top: 0;
+                }}
+            }}
+        </style>
+        """
+
+    # Оборачиваем в контейнер для печати
+    wrapped_html = f'<div id="print-area">{label_html}</div>'
+    components.html(wrapped_html, height=320)
+
+# 7. QR-CODE FÜR KOLLEGEN
+elif action == "📱 QR-Code für Kollegen":
+  st.header("📱 QR-Code für den schnellen Zugriff vom Smartphone")
   app_url = "https://mtcbfvpjnxlkvvtuknyv.streamlit.app"
   encoded_url = urllib.parse.quote(app_url)
   qr_image_url = (
