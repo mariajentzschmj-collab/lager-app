@@ -13,13 +13,12 @@ st.set_page_config(
 
 # --- ПАРОЛЬ И ТАЙМЕР АКТИВНОСТИ (5 МИНУТ) ---
 def check_password():
-  TIMEOUT_SECONDS = 300  # 5 минут в секундах
+  TIMEOUT_SECONDS = 300  # 5 минут
 
   if "password_correct" not in st.session_state:
     st.session_state["password_correct"] = False
     st.session_state["last_active"] = time.time()
 
-  # Проверяем, прошло ли более 5 минут с последней активности
   if st.session_state["password_correct"]:
     if (
         time.time() - st.session_state.get("last_active", time.time())
@@ -32,11 +31,9 @@ def check_password():
       )
 
   if st.session_state["password_correct"]:
-    # Обновляем время последней активности при каждом действии
     st.session_state["last_active"] = time.time()
     return True
 
-  # Экраны ввода пароля
   st.title("🔐 Lagerverwaltung - Login")
   st.subheader(
       "Bitte geben Sie das Passwort ein (Timeout nach 5 Min. Inaktivität)"
@@ -60,7 +57,6 @@ if not check_password():
 st.title("📦 Lagerverwaltung (5. Etage)")
 st.subheader("Iittala & Royal Copenhagen")
 
-# Подключение к Supabase
 SUPABASE_URL = "https://mtcbfvpjnxlkvvtuknyv.supabase.co"
 SUPABASE_KEY = "sb_publishable_wChGuVU2FeW23S2bqdYqOg_B9-oMoKs"
 
@@ -84,7 +80,6 @@ def load_data():
       "barcode",
   ]
   if supabase is None:
-    st.warning("⚠️ Offline-Modus (keine Verbindung zur Datenbank).")
     return pd.DataFrame(columns=cols)
   try:
     response = supabase.table("inventory").select("*").execute()
@@ -119,6 +114,58 @@ action = st.sidebar.radio(
     ],
 )
 
+
+# Функция для отрисовки виджета камеры в любом месте
+def render_camera_scanner_widget(key_suffix=""):
+  scanner_html = f"""
+    <div style="width: 100%; max-width: 400px; margin: auto; text-align: center; background: #f9f9f9; padding: 10px; border-radius: 8px; border: 1px solid #ddd;">
+        <div id="reader_{key_suffix}" style="width: 100%;"></div>
+        <div style="margin-top: 10px; font-size: 14px; font-weight: bold; color: #155724; background: #d4edda; padding: 6px; border-radius: 6px;" id="result_{key_suffix}">Kamera bereit...</div>
+    </div>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script>
+        function playBeep_{key_suffix}() {{
+            try {{
+                let ctx = new (window.AudioContext || window.webkitAudioContext)();
+                let osc = ctx.createOscillator();
+                let gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.type = 'sine';
+                osc.frequency.value = 880; 
+                gain.gain.setValueAtTime(0.3, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.2);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.2);
+            }} catch(e) {{}}
+        }
+
+        function onScanSuccess_{key_suffix}(decodedText, decodedResult) {{
+            playBeep_{key_suffix}();
+            document.getElementById('result_{key_suffix}').innerText = "Erkannt: " + decodedText;
+            navigator.clipboard.writeText(decodedText);
+        }}
+
+        const config_{key_suffix} = {{
+            fps: 15, 
+            qrbox: {{ width: 280, height: 100 }},
+            aspectRatio: 1.0,
+            formatsToSupport: [
+                Html5QrcodeSupportedFormats.EAN_13,
+                Html5QrcodeSupportedFormats.EAN_8,
+                Html5QrcodeSupportedFormats.CODE_128,
+                Html5QrcodeSupportedFormats.UPC_A,
+                Html5QrcodeSupportedFormats.UPC_E
+            ]
+        };
+
+        let scanner_{key_suffix} = new Html5QrcodeScanner("reader_{key_suffix}", config_{key_suffix}, false);
+        scanner_{key_suffix}.render(onScanSuccess_{key_suffix}, (errorMessage) => {{}});
+    </script>
+    """
+  components.html(scanner_html, height=350)
+
+
 # 1. BESTÄNDE ANZEIGEN
 if action == "📊 Bestände anzeigen":
   st.header("📋 Aktuelles Sortiment & Bestände")
@@ -135,36 +182,29 @@ if action == "📊 Bestände anzeigen":
 
   active_stock_search = st.session_state.get("stock_search_query", "")
 
-  if df.empty:
-    st.info("Das Lager ist leer oder keine Verbindung zur Datenbank möglich.")
-  else:
-    filtered_df = df
-    if active_stock_search:
-      q = active_stock_search.strip().lower()
-      filtered_df = df[
-          df["name"].astype(str).str.lower().str.contains(q, na=False)
-          | df["barcode"].astype(str).str.lower().str.contains(q, na=False)
-          | df["article"].astype(str).str.lower().str.contains(q, na=False)
-          | df["sap"].astype(str).str.lower().str.contains(q, na=False)
-      ]
-      if len(filtered_df) == 1:
-        item = filtered_df.iloc[0]
-        st.success(
-            f"✨ **Gefunden:** {item['name']} | Preis:"
-            f" **{item.get('preis', 0)} €** | Bestand:"
-            f" **{item.get('quantity', 0)} Stk.**"
-        )
-
+  if not df.empty and active_stock_search:
+    q = active_stock_search.strip().lower()
+    filtered_df = df[
+        df["name"].astype(str).str.lower().str.contains(q, na=False)
+        | df["barcode"].astype(str).str.lower().str.contains(q, na=False)
+        | df["article"].astype(str).str.lower().str.contains(q, na=False)
+        | df["sap"].astype(str).str.lower().str.contains(q, na=False)
+    ]
     st.dataframe(filtered_df, use_container_width=True)
+  else:
+    st.dataframe(df, use_container_width=True)
 
 # 2. ARTIKEL HINZUFÜGEN
 elif action == "➕ Artikel hinzufügen":
   st.header("✨ Neuen Artikel hinzufügen oder Bestand aufstocken")
 
+  with st.expander("📷 Kamera-Scanner öffnen (zum Erfassen des Barcodes)"):
+    render_camera_scanner_widget("add")
+
   with st.form("search_add_form"):
     add_search = st.text_input(
-        "🔍 Bestehenden Artikel per Barcode / SAP suchen (zum Aufstocken):",
-        placeholder="Barcode scannen...",
+        "🔍 Bestehenden Artikel per Barcode / SAP suchen:",
+        placeholder="Barcode eingeben oder scannen...",
     )
     add_submitted = st.form_submit_button("Artikel suchen")
 
@@ -173,15 +213,17 @@ elif action == "➕ Artikel hinzufügen":
 
   active_add_search = st.session_state.get("add_search_query", "")
 
-  pre_article = ""
-  pre_name = ""
-  pre_brand = "Iittala"
-  pre_sap = ""
-  pre_barcode = ""
-  pre_preis = 0.0
-  pre_location = "Etage 5 Lager"
+  pre_article, pre_name, pre_brand, pre_sap, pre_barcode, pre_preis, pre_location = (
+      "",
+      "",
+      "Iittala",
+      "",
+      "",
+      0.0,
+      "Etage 5 Lager",
+  )
 
-  if active_add_search:
+  if active_add_search and not df.empty:
     aq = active_add_search.strip().lower()
     found_items = df[
         df["barcode"].astype(str).str.lower().str.contains(aq, na=False)
@@ -191,42 +233,26 @@ elif action == "➕ Artikel hinzufügen":
     ]
     if not found_items.empty:
       item = found_items.iloc[0]
-      st.success(
-          f"📦 Artikel gefunden: **{item.get('name')}** (Aktueller Bestand:"
-          f" {item.get('quantity', 0)} Stk.)"
+      st.success(f"📦 Gefunden: **{item.get('name')}**")
+      pre_article, pre_name, pre_brand, pre_sap, pre_barcode, pre_preis, pre_location = (
+          str(item.get("article", "")),
+          str(item.get("name", "")),
+          str(item.get("brand", "Iittala")),
+          str(item.get("sap", "")),
+          str(item.get("barcode", "")),
+          float(item.get("preis", 0.0)),
+          str(item.get("location", "Etage 5 Lager")),
       )
-      pre_article = str(item.get("article", ""))
-      pre_name = str(item.get("name", ""))
-      pre_brand = (
-          str(item.get("brand", "Iittala"))
-          if item.get("brand")
-          in ["Iittala", "Royal Copenhagen", "Arabia", "Georg Jensen"]
-          else "Iittala"
-      )
-      pre_sap = str(item.get("sap", ""))
-      pre_barcode = str(item.get("barcode", ""))
-      pre_preis = float(item.get("preis", 0.0))
-      pre_location = str(item.get("location", "Etage 5 Lager"))
 
   with st.form("add_form"):
     new_article = st.text_input("Artikelnummer / SKU", value=pre_article)
-    new_name = st.text_input(
-        "Artikelname (z. B. Iittala Ultima Thule / Royal Copenhagen)",
-        value=pre_name,
+    new_name = st.text_input("Artikelname", value=pre_name)
+    brands_list = ["Iittala", "Royal Copenhagen", "Arabia", "Georg Jensen"]
+    brand_index = (
+        brands_list.index(pre_brand) if pre_brand in brands_list else 0
     )
-    new_brand = st.selectbox(
-        "Marke",
-        ["Iittala", "Royal Copenhagen", "Arabia", "Georg Jensen"],
-        index=[
-            "Iittala",
-            "Royal Copenhagen",
-            "Arabia",
-            "Georg Jensen",
-        ].index(pre_brand),
-    )
-    new_qty = st.number_input(
-        "Hinzuzufügende / Neue Menge", min_value=0, value=1, step=1
-    )
+    new_brand = st.selectbox("Marke", brands_list, index=brand_index)
+    new_qty = st.number_input("Menge", min_value=0, value=1, step=1)
     new_location = st.text_input("Lagerort", value=pre_location)
     new_preis = st.number_input(
         "Preis (€)", min_value=0.0, value=pre_preis, format="%.2f"
@@ -234,13 +260,10 @@ elif action == "➕ Artikel hinzufügen":
     new_sap = st.text_input("SAP-Nummer", value=pre_sap)
     new_barcode = st.text_input("Barcode", value=pre_barcode)
 
-    submitted = st.form_submit_button("In Datenbank speichern / Aktualisieren")
-    if submitted:
+    if st.form_submit_button("Speichern / Aktualisieren"):
       if not new_name:
-        st.error("Bitte geben Sie einen Artikelnamen ein.")
-      elif supabase is None:
-        st.error("Keine Verbindung zur Datenbank. Speichern nicht möglich.")
-      else:
+        st.error("Bitte Artikelnamen eingeben.")
+      elif supabase is not None:
         try:
           data = {
               "article": str(new_article),
@@ -255,23 +278,24 @@ elif action == "➕ Artikel hinzufügen":
           supabase.table("inventory").upsert(
               data, on_conflict="article"
           ).execute()
-          st.success(
-              f"✅ Artikel '{new_name}' erfolgreich gespeichert mit"
-              f" **{int(new_qty)} Stk.**!"
-          )
-          st.session_state["add_search_query"] = ""
+          st.success(f"✅ Artikel '{new_name}' gespeichert!")
           st.rerun()
         except Exception as e:
-          st.error(f"Fehler beim Speichern: {e}")
+          st.error(f"Fehler: {e}")
 
 # 3. ARTIKEL REDUZIEREN (VERKAUF)
 elif action == "📉 Artikel reduzieren (Verkauf)":
   st.header("🛒 Verkauf / Bestandsreduzierung erfassen")
 
+  with st.expander(
+      "📷 Kamera-Scanner öffnen (für Direktverkauf per Barcode)"
+  ):
+    render_camera_scanner_widget("sale")
+
   with st.form("search_sale_form"):
     sale_search = st.text_input(
         "🔍 Barcode scannen oder nach Name / SAP suchen:",
-        placeholder="Barcode scannen und Enter drücken...",
+        placeholder="Barcode eingeben oder scannen...",
     )
     search_submitted = st.form_submit_button("Suchen")
 
@@ -281,7 +305,7 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
   active_search = st.session_state.get("sale_search_query", "")
 
   if df.empty:
-    st.warning("Keine Artikel im Lager vorhanden.")
+    st.warning("Keine Artikel im Lager.")
   else:
     working_df = df
     if active_search:
@@ -296,444 +320,122 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
     if working_df.empty:
       st.warning("⚠️ Kein Artikel gefunden.")
     else:
-      item_options = []
-      for idx, row in working_df.iterrows():
-        name_val = row.get("name", "Unbekannt")
-        barcode_val = row.get("barcode", "-")
-        sap_val = row.get("sap", "-")
-        qty_val = (
-            int(row.get("quantity", 0)) if pd.notna(row.get("quantity")) else 0
-        )
-        display_str = (
-            f"{name_val} | Barcode: {barcode_val} | SAP: {sap_val} (Bestand:"
-            f" {qty_val} Stk.)"
-        )
-        item_options.append(display_str)
+      item_options = [
+          f"{r.get('name', 'Unbekannt')} | Barcode: {r.get('barcode', '-')} | SAP: {r.get('sap', '-')} (Bestand: {int(r.get('quantity', 0))} Stk.)"
+          for _, r in working_df.iterrows()
+      ]
 
       with st.form("reduce_form"):
         selected_display = st.selectbox(
             "Passenden Artikel auswählen:", item_options
         )
-        selected_idx = item_options.index(selected_display)
-        selected_row = working_df.iloc[selected_idx]
+        selected_row = working_df.iloc[item_options.index(selected_display)]
+        current_qty = int(float(selected_row.get("quantity", 0)))
 
-        item_id = selected_row["id"]
-        selected_item_name = selected_row["name"]
-        raw_qty = selected_row["quantity"]
-        current_qty = int(float(raw_qty)) if pd.notna(raw_qty) else 0
-
-        st.info(
-            f"Ausgewählt: **{selected_item_name}** | Aktueller Lagerbestand:"
-            f" **{current_qty} Stk.**"
-        )
-
+        st.info(f"Aktueller Bestand: **{current_qty} Stk.**")
         reduce_qty = st.number_input(
-            "Anzahl zum Abziehen (Verkauf):",
+            "Anzahl zum Abziehen:",
             min_value=1,
             max_value=max(1, current_qty),
             value=1,
-            step=1,
         )
 
-        submit_reduce = st.form_submit_button("Verkauf bestätigen")
-        if submit_reduce:
+        if st.form_submit_button("Verkauf bestätigen"):
           new_qty = max(0, current_qty - int(reduce_qty))
           if supabase is not None:
             try:
               supabase.table("inventory").update(
                   {"quantity": int(new_qty)}
-              ).eq("id", item_id).execute()
-              st.success(
-                  f"🛒 Verkauf erfolgreich erfasst! Von '{selected_item_name}'"
-                  f" wurden **{int(reduce_qty)} Stk.** abgezogen. Neuer"
-                  f" Bestand: **{new_qty} Stk.**"
-              )
-              st.session_state["sale_search_query"] = ""
+              ).eq("id", selected_row["id"]).execute()
+              st.success(f"✅ Verkauf erfasst! Neuer Bestand: {new_qty} Stk.")
               st.rerun()
             except Exception as e:
-              st.error(f"Fehler bei der Aktualisierung: {e}")
-          else:
-            st.error("Keine Verbindung zur Datenbank.")
+              st.error(f"Fehler: {e}")
 
 # 4. LIVE-KAMERA-SCANNER
 elif action == "📷 Live-Kamera-Scanner":
   st.header("📷 Live-Barcode-Scanner für Smartphones")
-  st.write(
-      "Richten Sie die Kamera auf den Barcode. Kopieren Sie den erkannten"
-      " Code und fügen Sie ihn unten ein:"
-  )
-
-  scanner_html = """
-    <div style="width: 100%; max-width: 450px; margin: auto; text-align: center;">
-        <div id="reader" style="width: 100%;"></div>
-        <div style="margin-top: 15px; font-size: 18px; font-weight: bold; color: #155724; background: #d4edda; padding: 10px; border-radius: 8px;" id="result">Kamera aktiv – bitte Barcode scannen...</div>
-    </div>
-    <script src="https://unpkg.com/html5-qrcode"></script>
-    <script>
-        function playBeep() {
-            try {
-                let ctx = new (window.AudioContext || window.webkitAudioContext)();
-                let osc = ctx.createOscillator();
-                let gain = ctx.createGain();
-                osc.connect(gain);
-                gain.connect(ctx.destination);
-                osc.type = 'sine';
-                osc.frequency.value = 880; 
-                gain.gain.setValueAtTime(0.3, ctx.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.2);
-                osc.start();
-                osc.stop(ctx.currentTime + 0.2);
-            } catch(e) {}
-        }
-
-        function onScanSuccess(decodedText, decodedResult) {
-            playBeep();
-            document.getElementById('result').innerText = "Erkannt: " + decodedText;
-            navigator.clipboard.writeText(decodedText);
-        }
-
-        const config = {
-            fps: 15, 
-            qrbox: { width: 320, height: 120 },
-            aspectRatio: 1.0,
-            formatsToSupport: [
-                Html5QrcodeSupportedFormats.EAN_13,
-                Html5QrcodeSupportedFormats.EAN_8,
-                Html5QrcodeSupportedFormats.CODE_128,
-                Html5QrcodeSupportedFormats.UPC_A,
-                Html5QrcodeSupportedFormats.UPC_E
-            ]
-        };
-
-        let html5QrcodeScanner = new Html5QrcodeScanner("reader", config, false);
-        html5QrcodeScanner.render(onScanSuccess, (errorMessage) => {});
-    </script>
-    """
-  components.html(scanner_html, height=430)
-
-  st.write("---")
+  render_camera_scanner_widget("main")
 
   scanned_input = st.text_input(
-      "Gescannter Barcode (hier einfügen oder tippen):",
-      placeholder="Nummer hier einfügen...",
-      key="scanner_input_field",
+      "Gescannter Barcode (hier einfügen):", key="scanner_input_field"
   )
-
-  if scanned_input:
-    if df.empty:
-      st.warning("Keine Daten in der Tabelle geladen.")
+  if scanned_input and not df.empty:
+    matched = df[
+        df["barcode"].astype(str).str.contains(scanned_input.strip(), na=False)
+    ]
+    if not matched.empty:
+      st.success(
+          f"Gefunden: {matched.iloc[0]['name']} (Bestand:"
+          f" {matched.iloc[0]['quantity']} Stk.)"
+      )
     else:
-      q = str(scanned_input).strip().lower()
-      matched_rows = df[
-          df["barcode"].astype(str).str.lower().str.contains(q, na=False)
-          | df["article"].astype(str).str.lower().str.contains(q, na=False)
-          | df["sap"].astype(str).str.lower().str.contains(q, na=False)
-          | df["name"].astype(str).str.lower().str.contains(q, na=False)
-      ]
-
-      if not matched_rows.empty:
-        st.success(f"Gefunden: {len(matched_rows)} Artikel")
-
-        for idx, item in matched_rows.iterrows():
-          item_name = item["name"]
-          raw_qty = item["quantity"]
-          try:
-            orig_qty = int(float(raw_qty)) if pd.notna(raw_qty) else 0
-          except:
-            orig_qty = 0
-
-          item_id = item["id"]
-          item_art = item["article"]
-          item_bc = item["barcode"]
-          item_sap = item["sap"]
-
-          st.write(
-              f"**{item_name}** | Artikel-Nr: `{item_art}` | SAP: `{item_sap}` |"
-              f" Barcode: `{item_bc}` | Original-Bestand: **{orig_qty} Stk.**"
-          )
-
-          change_type = st.radio(
-              "Aktion:",
-              [
-                  "➕ Hinzufügen (Ware zugestellt)",
-                  "➖ Abziehen (Verkauf / Entnahme)",
-              ],
-              key=f"radio_{item_id}",
-          )
-          delta_qty = st.number_input(
-              "Menge (Stk.):",
-              min_value=1,
-              value=1,
-              step=1,
-              key=f"num_{item_id}",
-          )
-
-          if st.button("Bestand aktualisieren", key=f"btn_update_{item_id}"):
-            d_val = int(delta_qty)
-            if "Hinzufügen" in change_type:
-              new_qty = orig_qty + d_val
-              action_text = f"hinzugefügt (+{d_val} Stk.)"
-            else:
-              new_qty = max(0, orig_qty - d_val)
-              action_text = f"abgezogen (-{d_val} Stk.)"
-
-            if supabase is not None:
-              try:
-                supabase.table("inventory").update(
-                    {"quantity": int(new_qty)}
-                ).eq("id", item_id).execute()
-                st.success(
-                    f"✅ Bestand erfolgreich aktualisiert! Für"
-                    f" **{item_name}** wurden {action_text}. Neuer Bestand:"
-                    f" **{new_qty} Stk.**"
-                )
-                st.rerun()
-              except Exception as e:
-                st.error(f"Fehler beim Aktualisieren: {e}")
-            else:
-              st.error("Keine Datenbankverbindung.")
-          st.write("---")
-      else:
-        st.warning(
-            f"⚠️ Kein Artikel mit dem Suchbegriff '{scanned_input}' gefunden."
-        )
+      st.warning("Barcode nicht in der Datenbank gefunden.")
 
 # 5. KATALOG AUS DATEI HOCHLADEN
 elif action == "📁 Katalog aus Datei hochladen":
-  st.header("📂 Massen-Upload des Katalogs")
+  st.header("📂 Massen-Upload (Excel / CSV)")
   uploaded_file = st.file_uploader(
-      "Katalogdatei auswählen", type=["xlsx", "csv"]
+      "Wählen Sie eine Excel- oder CSV-Datei aus", type=["xlsx", "csv"]
   )
-
   if uploaded_file is not None:
     try:
-      if uploaded_file.name.endswith(".xlsx"):
-        import openpyxl
-
-        upload_df = pd.read_excel(uploaded_file)
-      else:
+      if uploaded_file.name.endswith(".csv"):
         upload_df = pd.read_csv(uploaded_file)
-
-      upload_df.columns = upload_df.columns.str.strip()
-      upload_df = upload_df.loc[
-          :, ~upload_df.columns.str.contains("^Unnamed", na=False)
-      ]
-
-      column_mapping = {
-          "Produkt-ID": "article",
-          "SAP-Nummer": "sap",
-          "Name": "name",
-          "Verkaufspreis (EUR)": "preis",
-          "Preis": "preis",
-      }
-      upload_df = upload_df.rename(columns=column_mapping)
-
-      if "preis " in upload_df.columns:
-        upload_df = upload_df.rename(columns={"preis ": "preis"})
-
-      if (
-          len(upload_df.columns) >= 4
-          and "article" not in upload_df.columns
-      ):
-        upload_df.columns = [
-            "article",
-            "sap",
-            "name",
-            "preis",
-        ] + list(upload_df.columns[4:])
-
-      if "preis" in upload_df.columns:
-        upload_df["preis"] = (
-            pd.to_numeric(
-                upload_df["preis"].astype(str).str.replace(",", "."),
-                errors="coerce",
-            )
-            .fillna(0.0)
-            .astype(float)
-        )
       else:
-        upload_df["preis"] = 0.0
-
-      if "quantity" in upload_df.columns:
-        upload_df["quantity"] = (
-            pd.to_numeric(upload_df["quantity"], errors="coerce")
-            .fillna(0)
-            .astype(int)
-        )
-      else:
-        upload_df["quantity"] = 0
-
-      upload_df = upload_df.replace({np.nan: None})
-
-      if "article" in upload_df.columns:
-        before_count = len(upload_df)
-        upload_df = upload_df.drop_duplicates(subset=["article"], keep="last")
-        after_count = len(upload_df)
-        if before_count > after_count:
-          st.info(
-              f"ℹ️ {before_count - after_count} doppelte Artikel im"
-              " Excel-File gefunden und bereinigt."
-          )
-
-      st.write("Vorschau (zu importierende Daten):")
-      st.dataframe(upload_df.head())
-
-      if st.button("Alles in Supabase-Datenbank hochladen"):
+        upload_df = pd.read_excel(uploaded_file)
+      st.write("Vorschau der hochgeladenen Daten:", upload_df.head())
+      if st.button("Daten in Supabase importieren"):
         if supabase is not None:
-          try:
-            records = upload_df.to_dict(orient="records")
-            cleaned_records = [
-                {
-                    k.strip(): (v if v is not None else "")
-                    for k, v in record.items()
-                }
-                for record in records
-            ]
-
-            supabase.table("inventory").upsert(
-                cleaned_records, on_conflict="article"
-            ).execute()
-
-            st.success(
-                "✅ Katalog erfolgreich hochgeladen und aktualisiert!"
-            )
-          except Exception as e:
-            st.error(f"Fehler beim Hochladen: {e}")
-        else:
-          st.error("Keine Verbindung zur Datenbank.")
+          records = upload_df.to_dict(orient="records")
+          supabase.table("inventory").upsert(
+              records, on_conflict="article"
+          ).execute()
+          st.success("✅ Erfolgreich in Supabase importiert!")
+          st.rerun()
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten der Datei: {e}")
 
 # 6. ETIKETTEN DRUCKEN
 elif action == "🖨 Etiketten drucken":
-  st.header("🖨 Mini-Etikett erstellen (1.4 x 4 cm)")
-
-  with st.form("search_label_form"):
-    label_search = st.text_input(
-        "🔍 Artikel nach Name, Barcode oder SAP-Nummer suchen:",
-        placeholder="Geben Sie Barcode, SAP oder Name ein...",
-    )
-    label_submitted = st.form_submit_button("Suchen")
-
-  if label_submitted or "label_search_query" not in st.session_state:
-    st.session_state["label_search_query"] = label_search
-
-  active_label_search = st.session_state.get("label_search_query", "")
-
+  st.header("🖨 Etiketten & Preisschilder drucken")
   if df.empty:
-    st.warning("Keine Artikel in der Datenbank vorhanden.")
+    st.warning("Keine Artikel im Bestand.")
   else:
-    label_filtered_df = df
-    if active_label_search:
-      lq = active_label_search.strip().lower()
-      label_filtered_df = df[
-          df["name"].astype(str).str.lower().str.contains(lq, na=False)
-          | df["barcode"].astype(str).str.lower().str.contains(lq, na=False)
-          | df["sap"].astype(str).str.lower().str.contains(lq, na=False)
-          | df["article"].astype(str).str.lower().str.contains(lq, na=False)
-      ]
-
-    if label_filtered_df.empty:
-      st.warning("⚠️ Kein Artikel gefunden.")
-    else:
-      label_options = []
-      for idx, row in label_filtered_df.iterrows():
-        name_val = row.get("name", "Unbekannt")
-        barcode_val = row.get("barcode", "-")
-        sap_val = row.get("sap", "-")
-        article_val = row.get("article", "-")
-        display_str = (
-            f"{name_val} | Art-Nr: {article_val} | Barcode: {barcode_val} |"
-            f" SAP: {sap_val}"
-        )
-        label_options.append(display_str)
-
-      selected_label_display = st.selectbox(
-          "Passenden Artikel für Etikett auswählen:", label_options
-      )
-      selected_label_idx = label_options.index(selected_label_display)
-      item_row = label_filtered_df.iloc[selected_label_idx]
-
-      l_name = str(item_row.get("name", ""))
-      l_article = str(item_row.get("article", ""))
-      l_preis = item_row.get("preis", 0.0)
-      try:
-        l_preis_str = (
-            f"{float(l_preis):.2f} €" if pd.notna(l_preis) else "0.00 €"
-        )
-      except:
-        l_preis_str = "0.00 €"
-
-      l_barcode = str(item_row.get("barcode", ""))
-      if l_barcode == "nan" or not l_barcode:
-        l_barcode = l_article
-
-      st.write("---")
-      st.subheader("Vorschau des Mini-Etiketts (40 x 14 mm):")
-
-      label_html = f"""
-            <div style="width: 40mm; height: 14mm; box-sizing: border-box; border: 1px solid #000; padding: 1mm 2mm; font-family: Arial, sans-serif; background: #ffffff; color: #000000; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; margin: auto;">
-                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 8px; font-weight: bold; line-height: 1;">
-                    <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 25mm;">{l_name}</span>
-                    <span style="font-size: 9px; color: #000;">{l_preis_str}</span>
-                </div>
-                <div style="text-align: center; line-height: 1;">
-                    <svg id="barcode_preview" style="max-height: 8mm;"></svg>
-                </div>
+    print_options = [
+        f"{r.get('name')} (SAP: {r.get('sap')}) - {r.get('preis')} €"
+        for _, r in df.iterrows()
+    ]
+    selected_to_print = st.selectbox(
+        "Artikel für Etikett auswählen:", print_options
+    )
+    if selected_to_print:
+      chosen_item = df.iloc[print_options.index(selected_to_print)]
+      st.markdown("---")
+      st.subheader("Etiketten-Vorschau:")
+      st.markdown(
+          f"""
+            <div style="border: 2px dashed #333; padding: 20px; width: 300px; text-align: center; background: white; color: black; border-radius: 10px;">
+                <h3>{chosen_item.get('brand', 'KaDeWe')}</h3>
+                <p><b>{chosen_item.get('name')}</b></p>
+                <p>SAP: {chosen_item.get('sap', '-')}</p>
+                <h2>{chosen_item.get('preis', 0.0):.2f} €</h2>
+                <p><small>Barcode: {chosen_item.get('barcode', '-')}</small></p>
             </div>
-            
-            <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
-            <script>
-                try {{
-                    JsBarcode("#barcode_preview", "{l_barcode}", {{
-                        format: "CODE128",
-                        lineColor: "#000000",
-                        width: 1,
-                        height: 22,
-                        displayValue: true,
-                        fontSize: 7,
-                        margin: 0
-                    }});
-                }} catch(e) {{}}
-            </script>
-            
-            <div style="text-align: center; margin-top: 15px;">
-                <button onclick="window.print()" style="background-color: #4CAF50; color: white; padding: 8px 16px; font-size: 14px; border: none; border-radius: 4px; cursor: pointer;">🖨 Etikett drucken (40x14mm)</button>
-            </div>
-            
-            <style>
-                @media print {{
-                    @page {{
-                        size: 40mm 14mm;
-                        margin: 0;
-                    }}
-                    body * {{
-                        visibility: hidden;
-                    }}
-                    #print-area, #print-area * {{
-                        visibility: visible;
-                    }}
-                    #print-area {{
-                        position: absolute;
-                        left: 0;
-                        top: 0;
-                        width: 40mm;
-                        height: 14mm;
-                    }}
-                }}
-            </style>
-            """
-      components.html(
-          f'<div id="print-area">{label_html}</div>', height=120
+            """,
+          unsafe_allow_html=True,
       )
+      if st.button("Druckansicht öffnen"):
+        st.info("Bitte nutzen Sie Strg+P (Cmd+P auf Mac), um das Etikett zu drucken.")
 
 # 7. QR-CODE FÜR KOLLEGEN
 elif action == "📱 QR-Code für Kollegen":
-  st.header("📱 QR-Code für den schnellen Zugriff vom Smartphone")
-  app_url = "https://mtcbfvpjnxlkvvtuknyv.streamlit.app"
-  encoded_url = urllib.parse.quote(app_url)
-  qr_image_url = (
-      f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={encoded_url}"
+  st.header("📱 App-Zugang für das Team")
+  st.write(
+      "Scannen Sie diesen QR-Code mit einem Smartphone, um direkt zur"
+      " Lager-App zu gelangen:"
   )
-  st.image(qr_image_url, width=300)
-  st.info("Rechtsklick -> Bild speichern unter... zum Ausdrucken.")
+  app_url = "https://mtcbfvpjnxlkvvtuknyv.streamlit.app"
+  qr_code_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(app_url)}"
+  st.image(qr_code_url, width=300)
+  st.markdown(f"Direktlink: [{app_url}]({app_url})")
