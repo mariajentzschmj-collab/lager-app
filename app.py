@@ -387,7 +387,7 @@ elif action == "📷 Live-Kamera-Scanner":
           st.write("---")
       else:
         st.warning(
-            f"⚠️ Kein Artikel mit dem Suchbegriff '{scanned_input}' gefunden."
+            f"⚠️️ Kein Artikel mit dem Suchbegriff '{scanned_input}' gefunden."
         )
 
 # 5. KATALOG AUS DATEI HOCHLADEN
@@ -407,6 +407,11 @@ elif action == "📁 Katalog aus Datei hochladen":
         upload_df = pd.read_csv(uploaded_file)
 
       upload_df.columns = upload_df.columns.str.strip()
+
+      # УДАЛЯЕМ ТЕХНИЧЕСКУЮ КОЛОНКУ UNNAMED, ЕСЛИ ОНА ПОПАЛА ИЗ EXCEL
+      upload_df = upload_df.loc[
+          :, ~upload_df.columns.str.contains("^Unnamed", na=False)
+      ]
 
       column_mapping = {
           "Produkt-ID": "article",
@@ -484,7 +489,7 @@ elif action == "🖨 Etiketten drucken":
       ]
 
     if label_filtered_df.empty:
-      st.warning("⚠️️ Kein Artikel gefunden.")
+      st.warning("⚠️ Kein Artikel gefunden.")
     else:
       label_options = []
       for idx, row in label_filtered_df.iterrows():
@@ -521,7 +526,6 @@ elif action == "🖨 Etiketten drucken":
       st.write("---")
       st.subheader("Vorschau des Mini-Etiketts (40 x 14 mm):")
 
-      # Точный размер: ширина 40mm, высота 14mm
       label_html = f"""
             <div style="width: 40mm; height: 14mm; box-sizing: border-box; border: 1px solid #000; padding: 1mm 2mm; font-family: Arial, sans-serif; background: #ffffff; color: #000000; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; margin: auto;">
                 <div style="display: flex; justify-content: space-between; align-items: center; font-size: 8px; font-weight: bold; line-height: 1;">
