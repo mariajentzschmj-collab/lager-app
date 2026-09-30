@@ -200,7 +200,7 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
       ]
 
     if working_df.empty:
-      st.warning("⚠️️ Kein Artikel gefunden.")
+      st.warning("⚠️ Kein Artikel gefunden.")
     else:
       item_options = []
       for idx, row in working_df.iterrows():
@@ -305,7 +305,6 @@ elif action == "📷 Live-Kamera-Scanner":
 
   st.write("---")
 
-  # Поле ввода без st.form, чтобы кнопки работали напрямую
   scanned_input = st.text_input(
       "Gescannter Barcode (hier einfügen oder tippen):",
       placeholder="Nummer hier einfügen...",
@@ -345,7 +344,6 @@ elif action == "📷 Live-Kamera-Scanner":
               f" Barcode: `{item_bc}` | Original-Bestand: **{orig_qty} Stk.**"
           )
 
-          # Убираем st.form здесь, делаем обычные элементы управления
           change_type = st.radio(
               "Aktion:",
               [
@@ -381,7 +379,7 @@ elif action == "📷 Live-Kamera-Scanner":
                     f" **{item_name}** wurden {action_text}. Neuer Bestand:"
                     f" **{new_qty} Stk.**"
                 )
-                st.rerurn()
+                st.rerun()  # Исправлено: теперь метод называется правильно
               except Exception as e:
                 st.error(f"Fehler beim Aktualisieren: {e}")
             else:
