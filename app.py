@@ -168,7 +168,7 @@ elif action == "➕ Artikel hinzufügen":
         except Exception as e:
           st.error(f"Fehler beim Speichern: {e}")
 
-# 3. ARTIKEL REDUZIEREN (VERKAUF) - С ПОДДЕРЖКОЙ ВЫБОРА ПО BARCODE И SAP
+# 3. ARTIKEL REDUZIEREN (VERKAUF)
 elif action == "📉 Artikel reduzieren (Verkauf)":
   st.header("🛒 Verkauf / Bestandsreduzierung erfassen")
 
@@ -180,7 +180,6 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
         " SAP-Nummer suchen und auswählen.*"
     )
 
-    # Поле быстрого поиска для сужения списка или прямого ввода
     sale_search = st.text_input(
         "🔍 Nach Name, Barcode oder SAP-Nummer filtern:",
         placeholder="Geben Sie Barcode, SAP oder Name ein...",
@@ -198,10 +197,9 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
 
     if working_df.empty:
       st.warning(
-          "⚠️️ Kein Artikel gefunden, der den Suchkriterien entspricht."
+          "⚠️ Kein Artikel gefunden, der den Suchkriterien entspricht."
       )
     else:
-      # Формируем информативные опции для выпадающего списка
       item_options = []
       for idx, row in working_df.iterrows():
         name_val = row.get("name", "Unbekannt")
@@ -219,7 +217,6 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
             "Passenden Artikel auswählen:", item_options
         )
 
-        # Находим выбранную строку по точному совпадению строки отображения
         selected_idx = item_options.index(selected_display)
         selected_row = working_df.iloc[selected_idx]
 
@@ -386,7 +383,7 @@ elif action == "📷 Live-Kamera-Scanner":
           st.write("---")
       else:
         st.warning(
-            f"⚠️ Kein Artikel mit dem Suchbegriff '{scanned_input}' in der"
+            f"⚠️️ Kein Artikel mit dem Suchbegriff '{scanned_input}' in der"
             " Datenbank gefunden."
         )
 
@@ -448,104 +445,140 @@ elif action == "📁 Katalog aus Datei hochladen":
 elif action == "🖨 Etiketten drucken":
   st.header("🖨 Preisschilder & Etiketten erstellen")
   st.write(
-      "Wählen Sie einen Artikel aus, um ein klares Etikett (weißer Hintergrund,"
-      " schwarzer Text inklusive Preis) mit Name, Preis, Artikelnummer, Barcode"
-      " und **QR-Code** zu generieren."
+      "Wählen Sie einen Artikel aus (über Name, Barcode oder SAP-Nummer), um"
+      " ein klares Etikett mit Preis, Artikelnummer und QR-Code zu"
+      " generieren."
   )
 
   if df.empty:
     st.warning("Keine Artikel in der Datenbank vorhanden.")
   else:
-    item_options = df["name"].tolist()
-    selected_label_item = st.selectbox(
-        "Artikel für Etikett auswählen:", item_options
+    label_search = st.text_input(
+        "🔍 Artikel nach Name, Barcode oder SAP-Nummer suchen:",
+        placeholder="Geben Sie Barcode, SAP oder Name ein...",
+        key="label_search_input",
     )
 
-    item_row = df[df["name"] == selected_label_item].iloc[0]
-    l_name = str(item_row.get("name", ""))
-    l_brand = str(item_row.get("brand", ""))
-    l_article = str(item_row.get("article", ""))
-    l_preis = item_row.get("preis", 0.0)
-    try:
-      l_preis_str = f"{float(l_preis):.2f} €" if pd.notna(l_preis) else "0.00 €"
-    except:
-      l_preis_str = "0.00 €"
+    label_filtered_df = df
+    if label_search:
+      lq = label_search.strip().lower()
+      label_filtered_df = df[
+          df["name"].astype(str).str.lower().str.contains(lq, na=False)
+          | df["barcode"].astype(str).str.lower().str.contains(lq, na=False)
+          | df["sap"].astype(str).str.lower().str.contains(lq, na=False)
+          | df["article"].astype(str).str.lower().str.contains(lq, na=False)
+      ]
 
-    l_barcode = str(item_row.get("barcode", ""))
-    if l_barcode == "nan" or not l_barcode:
-      l_barcode = l_article
+    if label_filtered_df.empty:
+      st.warning(
+          "⚠️ Kein Artikel gefunden, der den Suchkriterien entspricht."
+      )
+    else:
+      label_options = []
+      for idx, row in label_filtered_df.iterrows():
+        name_val = row.get("name", "Unbekannt")
+        barcode_val = row.get("barcode", "-")
+        sap_val = row.get("sap", "-")
+        article_val = row.get("article", "-")
+        display_str = (
+            f"{name_val} | Art-Nr: {article_val} | Barcode: {barcode_val} |"
+            f" SAP: {sap_val}"
+        )
+        label_options.append(display_str)
 
-    st.write("---")
-    st.subheader("Vorschau des Etiketts:")
+      selected_label_display = st.selectbox(
+          "Passenden Artikel für Etikett auswählen:", label_options
+      )
 
-    label_html = f"""
-        <div style="width: 340px; border: 2px solid #333; padding: 15px; border-radius: 8px; font-family: Arial, sans-serif; background: #ffffff; color: #000000; text-align: center; margin: auto;">
-            <div style="font-size: 11px; font-weight: bold; text-transform: uppercase; color: #555555; margin-bottom: 5px; letter-spacing: 1px;">KaDeWe Berlin — 5. Etage</div>
-            <div style="font-size: 13px; font-weight: bold; color: #333333; margin-bottom: 2px; text-transform: uppercase;">{l_brand}</div>
-            <div style="font-size: 15px; font-weight: bold; color: #000000; margin-bottom: 10px; min-height: 40px; display: flex; align-items: center; justify-content: center;">{l_name}</div>
-            <div style="font-size: 26px; font-weight: bold; color: #000000; margin-bottom: 10px;">{l_preis_str}</div>
-            <div style="font-size: 11px; color: #333333; margin-bottom: 8px;">Art.-Nr: <b style="color: #000000;">{l_article}</b></div>
-            
-            <div style="display: flex; justify-content: space-around; align-items: center; margin-top: 10px; background: #fafafa; padding: 8px; border-radius: 6px;">
-                <div>
-                    <svg id="barcode_preview"></svg>
-                </div>
-                <div style="text-align: center;">
-                    <div id="qrcode_preview"></div>
+      selected_label_idx = label_options.index(selected_label_display)
+      item_row = label_filtered_df.iloc[selected_label_idx]
+
+      l_name = str(item_row.get("name", ""))
+      l_brand = str(item_row.get("brand", ""))
+      l_article = str(item_row.get("article", ""))
+      l_preis = item_row.get("preis", 0.0)
+      try:
+        l_preis_str = (
+            f"{float(l_preis):.2f} €" if pd.notna(l_preis) else "0.00 €"
+        )
+      except:
+        l_preis_str = "0.00 €"
+
+      l_barcode = str(item_row.get("barcode", ""))
+      if l_barcode == "nan" or not l_barcode:
+        l_barcode = l_article
+
+      st.write("---")
+      st.subheader("Vorschau des Etiketts:")
+
+      label_html = f"""
+            <div style="width: 340px; border: 2px solid #333; padding: 15px; border-radius: 8px; font-family: Arial, sans-serif; background: #ffffff; color: #000000; text-align: center; margin: auto;">
+                <div style="font-size: 11px; font-weight: bold; text-transform: uppercase; color: #555555; margin-bottom: 5px; letter-spacing: 1px;">KaDeWe Berlin — 5. Etage</div>
+                <div style="font-size: 13px; font-weight: bold; color: #333333; margin-bottom: 2px; text-transform: uppercase;">{l_brand}</div>
+                <div style="font-size: 15px; font-weight: bold; color: #000000; margin-bottom: 10px; min-height: 40px; display: flex; align-items: center; justify-content: center;">{l_name}</div>
+                <div style="font-size: 26px; font-weight: bold; color: #000000; margin-bottom: 10px;">{l_preis_str}</div>
+                <div style="font-size: 11px; color: #333333; margin-bottom: 8px;">Art.-Nr: <b style="color: #000000;">{l_article}</b></div>
+                
+                <div style="display: flex; justify-content: space-around; align-items: center; margin-top: 10px; background: #fafafa; padding: 8px; border-radius: 6px;">
+                    <div>
+                        <svg id="barcode_preview"></svg>
+                    </div>
+                    <div style="text-align: center;">
+                        <div id="qrcode_preview"></div>
+                    </div>
                 </div>
             </div>
-        </div>
-        
-        <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-        <script>
-            try {{
-                JsBarcode("#barcode_preview", "{l_barcode}", {{
-                    format: "CODE128",
-                    lineColor: "#000000",
-                    width: 1.2,
-                    height: 38,
-                    displayValue: true,
-                    fontSize: 10
-                }});
-            }} catch(e) {{}}
+            
+            <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+            <script>
+                try {{
+                    JsBarcode("#barcode_preview", "{l_barcode}", {{
+                        format: "CODE128",
+                        lineColor: "#000000",
+                        width: 1.2,
+                        height: 38,
+                        displayValue: true,
+                        fontSize: 10
+                    }});
+                }} catch(e) {{}}
 
-            try {{
-                document.getElementById("qrcode_preview").innerHTML = "";
-                new QRCode(document.getElementById("qrcode_preview"), {{
-                    text: "{l_article} - {l_name}",
-                    width: 45,
-                    height: 45,
-                    colorDark : "#000000",
-                    colorLight : "#ffffff",
-                    correctLevel : QRCode.CorrectLevel.H
-                }});
-            }} catch(e) {{}}
-        </script>
-        
-        <div style="text-align: center; margin-top: 15px;">
-            <button onclick="window.print()" style="background-color: #4CAF50; color: white; padding: 10px 20px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer;">🖨 Etikett drucken / PDF</button>
-        </div>
-        
-        <style>
-            @media print {{
-                body * {{
-                    visibility: hidden;
+                try {{
+                    document.getElementById("qrcode_preview").innerHTML = "";
+                    new QRCode(document.getElementById("qrcode_preview"), {{
+                        text: "{l_article} - {l_name}",
+                        width: 45,
+                        height: 45,
+                        colorDark : "#000000",
+                        colorLight : "#ffffff",
+                        correctLevel : QRCode.CorrectLevel.H
+                    }});
+                }} catch(e) {{}}
+            </script>
+            
+            <div style="text-align: center; margin-top: 15px;">
+                <button onclick="window.print()" style="background-color: #4CAF50; color: white; padding: 10px 20px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer;">🖨 Etikett drucken / PDF</button>
+            </div>
+            
+            <style>
+                @media print {{
+                    body * {{
+                        visibility: hidden;
+                    }}
+                    #print-area, #print-area * {{
+                        visibility: visible;
+                    }}
+                    #print-area {{
+                        position: absolute;
+                        left: 0;
+                        top: 0;
+                    }}
                 }}
-                #print-area, #print-area * {{
-                    visibility: visible;
-                }}
-                #print-area {{
-                    position: absolute;
-                    left: 0;
-                    top: 0;
-                }}
-            }}
-        </style>
-        """
+            </style>
+            """
 
-    wrapped_html = f'<div id="print-area">{label_html}</div>'
-    components.html(wrapped_html, height=360)
+      wrapped_html = f'<div id="print-area">{label_html}</div>'
+      components.html(wrapped_html, height=360)
 
 # 7. QR-CODE FÜR KOLLEGEN
 elif action == "📱 QR-Code für Kollegen":
