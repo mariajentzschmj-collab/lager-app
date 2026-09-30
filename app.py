@@ -387,7 +387,7 @@ elif action == "📷 Live-Kamera-Scanner":
           st.write("---")
       else:
         st.warning(
-            f"⚠️️ Kein Artikel mit dem Suchbegriff '{scanned_input}' gefunden."
+            f"⚠️ Kein Artikel mit dem Suchbegriff '{scanned_input}' gefunden."
         )
 
 # 5. KATALOG AUS DATEI HOCHLADEN
@@ -408,7 +408,7 @@ elif action == "📁 Katalog aus Datei hochladen":
 
       upload_df.columns = upload_df.columns.str.strip()
 
-      # УДАЛЯЕМ ТЕХНИЧЕСКУЮ КОЛОНКУ UNNAMED, ЕСЛИ ОНА ПОПАЛА ИЗ EXCEL
+      # Удаляем техническую колонку Unnamed, если она попала из Excel
       upload_df = upload_df.loc[
           :, ~upload_df.columns.str.contains("^Unnamed", na=False)
       ]
@@ -436,6 +436,19 @@ elif action == "📁 Katalog aus Datei hochladen":
             "preis",
         ] + list(upload_df.columns[4:])
 
+      # БЕЗОПАСНАЯ ОБРАБОТКА ЦИФРОВЫХ ПОЛЕЙ (предотвращает ошибку invalid input syntax)
+      if "preis" in upload_df.columns:
+        upload_df["preis"] = (
+            pd.to_numeric(
+                upload_df["preis"].astype(str).str.replace(",", "."),
+                errors="coerce",
+            )
+            .fillna(0.0)
+            .astype(float)
+        )
+      else:
+        upload_df["preis"] = 0.0
+
       if "quantity" in upload_df.columns:
         upload_df["quantity"] = (
             pd.to_numeric(upload_df["quantity"], errors="coerce")
@@ -445,6 +458,7 @@ elif action == "📁 Katalog aus Datei hochladen":
       else:
         upload_df["quantity"] = 0
 
+      # Превращаем все остальные колонки в строки, заменяя NaN на пустые строки/None
       upload_df = upload_df.replace({np.nan: None})
 
       st.write("Vorschau (zu importierende Daten):")
@@ -455,7 +469,11 @@ elif action == "📁 Katalog aus Datei hochladen":
           try:
             records = upload_df.to_dict(orient="records")
             cleaned_records = [
-                {k.strip(): v for k, v in record.items()} for record in records
+                {
+                    k.strip(): (v if v is not None else "")
+                    for k, v in record.items()
+                }
+                for record in records
             ]
             supabase.table("inventory").insert(cleaned_records).execute()
             st.success("✅ Katalog erfolgreich hochgeladen!")
