@@ -267,6 +267,7 @@ elif action == "📷 Live-Kamera-Scanner":
       " Code und fügen Sie ihn unten ein:"
   )
 
+  # Улучшенный скрипт сканера с оптимизированными настройками для штрихкодов
   scanner_html = """
     <div style="width: 100%; max-width: 450px; margin: auto; text-align: center;">
         <div id="reader" style="width: 100%;"></div>
@@ -296,9 +297,22 @@ elif action == "📷 Live-Kamera-Scanner":
             navigator.clipboard.writeText(decodedText);
         }
 
-        let html5QrcodeScanner = new Html5QrcodeScanner(
-            "reader", { fps: 10, qrbox: { width: 250, height: 100 } }, false);
-        html5QrcodeScanner.render(onScanSuccess);
+        // Оптимальная конфигурация для повышения точности и скорости считывания
+        const config = {
+            fps: 15, 
+            qrbox: { width: 320, height: 120 },
+            aspectRatio: 1.0,
+            formatsToSupport: [
+                Html5QrcodeSupportedFormats.EAN_13,
+                Html5QrcodeSupportedFormats.EAN_8,
+                Html5QrcodeSupportedFormats.CODE_128,
+                Html5QrcodeSupportedFormats.UPC_A,
+                Html5QrcodeSupportedFormats.UPC_E
+            ]
+        };
+
+        let html5QrcodeScanner = new Html5QrcodeScanner("reader", config, false);
+        html5QrcodeScanner.render(onScanSuccess, (errorMessage) => {});
     </script>
     """
   components.html(scanner_html, height=430)
@@ -461,7 +475,7 @@ elif action == "📁 Katalog aus Datei hochladen":
       # Превращаем все остальные колонки в строки, заменяя NaN на пустые строки/None
       upload_df = upload_df.replace({np.nan: None})
 
-      # УДАЛЯЕМ ДУБЛИКАТЫ АРТИКУЛОВ ВНУТРИ САМОГО ФАЙЛА
+      # ЗАЩИТА ОТ ОШИБКИ 21000: УДАЛЯЕМ ДУБЛИКАТЫ АРТИКУЛОВ ВНУТРИ САМОГО ФАЙЛА
       if "article" in upload_df.columns:
         before_count = len(upload_df)
         upload_df = upload_df.drop_duplicates(subset=["article"], keep="last")
