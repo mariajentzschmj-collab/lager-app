@@ -113,7 +113,7 @@ action = st.sidebar.radio(
 if action == "📊 Bestände anzeigen":
   st.header("📋 Aktuelles Sortiment")
   if df.empty:
-    st.info("Das Lager ist leer или keine Verbindung zur Datenbank möglich.")
+    st.info("Das Lager ist leer oder keine Verbindung zur Datenbank möglich.")
   else:
     search_query = st.text_input(
         "🔍 Artikel nach Name, Artikelnummer oder Barcode suchen:"
@@ -404,8 +404,8 @@ elif action == "🖨 Etiketten drucken":
   st.header("🖨 Preisschilder & Etiketten erstellen")
   st.write(
       "Wählen Sie einen Artikel aus, um ein klares Etikett (weißer Hintergrund,"
-      " schwarzer Text) mit Name, Preis, Artikelnummer und Barcode zu"
-      " generieren."
+      " schwarzer Text inklusive Preis) mit Name, Preis, Artikelnummer und Barcode"
+      " zu generieren."
   )
 
   if df.empty:
@@ -434,13 +434,13 @@ elif action == "🖨 Etiketten drucken":
     st.write("---")
     st.subheader("Vorschau des Etiketts:")
 
-    # Классический белый ценник с черным текстом
+    # Белый ценник с полностью черным текстом (включая цену)
     label_html = f"""
         <div style="width: 320px; border: 2px solid #333; padding: 15px; border-radius: 8px; font-family: Arial, sans-serif; background: #ffffff; color: #000000; text-align: center; margin: auto;">
             <div style="font-size: 11px; font-weight: bold; text-transform: uppercase; color: #555555; margin-bottom: 5px; letter-spacing: 1px;">KaDeWe Berlin — 5. Etage</div>
             <div style="font-size: 13px; font-weight: bold; color: #333333; margin-bottom: 2px; text-transform: uppercase;">{l_brand}</div>
             <div style="font-size: 15px; font-weight: bold; color: #000000; margin-bottom: 10px; height: 40px; display: flex; align-items: center; justify-content: center;">{l_name}</div>
-            <div style="font-size: 26px; font-weight: bold; color: #b00000; margin-bottom: 10px;">{l_preis_str}</div>
+            <div style="font-size: 26px; font-weight: bold; color: #000000; margin-bottom: 10px;">{l_preis_str}</div>
             <div style="font-size: 11px; color: #333333; margin-bottom: 8px;">Art.-Nr: <b style="color: #000000;">{l_article}</b></div>
             <div style="background: #ffffff; padding: 5px; border-radius: 4px; display: inline-block;">
                 <svg id="barcode_preview"></svg>
