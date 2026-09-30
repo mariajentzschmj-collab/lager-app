@@ -1,3 +1,4 @@
+import time
 import urllib.parse
 import numpy as np
 import pandas as pd
@@ -10,42 +11,51 @@ st.set_page_config(
     page_title="KaDeWe Lager — Iittala & Royal Copenhagen", layout="wide"
 )
 
-
-# --- ПРОСТАЯ АВТОРИЗАЦИЯ (ЗАЩИТА ПАРОЛЕМ) ---
+# --- ПАРОЛЬ И ТАЙМЕР АКТИВНОСТИ (5 МИНУТ) ---
 def check_password():
-  """Возвращает True, если пользователь ввел правильный пароль."""
-
-  def password_entered():
-    if st.session_state["password"] == "kadewe2026":
-      st.session_state["password_correct"] = True
-      del st.session_state["password"]
-    else:
-      st.session_state["password_correct"] = False
+  TIMEOUT_SECONDS = 300  # 5 минут в секундах
 
   if "password_correct" not in st.session_state:
-    st.text_input(
-        "🔑 Bitte Passwort eingeben / Введите пароль для доступа к складу:",
-        type="password",
-        on_change=password_entered,
-        key="password",
-    )
-    return False
-  elif not st.session_state["password_correct"]:
-    st.text_input(
-        "🔑 Bitte Passwort eingeben / Введите пароль для доступа к складу:",
-        type="password",
-        on_change=password_entered,
-        key="password",
-    )
-    st.error("❌ Falsches Passwort / Неверный пароль")
-    return False
-  else:
+    st.session_state["password_correct"] = False
+    st.session_state["last_active"] = time.time()
+
+  # Проверяем, прошло ли более 5 минут с последней активности
+  if st.session_state["password_correct"]:
+    if (
+        time.time() - st.session_state.get("last_active", time.time())
+        > TIMEOUT_SECONDS
+    ):
+      st.session_state["password_correct"] = False
+      st.warning(
+          "⏱️ Sitzung wegen Inaktivität abgelaufen (> 5 Min.). Bitte erneut"
+          " anmelden."
+      )
+
+  if st.session_state["password_correct"]:
+    # Обновляем время последней активности при каждом действии
+    st.session_state["last_active"] = time.time()
     return True
+
+  # Экраны ввода пароля
+  st.title("🔐 Lagerverwaltung - Login")
+  st.subheader(
+      "Bitte geben Sie das Passwort ein (Timeout nach 5 Min. Inaktivität)"
+  )
+
+  password = st.text_input("Passwort", type="password")
+  if st.button("Anmelden"):
+    # Обновленный пароль
+    if password == "kadewe2026":
+      st.session_state["password_correct"] = True
+      st.session_state["last_active"] = time.time()
+      st.rerun()
+    else:
+      st.error("❌ Falsches Passwort")
+  return False
 
 
 if not check_password():
   st.stop()
-
 
 # --- ОСНОВНОЙ КОД ПРИЛОЖЕНИЯ ---
 st.title("📦 Lagerverwaltung (5. Etage)")
@@ -112,12 +122,13 @@ action = st.sidebar.radio(
 
 # 1. BESTÄNDE ANZEIGEN
 if action == "📊 Bestände anzeigen":
-  st.header("📋 Aktuelles Sortiment")
+  st.header("📋 Aktuelles Sortiment & Bestandsprüfung")
   if df.empty:
-    st.info("Das Lager ist leer oder keine Verbindung zur Datenbank möglich.")
+    st.info("Das Lager ist leer или keine Verbindung zur Datenbank möglich.")
   else:
     search_query = st.text_input(
-        "🔍 Artikel nach Name, Artikelnummer oder Barcode suchen:"
+        "🔍 Barcode scannen или nach Name / Artikel-Nr. / SAP suchen:",
+        placeholder="Klicken Sie hier und scannen Sie den Barcode...",
     )
     filtered_df = df
     if search_query:
@@ -128,30 +139,87 @@ if action == "📊 Bestände anzeigen":
           | df["article"].astype(str).str.lower().str.contains(q, na=False)
           | df["sap"].astype(str).str.lower().str.contains(q, na=False)
       ]
+      if len(filtered_df) == 1:
+        item = filtered_df.iloc[0]
+        st.success(
+            f"✨ **Gefunden:** {item['name']} | Preis:"
+            f" **{item.get('preis', 0)} €** | Bestand:"
+            f" **{item.get('quantity', 0)} Stk.**"
+        )
 
     st.dataframe(filtered_df, use_container_width=True)
 
 # 2. ARTIKEL HINZUFÜGEN
 elif action == "➕ Artikel hinzufügen":
-  st.header("✨ Neuen Artikel hinzufügen")
+  st.header("✨ Neuen Artikel hinzufügen oder Bestand aufstocken")
+
+  add_search = st.text_input(
+      "🔍 Bestehenden Artikel per Barcode / SAP suchen (zum Aufstocken):",
+      placeholder="Barcode scannen oder eingeben...",
+  )
+
+  pre_article = ""
+  pre_name = ""
+  pre_brand = "Iittala"
+  pre_sap = ""
+  pre_barcode = ""
+  pre_preis = 0.0
+  pre_location = "Etage 5 Lager"
+
+  if add_search:
+    aq = add_search.strip().lower()
+    found_items = df[
+        df["barcode"].astype(str).str.lower().str.contains(aq, na=False)
+        | df["article"].astype(str).str.lower().str.contains(aq, na=False)
+        | df["sap"].astype(str).str.lower().str.contains(aq, na=False)
+        | df["name"].astype(str).str.lower().str.contains(aq, na=False)
+    ]
+    if not found_items.empty:
+      item = found_items.iloc[0]
+      st.success(
+          f"📦 Artikel gefunden: **{item.get('name')}** (Aktueller Bestand:"
+          f" {item.get('quantity', 0)} Stk.)"
+      )
+      pre_article = str(item.get("article", ""))
+      pre_name = str(item.get("name", ""))
+      pre_brand = (
+          str(item.get("brand", "Iittala"))
+          if item.get("brand")
+          in ["Iittala", "Royal Copenhagen", "Arabia", "Georg Jensen"]
+          else "Iittala"
+      )
+      pre_sap = str(item.get("sap", ""))
+      pre_barcode = str(item.get("barcode", ""))
+      pre_preis = float(item.get("preis", 0.0))
+      pre_location = str(item.get("location", "Etage 5 Lager"))
 
   with st.form("add_form"):
-    new_article = st.text_input("Artikelnummer / SKU", value="")
+    new_article = st.text_input("Artikelnummer / SKU", value=pre_article)
     new_name = st.text_input(
-        "Artikelname (z. B. Iittala Ultima Thule / Royal Copenhagen)"
+        "Artikelname (z. B. Iittala Ultima Thule / Royal Copenhagen)",
+        value=pre_name,
     )
     new_brand = st.selectbox(
-        "Marke", ["Iittala", "Royal Copenhagen", "Arabia", "Georg Jensen"]
+        "Marke",
+        ["Iittala", "Royal Copenhagen", "Arabia", "Georg Jensen"],
+        index=[
+            "Iittala",
+            "Royal Copenhagen",
+            "Arabia",
+            "Georg Jensen",
+        ].index(pre_brand),
     )
-    new_qty = st.number_input("Menge im Lager", min_value=0, value=0, step=1)
-    new_location = st.text_input("Lagerort", value="Etage 5 Lager")
+    new_qty = st.number_input(
+        "Hinzuzufügende / Neue Menge", min_value=0, value=1, step=1
+    )
+    new_location = st.text_input("Lagerort", value=pre_location)
     new_preis = st.number_input(
-        "Preis (€)", min_value=0.0, value=0.0, format="%.2f"
+        "Preis (€)", min_value=0.0, value=pre_preis, format="%.2f"
     )
-    new_sap = st.text_input("SAP-Nummer")
-    new_barcode = st.text_input("Barcode")
+    new_sap = st.text_input("SAP-Nummer", value=pre_sap)
+    new_barcode = st.text_input("Barcode", value=pre_barcode)
 
-    submitted = st.form_submit_button("In Datenbank speichern")
+    submitted = st.form_submit_button("In Datenbank speichern / Aktualisieren")
     if submitted:
       if not new_name:
         st.error("Bitte geben Sie einen Artikelnamen ein.")
@@ -169,10 +237,12 @@ elif action == "➕ Artikel hinzufügen":
               "sap": str(new_sap),
               "barcode": str(new_barcode),
           }
-          supabase.table("inventory").insert(data).execute()
+          supabase.table("inventory").upsert(
+              data, on_conflict="article"
+          ).execute()
           st.success(
-              f"✅ Artikel '{new_name}' erfolgreich mit **{int(new_qty)} Stk.**"
-              " gespeichert!"
+              f"✅ Artikel '{new_name}' erfolgreich gespeichert с"
+              f" **{int(new_qty)} Stk.**!"
           )
         except Exception as e:
           st.error(f"Fehler beim Speichern: {e}")
@@ -185,8 +255,8 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
     st.warning("Keine Artikel im Lager vorhanden.")
   else:
     sale_search = st.text_input(
-        "🔍 Nach Name, Barcode oder SAP-Nummer filtern:",
-        placeholder="Geben Sie Barcode, SAP oder Name ein...",
+        "🔍 Barcode scannen или nach Name / SAP suchen:",
+        placeholder="Scannen Sie den Barcode oder tippen Sie den Namen ein...",
     )
 
     working_df = df
@@ -267,7 +337,6 @@ elif action == "📷 Live-Kamera-Scanner":
       " Code und fügen Sie ihn unten ein:"
   )
 
-  # Улучшенный скрипт сканера с оптимизированными настройками для штрихкодов
   scanner_html = """
     <div style="width: 100%; max-width: 450px; margin: auto; text-align: center;">
         <div id="reader" style="width: 100%;"></div>
@@ -297,7 +366,6 @@ elif action == "📷 Live-Kamera-Scanner":
             navigator.clipboard.writeText(decodedText);
         }
 
-        // Оптимальная конфигурация для повышения точности и скорости считывания
         const config = {
             fps: 15, 
             qrbox: { width: 320, height: 120 },
@@ -369,7 +437,7 @@ elif action == "📷 Live-Kamera-Scanner":
           delta_qty = st.number_input(
               "Menge (Stk.):",
               min_value=1,
-              value=2,
+              value=1,
               step=1,
               key=f"num_{item_id}",
           )
@@ -421,8 +489,6 @@ elif action == "📁 Katalog aus Datei hochladen":
         upload_df = pd.read_csv(uploaded_file)
 
       upload_df.columns = upload_df.columns.str.strip()
-
-      # Удаляем техническую колонку Unnamed, если она попала из Excel
       upload_df = upload_df.loc[
           :, ~upload_df.columns.str.contains("^Unnamed", na=False)
       ]
@@ -450,7 +516,6 @@ elif action == "📁 Katalog aus Datei hochladen":
             "preis",
         ] + list(upload_df.columns[4:])
 
-      # БЕЗОПАСНАЯ ОБРАБОТКА ЦИФРОВЫХ ПОЛЕЙ
       if "preis" in upload_df.columns:
         upload_df["preis"] = (
             pd.to_numeric(
@@ -472,10 +537,8 @@ elif action == "📁 Katalog aus Datei hochladen":
       else:
         upload_df["quantity"] = 0
 
-      # Превращаем все остальные колонки в строки, заменяя NaN на пустые строки/None
       upload_df = upload_df.replace({np.nan: None})
 
-      # ЗАЩИТА ОТ ОШИБКИ 21000: УДАЛЯЕМ ДУБЛИКАТЫ АРТИКУЛОВ ВНУТРИ САМОГО ФАЙЛА
       if "article" in upload_df.columns:
         before_count = len(upload_df)
         upload_df = upload_df.drop_duplicates(subset=["article"], keep="last")
@@ -501,7 +564,6 @@ elif action == "📁 Katalog aus Datei hochladen":
                 for record in records
             ]
 
-            # UPSERT с автоматическим обновлением существующих артикулов
             supabase.table("inventory").upsert(
                 cleaned_records, on_conflict="article"
             ).execute()
@@ -523,7 +585,7 @@ elif action == "🖨 Etiketten drucken":
     st.warning("Keine Artikel in der Datenbank vorhanden.")
   else:
     label_search = st.text_input(
-        "🔍 Artikel nach Name, Barcode oder SAP-Nummer suchen:",
+        "🔍 Artikel nach Name, Barcode или SAP-Nummer suchen:",
         placeholder="Geben Sie Barcode, SAP oder Name ein...",
         key="label_search_input",
     )
