@@ -80,7 +80,15 @@ def load_data():
   try:
     response = supabase.table("inventory").select("*").execute()
     if response.data is not None:
-      return pd.DataFrame(response.data)
+      df_loaded = pd.DataFrame(response.data)
+      # Приводим quantity к числовому типу, если колонка существует
+      if "quantity" in df_loaded.columns:
+        df_loaded["quantity"] = (
+            pd.to_numeric(df_loaded["quantity"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+        )
+      return df_loaded
   except Exception as e:
     st.error(f"❌ Fehler beim Laden der Daten: {e}")
   return pd.DataFrame(columns=cols)
@@ -136,7 +144,7 @@ elif action == "➕ Artikel hinzufügen":
     new_brand = st.selectbox(
         "Marke", ["Iittala", "Royal Copenhagen", "Arabia", "Georg Jensen"]
     )
-    new_qty = st.number_input("Menge im Lager", min_value=0, value=1)
+    new_qty = st.number_input("Menge im Lager", min_value=0, value=0)
     new_location = st.text_input("Lagerort", value="Etage 5 Lager")
     new_preis = st.number_input(
         "Preis (€)", min_value=0.0, value=0.0, format="%.2f"
@@ -205,7 +213,9 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
         name_val = row.get("name", "Unbekannt")
         barcode_val = row.get("barcode", "-")
         sap_val = row.get("sap", "-")
-        qty_val = row.get("quantity", 0)
+        qty_val = (
+            int(row.get("quantity", 0)) if pd.notna(row.get("quantity")) else 0
+        )
         display_str = (
             f"{name_val} | Barcode: {barcode_val} | SAP: {sap_val} (Bestand:"
             f" {qty_val} Stk.)"
@@ -224,9 +234,7 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
         selected_item_name = selected_row["name"]
         raw_qty = selected_row["quantity"]
         current_qty = (
-            int(raw_qty)
-            if pd.notna(raw_qty) and str(raw_qty).isdigit()
-            else 0
+            int(float(raw_qty)) if pd.notna(raw_qty) else 0
         )
 
         st.info(
@@ -246,9 +254,9 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
           new_qty = current_qty - int(reduce_qty)
           if supabase is not None:
             try:
-              supabase.table("inventory").update({"quantity": new_qty}).eq(
-                  "id", item_id
-              ).execute()
+              supabase.table("inventory").update(
+                  {"quantity": int(new_qty)}
+              ).eq("id", item_id).execute()
               st.success(
                   f"Bestand für '{selected_item_name}' aktualisiert! Neuer"
                   f" Bestand: {new_qty} Stk."
@@ -330,11 +338,12 @@ elif action == "📷 Live-Kamera-Scanner":
         for idx, item in matched_rows.iterrows():
           item_name = item["name"]
           raw_qty = item["quantity"]
-          orig_qty = (
-              int(raw_qty)
-              if pd.notna(raw_qty) and str(raw_qty).isdigit()
-              else 0
-          )
+
+          try:
+            orig_qty = int(float(raw_qty)) if pd.notna(raw_qty) else 0
+          except:
+            orig_qty = 0
+
           item_id = item["id"]
           item_art = item["article"]
           item_bc = item["barcode"]
@@ -368,9 +377,9 @@ elif action == "📷 Live-Kamera-Scanner":
 
               if supabase is not None:
                 try:
-                  supabase.table("inventory").update({"quantity": new_qty}).eq(
-                      "id", item_id
-                  ).execute()
+                  supabase.table("inventory").update(
+                      {"quantity": int(new_qty)}
+                  ).eq("id", item_id).execute()
                   st.success(
                       f"Erfolgreich aktualisiert! Neuer Bestand: **{new_qty}"
                       " Stk.**"
@@ -383,7 +392,7 @@ elif action == "📷 Live-Kamera-Scanner":
           st.write("---")
       else:
         st.warning(
-            f"⚠️️ Kein Artikel mit dem Suchbegriff '{scanned_input}' in der"
+            f"⚠️ Kein Artikel mit dem Suchbegriff '{scanned_input}' in der"
             " Datenbank gefunden."
         )
 
@@ -421,6 +430,16 @@ elif action == "📁 Katalog aus Datei hochladen":
             "name",
             "preis",
         ] + list(upload_df.columns[4:])
+
+      # Гарантируем, что колонка quantity присутствует и заполнена нулями, если её не было
+      if "quantity" in upload_df.columns:
+        upload_df["quantity"] = (
+            pd.to_numeric(upload_df["quantity"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+        )
+      else:
+        upload_df["quantity"] = 0
 
       upload_df = upload_df.replace({np.nan: None})
 
