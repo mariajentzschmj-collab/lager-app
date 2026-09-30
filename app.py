@@ -461,6 +461,17 @@ elif action == "📁 Katalog aus Datei hochladen":
       # Превращаем все остальные колонки в строки, заменяя NaN на пустые строки/None
       upload_df = upload_df.replace({np.nan: None})
 
+      # УДАЛЯЕМ ДУБЛИКАТЫ АРТИКУЛОВ ВНУТРИ САМОГО ФАЙЛА
+      if "article" in upload_df.columns:
+        before_count = len(upload_df)
+        upload_df = upload_df.drop_duplicates(subset=["article"], keep="last")
+        after_count = len(upload_df)
+        if before_count > after_count:
+          st.info(
+              f"ℹ️ {before_count - after_count} doppelte Artikel im"
+              " Excel-File gefunden und bereinigt."
+          )
+
       st.write("Vorschau (zu importierende Daten):")
       st.dataframe(upload_df.head())
 
