@@ -406,7 +406,6 @@ elif action == "📁 Katalog aus Datei hochladen":
       else:
         upload_df = pd.read_csv(uploaded_file)
 
-      # Убираем пробелы в названиях колонок файла
       upload_df.columns = upload_df.columns.str.strip()
 
       column_mapping = {
@@ -450,7 +449,6 @@ elif action == "📁 Katalog aus Datei hochladen":
         if supabase is not None:
           try:
             records = upload_df.to_dict(orient="records")
-            # Очищаем ключи словарей от возможных пробелов
             cleaned_records = [
                 {k.strip(): v for k, v in record.items()} for record in records
             ]
@@ -465,7 +463,7 @@ elif action == "📁 Katalog aus Datei hochladen":
 
 # 6. ETIKETTEN DRUCKEN
 elif action == "🖨 Etiketten drucken":
-  st.header("🖨 Preisschilder & Etiketten erstellen")
+  st.header("🖨 Preisschilder & Etiketten erstellen (140x400 mm)")
   if df.empty:
     st.warning("Keine Artikel in der Datenbank vorhanden.")
   else:
@@ -522,17 +520,23 @@ elif action == "🖨 Etiketten drucken":
         l_barcode = l_article
 
       st.write("---")
-      st.subheader("Vorschau des Etiketts:")
+      st.subheader("Vorschau des Etiketts (140x400 mm):")
 
+      # Обновленный макет под размер 400мм в ширину и 140мм в высоту
       label_html = f"""
-            <div style="width: 260px; border: 1px solid #333; padding: 10px; border-radius: 6px; font-family: Arial, sans-serif; background: #ffffff; color: #000000; text-align: center; margin: auto;">
-                <div style="font-size: 10px; font-weight: bold; text-transform: uppercase; color: #555555; margin-bottom: 3px;">KaDeWe Berlin — 5. Etage</div>
-                <div style="font-size: 12px; font-weight: bold; color: #333333; text-transform: uppercase;">{l_brand}</div>
-                <div style="font-size: 14px; font-weight: bold; color: #000000; margin: 5px 0; min-height: 30px;">{l_name}</div>
-                <div style="font-size: 22px; font-weight: bold; color: #000000; margin-bottom: 8px;">{l_preis_str}</div>
-                <div style="font-size: 10px; color: #333333; margin-bottom: 5px;">Art.-Nr: <b>{l_article}</b></div>
+            <div style="width: 400mm; min-height: 140mm; box-sizing: border-box; border: 2px solid #333; padding: 15mm; border-radius: 8px; font-family: Arial, sans-serif; background: #ffffff; color: #000000; text-align: center; margin: auto; display: flex; flex-direction: column; justify-content: space-between;">
+                <div>
+                    <div style="font-size: 16px; font-weight: bold; text-transform: uppercase; color: #555555; margin-bottom: 5mm; letter-spacing: 2px;">KaDeWe Berlin — 5. Etage</div>
+                    <div style="font-size: 24px; font-weight: bold; color: #333333; text-transform: uppercase; margin-bottom: 5mm;">{l_brand}</div>
+                    <div style="font-size: 42px; font-weight: bold; color: #000000; margin: 5mm 0; line-height: 1.2;">{l_name}</div>
+                </div>
                 
-                <div style="margin-top: 5px; background: #fafafa; padding: 5px; border-radius: 4px;">
+                <div style="margin: 5mm 0;">
+                    <div style="font-size: 64px; font-weight: bold; color: #000000; margin-bottom: 5mm;">{l_preis_str}</div>
+                    <div style="font-size: 18px; color: #333333; margin-bottom: 5mm;">Art.-Nr: <b>{l_article}</b></div>
+                </div>
+
+                <div style="margin-top: auto; background: #fafafa; padding: 10px; border-radius: 6px; display: inline-block; margin-left: auto; margin-right: auto;">
                     <svg id="barcode_preview"></svg>
                 </div>
             </div>
@@ -543,20 +547,24 @@ elif action == "🖨 Etiketten drucken":
                     JsBarcode("#barcode_preview", "{l_barcode}", {{
                         format: "CODE128",
                         lineColor: "#000000",
-                        width: 1.1,
-                        height: 30,
+                        width: 2.5,
+                        height: 90,
                         displayValue: true,
-                        fontSize: 9
+                        fontSize: 16
                     }});
                 }} catch(e) {{}}
             </script>
             
-            <div style="text-align: center; margin-top: 10px;">
-                <button onclick="window.print()" style="background-color: #4CAF50; color: white; padding: 8px 16px; font-size: 14px; border: none; border-radius: 4px; cursor: pointer;">🖨 Etikett drucken</button>
+            <div style="text-align: center; margin-top: 20px;">
+                <button onclick="window.print()" style="background-color: #4CAF50; color: white; padding: 12px 24px; font-size: 16px; border: none; border-radius: 4px; cursor: pointer;">🖨 Grosses Etikett drucken (140x400mm)</button>
             </div>
             
             <style>
                 @media print {{
+                    @page {{
+                        size: 400mm 140mm;
+                        margin: 0;
+                    }}
                     body * {{
                         visibility: hidden;
                     }}
@@ -567,11 +575,15 @@ elif action == "🖨 Etiketten drucken":
                         position: absolute;
                         left: 0;
                         top: 0;
+                        width: 400mm;
+                        height: 140mm;
                     }}
                 }}
             </style>
             """
-      components.html(f'<div id="print-area">{label_html}</div>', height=280)
+      components.html(
+          f'<div id="print-area">{label_html}</div>', height=550
+      )
 
 # 7. QR-CODE FÜR KOLLEGEN
 elif action == "📱 QR-Code für Kollegen":
