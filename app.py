@@ -115,7 +115,7 @@ action = st.sidebar.radio(
 )
 
 
-# Функция для отрисовки виджета камеры в любом месте
+# Функция для отрисовки виджета камеры (исправлены фигурные скобки JS)
 def render_camera_scanner_widget(key_suffix=""):
   scanner_html = f"""
     <div style="width: 100%; max-width: 400px; margin: auto; text-align: center; background: #f9f9f9; padding: 10px; border-radius: 8px; border: 1px solid #ddd;">
@@ -138,7 +138,7 @@ def render_camera_scanner_widget(key_suffix=""):
                 osc.start();
                 osc.stop(ctx.currentTime + 0.2);
             }} catch(e) {{}}
-        }
+        }}
 
         function onScanSuccess_{key_suffix}(decodedText, decodedResult) {{
             playBeep_{key_suffix}();
@@ -157,7 +157,7 @@ def render_camera_scanner_widget(key_suffix=""):
                 Html5QrcodeSupportedFormats.UPC_A,
                 Html5QrcodeSupportedFormats.UPC_E
             ]
-        };
+        }};
 
         let scanner_{key_suffix} = new Html5QrcodeScanner("reader_{key_suffix}", config_{key_suffix}, false);
         scanner_{key_suffix}.render(onScanSuccess_{key_suffix}, (errorMessage) => {{}});
