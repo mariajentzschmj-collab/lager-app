@@ -458,7 +458,6 @@ elif action == "🖨 Etiketten drucken":
     if selected_to_print:
       chosen_item = df.iloc[print_options.index(selected_to_print)]
 
-      # Получаем штрихкод для генерации картинки (если пусто, берем SAP или артикул)
       raw_bc = str(chosen_item.get("barcode", ""))
       if not raw_bc or raw_bc == "nan":
         raw_bc = str(chosen_item.get("sap", ""))
@@ -472,15 +471,17 @@ elif action == "🖨 Etiketten drucken":
       st.markdown(
           f"""
             <div style="border: 2px dashed #333; width: 4cm; height: 1.5cm; padding: 2px; box-sizing: border-box; background: white; color: black; border-radius: 2px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden;">
-                <div style="display: flex; justify-content: space-between; font-size: 7px; font-weight: bold; border-bottom: 1px solid #ddd; padding-bottom: 1px;">
+                <div style="display: flex; justify-content: space-between; font-size: 6px; font-weight: bold; padding: 0 1px;">
+                    <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 65%;">{chosen_item.get('name')}</span>
+                    <span><b>{chosen_item.get('preis', 0.0):.2f} €</b></span>
+                </div>
+                <div style="text-align: center; flex-grow: 1; display: flex; align-items: center; justify-content: center; margin: 1px 0;">
+                    <img src="{barcode_url}" style="height: 0.75cm; width: 98%; object-fit: fill;" />
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 5.5px; color: #555; padding: 0 1px;">
                     <span>{chosen_item.get('brand', 'KaDeWe')}</span>
                     <span>SAP: {chosen_item.get('sap', '-')}</span>
                 </div>
-                <div style="font-size: 6.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.1;"><b>{chosen_item.get('name')}</b></div>
-                <div style="text-align: center; margin: 1px 0;">
-                    <img src="{barcode_url}" style="height: 0.35cm; max-width: 100%; object-fit: contain;" />
-                </div>
-                <div style="text-align: right; font-size: 8px; font-weight: bold;">{chosen_item.get('preis', 0.0):.2f} €</div>
             </div>
             """,
           unsafe_allow_html=True,
