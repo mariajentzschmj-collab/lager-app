@@ -379,7 +379,7 @@ elif action == "📷 Live-Kamera-Scanner":
                     f" **{item_name}** wurden {action_text}. Neuer Bestand:"
                     f" **{new_qty} Stk.**"
                 )
-                st.rerun()  # Исправлено: теперь метод называется правильно
+                st.rerun()
               except Exception as e:
                 st.error(f"Fehler beim Aktualisieren: {e}")
             else:
@@ -406,13 +406,20 @@ elif action == "📁 Katalog aus Datei hochladen":
       else:
         upload_df = pd.read_csv(uploaded_file)
 
+      # Убираем пробелы в названиях колонок файла
+      upload_df.columns = upload_df.columns.str.strip()
+
       column_mapping = {
           "Produkt-ID": "article",
           "SAP-Nummer": "sap",
           "Name": "name",
           "Verkaufspreis (EUR)": "preis",
+          "Preis": "preis",
       }
       upload_df = upload_df.rename(columns=column_mapping)
+
+      if "preis " in upload_df.columns:
+        upload_df = upload_df.rename(columns={"preis ": "preis"})
 
       if (
           len(upload_df.columns) >= 4
@@ -443,7 +450,11 @@ elif action == "📁 Katalog aus Datei hochladen":
         if supabase is not None:
           try:
             records = upload_df.to_dict(orient="records")
-            supabase.table("inventory").insert(records).execute()
+            # Очищаем ключи словарей от возможных пробелов
+            cleaned_records = [
+                {k.strip(): v for k, v in record.items()} for record in records
+            ]
+            supabase.table("inventory").insert(cleaned_records).execute()
             st.success("✅ Katalog erfolgreich hochgeladen!")
           except Exception as e:
             st.error(f"Fehler beim Hochladen: {e}")
@@ -514,52 +525,34 @@ elif action == "🖨 Etiketten drucken":
       st.subheader("Vorschau des Etiketts:")
 
       label_html = f"""
-            <div style="width: 340px; border: 2px solid #333; padding: 15px; border-radius: 8px; font-family: Arial, sans-serif; background: #ffffff; color: #000000; text-align: center; margin: auto;">
-                <div style="font-size: 11px; font-weight: bold; text-transform: uppercase; color: #555555; margin-bottom: 5px; letter-spacing: 1px;">KaDeWe Berlin — 5. Etage</div>
-                <div style="font-size: 13px; font-weight: bold; color: #333333; margin-bottom: 2px; text-transform: uppercase;">{l_brand}</div>
-                <div style="font-size: 15px; font-weight: bold; color: #000000; margin-bottom: 10px; min-height: 40px; display: flex; align-items: center; justify-content: center;">{l_name}</div>
-                <div style="font-size: 26px; font-weight: bold; color: #000000; margin-bottom: 10px;">{l_preis_str}</div>
-                <div style="font-size: 11px; color: #333333; margin-bottom: 8px;">Art.-Nr: <b style="color: #000000;">{l_article}</b></div>
+            <div style="width: 260px; border: 1px solid #333; padding: 10px; border-radius: 6px; font-family: Arial, sans-serif; background: #ffffff; color: #000000; text-align: center; margin: auto;">
+                <div style="font-size: 10px; font-weight: bold; text-transform: uppercase; color: #555555; margin-bottom: 3px;">KaDeWe Berlin — 5. Etage</div>
+                <div style="font-size: 12px; font-weight: bold; color: #333333; text-transform: uppercase;">{l_brand}</div>
+                <div style="font-size: 14px; font-weight: bold; color: #000000; margin: 5px 0; min-height: 30px;">{l_name}</div>
+                <div style="font-size: 22px; font-weight: bold; color: #000000; margin-bottom: 8px;">{l_preis_str}</div>
+                <div style="font-size: 10px; color: #333333; margin-bottom: 5px;">Art.-Nr: <b>{l_article}</b></div>
                 
-                <div style="display: flex; justify-content: space-around; align-items: center; margin-top: 10px; background: #fafafa; padding: 8px; border-radius: 6px;">
-                    <div>
-                        <svg id="barcode_preview"></svg>
-                    </div>
-                    <div style="text-align: center;">
-                        <div id="qrcode_preview"></div>
-                    </div>
+                <div style="margin-top: 5px; background: #fafafa; padding: 5px; border-radius: 4px;">
+                    <svg id="barcode_preview"></svg>
                 </div>
             </div>
             
             <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
-            <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
             <script>
                 try {{
                     JsBarcode("#barcode_preview", "{l_barcode}", {{
                         format: "CODE128",
                         lineColor: "#000000",
-                        width: 1.2,
-                        height: 38,
+                        width: 1.1,
+                        height: 30,
                         displayValue: true,
-                        fontSize: 10
-                    }});
-                }} catch(e) {{}}
-
-                try {{
-                    document.getElementById("qrcode_preview").innerHTML = "";
-                    new QRCode(document.getElementById("qrcode_preview"), {{
-                        text: "{l_article} - {l_name}",
-                        width: 45,
-                        height: 45,
-                        colorDark : "#000000",
-                        colorLight : "#ffffff",
-                        correctLevel : QRCode.CorrectLevel.H
+                        fontSize: 9
                     }});
                 }} catch(e) {{}}
             </script>
             
-            <div style="text-align: center; margin-top: 15px;">
-                <button onclick="window.print()" style="background-color: #4CAF50; color: white; padding: 10px 20px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer;">🖨 Etikett drucken / PDF</button>
+            <div style="text-align: center; margin-top: 10px;">
+                <button onclick="window.print()" style="background-color: #4CAF50; color: white; padding: 8px 16px; font-size: 14px; border: none; border-radius: 4px; cursor: pointer;">🖨 Etikett drucken</button>
             </div>
             
             <style>
@@ -578,7 +571,7 @@ elif action == "🖨 Etiketten drucken":
                 }}
             </style>
             """
-      components.html(f'<div id="print-area">{label_html}</div>', height=360)
+      components.html(f'<div id="print-area">{label_html}</div>', height=280)
 
 # 7. QR-CODE FÜR KOLLEGEN
 elif action == "📱 QR-Code für Kollegen":
