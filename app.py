@@ -1,3 +1,4 @@
+import io
 import time
 import urllib.parse
 import numpy as np
@@ -91,6 +92,10 @@ def load_data():
             .fillna(0)
             .astype(int)
         )
+      if "preis" in df_loaded.columns:
+        df_loaded["preis"] = pd.to_numeric(
+            df_loaded["preis"], errors="coerce"
+        ).fillna(0.0)
       return df_loaded
   except Exception as e:
     st.error(f"❌ Fehler beim Laden der Daten: {e}")
@@ -115,7 +120,7 @@ action = st.sidebar.radio(
 )
 
 
-# Функция для отрисовки виджета камеры (исправлены фигурные скобки JS)
+# Функция для отрисовки виджета камеры
 def render_camera_scanner_widget(key_suffix=""):
   scanner_html = f"""
     <div style="width: 100%; max-width: 400px; margin: auto; text-align: center; background: #f9f9f9; padding: 10px; border-radius: 8px; border: 1px solid #ddd;">
@@ -138,7 +143,7 @@ def render_camera_scanner_widget(key_suffix=""):
                 osc.start();
                 osc.stop(ctx.currentTime + 0.2);
             }} catch(e) {{}}
-        }}
+        }
 
         function onScanSuccess_{key_suffix}(decodedText, decodedResult) {{
             playBeep_{key_suffix}();
@@ -157,7 +162,7 @@ def render_camera_scanner_widget(key_suffix=""):
                 Html5QrcodeSupportedFormats.UPC_A,
                 Html5QrcodeSupportedFormats.UPC_E
             ]
-        }};
+        };
 
         let scanner_{key_suffix} = new Html5QrcodeScanner("reader_{key_suffix}", config_{key_suffix}, false);
         scanner_{key_suffix}.render(onScanSuccess_{key_suffix}, (errorMessage) => {{}});
@@ -166,33 +171,81 @@ def render_camera_scanner_widget(key_suffix=""):
   components.html(scanner_html, height=350)
 
 
-# 1. BESTÄNDE ANZEIGEN
+# 1. BESTÄNDE ANZEIGEN (С камерой, фильтрами, статистикой и экспортом)
 if action == "📊 Bestände anzeigen":
   st.header("📋 Aktuelles Sortiment & Bestände")
 
-  with st.form("search_stock_form"):
+  # Выпадающий блок с камерой прямо в Bestände
+  with st.expander(
+      "📷 Kamera-Scanner öffnen (zum schnellen Finden per Barcode)"
+  ):
+    render_camera_scanner_widget("stock_cam")
+
+  # Фильтры
+  col1, col2 = st.columns([2, 1])
+  with col1:
     stock_search = st.text_input(
         "🔍 Barcode scannen oder nach Name / SAP suchen:",
-        placeholder="Barcode scannen und Enter drücken...",
+        placeholder="Barcode eingeben oder scannen...",
     )
-    stock_submitted = st.form_submit_button("Suchen")
+  with col2:
+    brand_filter = st.selectbox(
+        "Nach Marke filtern:",
+        ["Alle Marken", "Iittala", "Royal Copenhagen", "Arabia", "Georg Jensen"],
+    )
 
-  if stock_submitted or "stock_search_query" not in st.session_state:
-    st.session_state["stock_search_query"] = stock_search
+  # Применение фильтров к таблице
+  filtered_df = df.copy()
 
-  active_stock_search = st.session_state.get("stock_search_query", "")
-
-  if not df.empty and active_stock_search:
-    q = active_stock_search.strip().lower()
-    filtered_df = df[
-        df["name"].astype(str).str.lower().str.contains(q, na=False)
-        | df["barcode"].astype(str).str.lower().str.contains(q, na=False)
-        | df["article"].astype(str).str.lower().str.contains(q, na=False)
-        | df["sap"].astype(str).str.lower().str.contains(q, na=False)
+  if brand_filter != "Alle Marken":
+    filtered_df = filtered_df[
+        filtered_df["brand"].astype(str).str.lower()
+        == brand_filter.lower()
     ]
-    st.dataframe(filtered_df, use_container_width=True)
+
+  if stock_search:
+    q = stock_search.strip().lower()
+    filtered_df = filtered_df[
+        filtered_df["name"].astype(str).str.lower().str.contains(q, na=False)
+        | filtered_df["barcode"].astype(str).str.lower().str.contains(q, na=False)
+        | filtered_df["article"].astype(str).str.lower().str.contains(
+            q, na=False
+        )
+        | filtered_df["sap"].astype(str).str.lower().str.contains(q, na=False)
+    ]
+
+  # Статистика (Метрики)
+  if not filtered_df.empty:
+    total_items = filtered_df["quantity"].sum()
+    total_value = (filtered_df["quantity"] * filtered_df["preis"]).sum()
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric("📦 Artikelarten", len(filtered_df))
+    m2.metric("🔢 Gesamtstückzahl", int(total_items))
+    m3.metric("💶 Gesamtwert (Bestand)", f"{total_value:,.2f} €")
   else:
-    st.dataframe(df, use_container_width=True)
+    st.info("Keine Artikel gefunden.")
+
+  st.markdown("---")
+
+  # Отображение таблицы
+  st.dataframe(filtered_df, use_container_width=True)
+
+  # Кнопка экспорта в Excel
+  if not filtered_df.empty:
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+      filtered_df.to_excel(writer, index=False, sheet_name="Bestand")
+    excel_data = output.getvalue()
+
+    st.download_button(
+        label="📥 Gefilterten Bestand als Excel herunterladen",
+        data=excel_data,
+        file_name="KaDeWe_Bestand.xlsx",
+        mime=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+    )
 
 # 2. ARTIKEL HINZUFÜGEN
 elif action == "➕ Artikel hinzufügen":
