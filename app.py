@@ -172,7 +172,7 @@ elif action == "➕ Artikel hinzufügen":
           supabase.table("inventory").insert(data).execute()
           st.success(
               f"✅ Artikel '{new_name}' erfolgreich mit **{int(new_qty)} Stk.**"
-              " in der Datenbank gespeichert!"
+              " gespeichert!"
           )
         except Exception as e:
           st.error(f"Fehler beim Speichern: {e}")
@@ -200,7 +200,7 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
       ]
 
     if working_df.empty:
-      st.warning("⚠️ Kein Artikel gefunden.")
+      st.warning("⚠️️ Kein Artikel gefunden.")
     else:
       item_options = []
       for idx, row in working_df.iterrows():
@@ -305,14 +305,14 @@ elif action == "📷 Live-Kamera-Scanner":
 
   st.write("---")
 
-  with st.form("scan_search_form"):
-    scanned_input = st.text_input(
-        "Gescannter Barcode (hier einfügen oder tippen):",
-        placeholder="Nummer hier einfügen...",
-    )
-    search_btn = st.form_submit_button("In Datenbank suchen")
+  # Поле ввода без st.form, чтобы кнопки работали напрямую
+  scanned_input = st.text_input(
+      "Gescannter Barcode (hier einfügen oder tippen):",
+      placeholder="Nummer hier einfügen...",
+      key="scanner_input_field",
+  )
 
-  if search_btn and scanned_input:
+  if scanned_input:
     if df.empty:
       st.warning("Keine Daten in der Tabelle geladen.")
     else:
@@ -345,52 +345,51 @@ elif action == "📷 Live-Kamera-Scanner":
               f" Barcode: `{item_bc}` | Original-Bestand: **{orig_qty} Stk.**"
           )
 
-          form_key = f"update_form_{item_id}"
-          with st.form(form_key):
-            change_type = st.radio(
-                "Aktion:",
-                [
-                    "➕ Hinzufügen (Ware zugestellt)",
-                    "➖ Abziehen (Verkauf / Entnahme)",
-                ],
-                key=f"radio_{item_id}",
-            )
-            delta_qty = st.number_input(
-                "Menge (Stk.):",
-                min_value=1,
-                value=2,
-                step=1,
-                key=f"num_{item_id}",
-            )
-            submitted_quick = st.form_submit_button("Bestand aktualisieren")
+          # Убираем st.form здесь, делаем обычные элементы управления
+          change_type = st.radio(
+              "Aktion:",
+              [
+                  "➕ Hinzufügen (Ware zugestellt)",
+                  "➖ Abziehen (Verkauf / Entnahme)",
+              ],
+              key=f"radio_{item_id}",
+          )
+          delta_qty = st.number_input(
+              "Menge (Stk.):",
+              min_value=1,
+              value=2,
+              step=1,
+              key=f"num_{item_id}",
+          )
 
-            if submitted_quick:
-              d_val = int(delta_qty)
-              if "Hinzufügen" in change_type:
-                new_qty = orig_qty + d_val
-                action_text = f"hinzugefügt (+{d_val} Stk.)"
-              else:
-                new_qty = max(0, orig_qty - d_val)
-                action_text = f"abgezogen (-{d_val} Stk.)"
+          if st.button("Bestand aktualisieren", key=f"btn_update_{item_id}"):
+            d_val = int(delta_qty)
+            if "Hinzufügen" in change_type:
+              new_qty = orig_qty + d_val
+              action_text = f"hinzugefügt (+{d_val} Stk.)"
+            else:
+              new_qty = max(0, orig_qty - d_val)
+              action_text = f"abgezogen (-{d_val} Stk.)"
 
-              if supabase is not None:
-                try:
-                  supabase.table("inventory").update(
-                      {"quantity": int(new_qty)}
-                  ).eq("id", item_id).execute()
-                  st.success(
-                      f"✅ Bestand erfolgreich aktualisiert! Für"
-                      f" **{item_name}** wurden {action_text}. Neuer Bestand:"
-                      f" **{new_qty} Stk.**"
-                  )
-                except Exception as e:
-                  st.error(f"Fehler beim Aktualisieren: {e}")
-              else:
-                st.error("Keine Datenbankverbindung.")
+            if supabase is not None:
+              try:
+                supabase.table("inventory").update(
+                    {"quantity": int(new_qty)}
+                ).eq("id", item_id).execute()
+                st.success(
+                    f"✅ Bestand erfolgreich aktualisiert! Für"
+                    f" **{item_name}** wurden {action_text}. Neuer Bestand:"
+                    f" **{new_qty} Stk.**"
+                )
+                st.rerurn()
+              except Exception as e:
+                st.error(f"Fehler beim Aktualisieren: {e}")
+            else:
+              st.error("Keine Datenbankverbindung.")
           st.write("---")
       else:
         st.warning(
-            f"⚠️️ Kein Artikel mit dem Suchbegriff '{scanned_input}' gefunden."
+            f"⚠️ Kein Artikel mit dem Suchbegriff '{scanned_input}' gefunden."
         )
 
 # 5. KATALOG AUS DATEI HOCHLADEN
