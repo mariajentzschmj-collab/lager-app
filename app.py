@@ -16,15 +16,13 @@ def check_password():
   """Возвращает True, если пользователь ввел правильный пароль."""
 
   def password_entered():
-    # Можете изменить "kadewe2026" на любой другой секретный пароль для коллег
     if st.session_state["password"] == "kadewe2026":
       st.session_state["password_correct"] = True
-      del st.session_state["password"]  # Удаляем пароль из сессии в целях безопасности
+      del st.session_state["password"]
     else:
       st.session_state["password_correct"] = False
 
   if "password_correct" not in st.session_state:
-    # Первый вход, запрашиваем пароль
     st.text_input(
         "🔑 Bitte Passwort eingeben / Введите пароль для доступа к складу:",
         type="password",
@@ -33,7 +31,6 @@ def check_password():
     )
     return False
   elif not st.session_state["password_correct"]:
-    # Неверный пароль
     st.text_input(
         "🔑 Bitte Passwort eingeben / Введите пароль для доступа к складу:",
         type="password",
@@ -43,11 +40,9 @@ def check_password():
     st.error("❌ Falsches Passwort / Неверный пароль")
     return False
   else:
-    # Пароль верный
     return True
 
 
-# Если пароль не введен, останавливаем выполнение приложения здесь
 if not check_password():
   st.stop()
 
@@ -67,7 +62,6 @@ except Exception as e:
   pass
 
 
-# Функция для загрузки данных из базы
 def load_data():
   cols = [
       "id",
@@ -404,8 +398,8 @@ elif action == "🖨 Etiketten drucken":
   st.header("🖨 Preisschilder & Etiketten erstellen")
   st.write(
       "Wählen Sie einen Artikel aus, um ein klares Etikett (weißer Hintergrund,"
-      " schwarzer Text inklusive Preis) mit Name, Preis, Artikelnummer und Barcode"
-      " zu generieren."
+      " schwarzer Text inklusive Preis) mit Name, Preis, Artikelnummer, Barcode"
+      " und **QR-Code** zu generieren."
   )
 
   if df.empty:
@@ -416,7 +410,6 @@ elif action == "🖨 Etiketten drucken":
         "Artikel für Etikett auswählen:", item_options
     )
 
-    # Получаем данные выбранного товара
     item_row = df[df["name"] == selected_label_item].iloc[0]
     l_name = str(item_row.get("name", ""))
     l_brand = str(item_row.get("brand", ""))
@@ -429,34 +422,57 @@ elif action == "🖨 Etiketten drucken":
 
     l_barcode = str(item_row.get("barcode", ""))
     if l_barcode == "nan" or not l_barcode:
-      l_barcode = l_article  # резервный вариант для штрихкода
+      l_barcode = l_article
 
     st.write("---")
     st.subheader("Vorschau des Etiketts:")
 
-    # Белый ценник с полностью черным текстом (включая цену)
+    # Ценник с линейным штрихкодом И QR-кодом
     label_html = f"""
-        <div style="width: 320px; border: 2px solid #333; padding: 15px; border-radius: 8px; font-family: Arial, sans-serif; background: #ffffff; color: #000000; text-align: center; margin: auto;">
+        <div style="width: 340px; border: 2px solid #333; padding: 15px; border-radius: 8px; font-family: Arial, sans-serif; background: #ffffff; color: #000000; text-align: center; margin: auto;">
             <div style="font-size: 11px; font-weight: bold; text-transform: uppercase; color: #555555; margin-bottom: 5px; letter-spacing: 1px;">KaDeWe Berlin — 5. Etage</div>
             <div style="font-size: 13px; font-weight: bold; color: #333333; margin-bottom: 2px; text-transform: uppercase;">{l_brand}</div>
-            <div style="font-size: 15px; font-weight: bold; color: #000000; margin-bottom: 10px; height: 40px; display: flex; align-items: center; justify-content: center;">{l_name}</div>
+            <div style="font-size: 15px; font-weight: bold; color: #000000; margin-bottom: 10px; min-height: 40px; display: flex; align-items: center; justify-content: center;">{l_name}</div>
             <div style="font-size: 26px; font-weight: bold; color: #000000; margin-bottom: 10px;">{l_preis_str}</div>
             <div style="font-size: 11px; color: #333333; margin-bottom: 8px;">Art.-Nr: <b style="color: #000000;">{l_article}</b></div>
-            <div style="background: #ffffff; padding: 5px; border-radius: 4px; display: inline-block;">
-                <svg id="barcode_preview"></svg>
+            
+            <!-- Блок с кодами: Линейный штрихкод + QR-код рядом -->
+            <div style="display: flex; justify-content: space-around; align-items: center; margin-top: 10px; background: #fafafa; padding: 8px; border-radius: 6px;">
+                <div>
+                    <svg id="barcode_preview"></svg>
+                </div>
+                <div style="text-align: center;">
+                    <div id="qrcode_preview"></div>
+                </div>
             </div>
         </div>
         
+        <!-- Библиотеки для генерации штрихкода и QR-кода -->
         <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
         <script>
             try {{
+                // Генерация линейного штрихкода
                 JsBarcode("#barcode_preview", "{l_barcode}", {{
                     format: "CODE128",
                     lineColor: "#000000",
-                    width: 1.5,
-                    height: 40,
+                    width: 1.2,
+                    height: 38,
                     displayValue: true,
-                    fontSize: 12
+                    fontSize: 10
+                }});
+            }} catch(e) {{}}
+
+            try {{
+                // Генерация QR-кода (например, содержит артикул или ссылку)
+                document.getElementById("qrcode_preview").innerHTML = "";
+                new QRCode(document.getElementById("qrcode_preview"), {{
+                    text: "{l_article} - {l_name}",
+                    width: 45,
+                    height: 45,
+                    colorDark : "#000000",
+                    colorLight : "#ffffff",
+                    correctLevel : QRCode.CorrectLevel.H
                 }});
             }} catch(e) {{}}
         </script>
@@ -482,9 +498,8 @@ elif action == "🖨 Etiketten drucken":
         </style>
         """
 
-    # Оборачиваем в контейнер для печати
     wrapped_html = f'<div id="print-area">{label_html}</div>'
-    components.html(wrapped_html, height=330)
+    components.html(wrapped_html, height=360)
 
 # 7. QR-CODE FÜR KOLLEGEN
 elif action == "📱 QR-Code für Kollegen":
