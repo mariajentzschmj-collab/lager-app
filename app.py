@@ -81,7 +81,6 @@ def load_data():
     response = supabase.table("inventory").select("*").execute()
     if response.data is not None:
       df_loaded = pd.DataFrame(response.data)
-      # Приводим quantity к числовому типу, если колонка существует
       if "quantity" in df_loaded.columns:
         df_loaded["quantity"] = (
             pd.to_numeric(df_loaded["quantity"], errors="coerce")
@@ -144,7 +143,7 @@ elif action == "➕ Artikel hinzufügen":
     new_brand = st.selectbox(
         "Marke", ["Iittala", "Royal Copenhagen", "Arabia", "Georg Jensen"]
     )
-    new_qty = st.number_input("Menge im Lager", min_value=0, value=0)
+    new_qty = st.number_input("Menge im Lager", min_value=0, value=0, step=1)
     new_location = st.text_input("Lagerort", value="Etage 5 Lager")
     new_preis = st.number_input(
         "Preis (€)", min_value=0.0, value=0.0, format="%.2f"
@@ -171,8 +170,10 @@ elif action == "➕ Artikel hinzufügen":
               "barcode": str(new_barcode),
           }
           supabase.table("inventory").insert(data).execute()
-          st.success(f"Artikel '{new_name}' erfolgreich hinzugefügt!")
-          st.rerun()
+          st.success(
+              f"✅ Artikel '{new_name}' erfolgreich mit **{int(new_qty)} Stk.**"
+              " in der Datenbank gespeichert!"
+          )
         except Exception as e:
           st.error(f"Fehler beim Speichern: {e}")
 
@@ -183,11 +184,6 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
   if df.empty:
     st.warning("Keine Artikel im Lager vorhanden.")
   else:
-    st.write(
-        "💡 *Sie können den Artikel über den Namen, Barcode oder die"
-        " SAP-Nummer suchen und auswählen.*"
-    )
-
     sale_search = st.text_input(
         "🔍 Nach Name, Barcode oder SAP-Nummer filtern:",
         placeholder="Geben Sie Barcode, SAP oder Name ein...",
@@ -204,9 +200,7 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
       ]
 
     if working_df.empty:
-      st.warning(
-          "⚠️ Kein Artikel gefunden, der den Suchkriterien entspricht."
-      )
+      st.warning("⚠️ Kein Artikel gefunden.")
     else:
       item_options = []
       for idx, row in working_df.iterrows():
@@ -226,16 +220,13 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
         selected_display = st.selectbox(
             "Passenden Artikel auswählen:", item_options
         )
-
         selected_idx = item_options.index(selected_display)
         selected_row = working_df.iloc[selected_idx]
 
         item_id = selected_row["id"]
         selected_item_name = selected_row["name"]
         raw_qty = selected_row["quantity"]
-        current_qty = (
-            int(float(raw_qty)) if pd.notna(raw_qty) else 0
-        )
+        current_qty = int(float(raw_qty)) if pd.notna(raw_qty) else 0
 
         st.info(
             f"Ausgewählt: **{selected_item_name}** | Aktueller Lagerbestand:"
@@ -243,25 +234,26 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
         )
 
         reduce_qty = st.number_input(
-            "Wie viele Stk. wurden verkauft / aus dem Lager genommen?",
+            "Anzahl zum Abziehen (Verkauf):",
             min_value=1,
             max_value=max(1, current_qty),
             value=1,
+            step=1,
         )
 
         submit_reduce = st.form_submit_button("Verkauf bestätigen")
         if submit_reduce:
-          new_qty = current_qty - int(reduce_qty)
+          new_qty = max(0, current_qty - int(reduce_qty))
           if supabase is not None:
             try:
               supabase.table("inventory").update(
                   {"quantity": int(new_qty)}
               ).eq("id", item_id).execute()
               st.success(
-                  f"Bestand für '{selected_item_name}' aktualisiert! Neuer"
-                  f" Bestand: {new_qty} Stk."
+                  f"🛒 Verkauf erfolgreich erfasst! Von '{selected_item_name}'"
+                  f" wurden **{int(reduce_qty)} Stk.** abgezogen. Neuer"
+                  f" Bestand: **{new_qty} Stk.**"
               )
-              st.rerun()
             except Exception as e:
               st.error(f"Fehler bei der Aktualisierung: {e}")
           else:
@@ -338,7 +330,6 @@ elif action == "📷 Live-Kamera-Scanner":
         for idx, item in matched_rows.iterrows():
           item_name = item["name"]
           raw_qty = item["quantity"]
-
           try:
             orig_qty = int(float(raw_qty)) if pd.notna(raw_qty) else 0
           except:
@@ -365,15 +356,22 @@ elif action == "📷 Live-Kamera-Scanner":
                 key=f"radio_{item_id}",
             )
             delta_qty = st.number_input(
-                "Menge:", min_value=1, value=1, step=1, key=f"num_{item_id}"
+                "Menge (Stk.):",
+                min_value=1,
+                value=2,
+                step=1,
+                key=f"num_{item_id}",
             )
             submitted_quick = st.form_submit_button("Bestand aktualisieren")
 
             if submitted_quick:
+              d_val = int(delta_qty)
               if "Hinzufügen" in change_type:
-                new_qty = orig_qty + int(delta_qty)
+                new_qty = orig_qty + d_val
+                action_text = f"hinzugefügt (+{d_val} Stk.)"
               else:
-                new_qty = max(0, orig_qty - int(delta_qty))
+                new_qty = max(0, orig_qty - d_val)
+                action_text = f"abgezogen (-{d_val} Stk.)"
 
               if supabase is not None:
                 try:
@@ -381,10 +379,10 @@ elif action == "📷 Live-Kamera-Scanner":
                       {"quantity": int(new_qty)}
                   ).eq("id", item_id).execute()
                   st.success(
-                      f"Erfolgreich aktualisiert! Neuer Bestand: **{new_qty}"
-                      " Stk.**"
+                      f"✅ Bestand erfolgreich aktualisiert! Für"
+                      f" **{item_name}** wurden {action_text}. Neuer Bestand:"
+                      f" **{new_qty} Stk.**"
                   )
-                  st.rerun()
                 except Exception as e:
                   st.error(f"Fehler beim Aktualisieren: {e}")
               else:
@@ -392,8 +390,7 @@ elif action == "📷 Live-Kamera-Scanner":
           st.write("---")
       else:
         st.warning(
-            f"⚠️ Kein Artikel mit dem Suchbegriff '{scanned_input}' in der"
-            " Datenbank gefunden."
+            f"⚠️️ Kein Artikel mit dem Suchbegriff '{scanned_input}' gefunden."
         )
 
 # 5. KATALOG AUS DATEI HOCHLADEN
@@ -431,7 +428,6 @@ elif action == "📁 Katalog aus Datei hochladen":
             "preis",
         ] + list(upload_df.columns[4:])
 
-      # Гарантируем, что колонка quantity присутствует и заполнена нулями, если её не было
       if "quantity" in upload_df.columns:
         upload_df["quantity"] = (
             pd.to_numeric(upload_df["quantity"], errors="coerce")
@@ -451,8 +447,7 @@ elif action == "📁 Katalog aus Datei hochladen":
           try:
             records = upload_df.to_dict(orient="records")
             supabase.table("inventory").insert(records).execute()
-            st.success("Erfolgreich importiert!")
-            st.rerun()
+            st.success("✅ Katalog erfolgreich hochgeladen!")
           except Exception as e:
             st.error(f"Fehler beim Hochladen: {e}")
         else:
@@ -463,12 +458,6 @@ elif action == "📁 Katalog aus Datei hochladen":
 # 6. ETIKETTEN DRUCKEN
 elif action == "🖨 Etiketten drucken":
   st.header("🖨 Preisschilder & Etiketten erstellen")
-  st.write(
-      "Wählen Sie einen Artikel aus (über Name, Barcode oder SAP-Nummer), um"
-      " ein klares Etikett mit Preis, Artikelnummer und QR-Code zu"
-      " generieren."
-  )
-
   if df.empty:
     st.warning("Keine Artikel in der Datenbank vorhanden.")
   else:
@@ -489,9 +478,7 @@ elif action == "🖨 Etiketten drucken":
       ]
 
     if label_filtered_df.empty:
-      st.warning(
-          "⚠️ Kein Artikel gefunden, der den Suchkriterien entspricht."
-      )
+      st.warning("⚠️ Kein Artikel gefunden.")
     else:
       label_options = []
       for idx, row in label_filtered_df.iterrows():
@@ -508,7 +495,6 @@ elif action == "🖨 Etiketten drucken":
       selected_label_display = st.selectbox(
           "Passenden Artikel für Etikett auswählen:", label_options
       )
-
       selected_label_idx = label_options.index(selected_label_display)
       item_row = label_filtered_df.iloc[selected_label_idx]
 
@@ -595,9 +581,7 @@ elif action == "🖨 Etiketten drucken":
                 }}
             </style>
             """
-
-      wrapped_html = f'<div id="print-area">{label_html}</div>'
-      components.html(wrapped_html, height=360)
+      components.html(f'<div id="print-area">{label_html}</div>', height=360)
 
 # 7. QR-CODE FÜR KOLLEGEN
 elif action == "📱 QR-Code für Kollegen":
@@ -607,6 +591,5 @@ elif action == "📱 QR-Code für Kollegen":
   qr_image_url = (
       f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={encoded_url}"
   )
-
   st.image(qr_image_url, width=300)
   st.info("Rechtsklick -> Bild speichern unter... zum Ausdrucken.")
