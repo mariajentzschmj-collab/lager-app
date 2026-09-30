@@ -436,7 +436,7 @@ elif action == "📁 Katalog aus Datei hochladen":
             "preis",
         ] + list(upload_df.columns[4:])
 
-      # БЕЗОПАСНАЯ ОБРАБОТКА ЦИФРОВЫХ ПОЛЕЙ (предотвращает ошибку invalid input syntax)
+      # БЕЗОПАСНАЯ ОБРАБОТКА ЦИФРОВЫХ ПОЛЕЙ
       if "preis" in upload_df.columns:
         upload_df["preis"] = (
             pd.to_numeric(
@@ -475,8 +475,15 @@ elif action == "📁 Katalog aus Datei hochladen":
                 }
                 for record in records
             ]
-            supabase.table("inventory").insert(cleaned_records).execute()
-            st.success("✅ Katalog erfolgreich hochgeladen!")
+
+            # UPSERT с автоматическим обновлением существующих артикулов
+            supabase.table("inventory").upsert(
+                cleaned_records, on_conflict="article"
+            ).execute()
+
+            st.success(
+                "✅ Katalog erfolgreich hochgeladen und aktualisiert!"
+            )
           except Exception as e:
             st.error(f"Fehler beim Hochladen: {e}")
         else:
