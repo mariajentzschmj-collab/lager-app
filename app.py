@@ -7,14 +7,14 @@ import streamlit as st
 import streamlit.components.v1 as components
 from supabase import create_client
 
-# Настройка страницы
+# Seitanordnung
 st.set_page_config(
     page_title="KaDeWe Lager — Iittala & Royal Copenhagen", layout="wide"
 )
 
-# --- ПАРОЛЬ И ТАЙМЕР АКТИВНОСТИ (5 МИНУТ) ---
+# --- PASSWORT UND INAKTIVITÄTS-TIMEOUT (5 MINUTEN) ---
 def check_password():
-  TIMEOUT_SECONDS = 300  # 5 минут
+  TIMEOUT_SECONDS = 300  # 5 Minuten
 
   if "password_correct" not in st.session_state:
     st.session_state["password_correct"] = False
@@ -54,7 +54,7 @@ def check_password():
 if not check_password():
   st.stop()
 
-# --- ОСНОВНОЙ КОД ПРИЛОЖЕНИЯ ---
+# --- HAUPTCODE DER ANWENDUNG ---
 st.title("📦 Lagerverwaltung (5. Etage)")
 st.subheader("Iittala & Royal Copenhagen")
 
@@ -68,7 +68,7 @@ except Exception as e:
   pass
 
 
-# Функция полной загрузки ВСЕХ товаров с пагинацией (обход лимита Supabase)
+# Funktion zum Laden ALLER Artikel mit Paginierung (Umgehung des Supabase-Limits)
 def load_data():
   cols = [
       "id",
@@ -134,7 +134,7 @@ action = st.sidebar.radio(
         "📊 Bestände anzeigen",
         "➕ Artikel hinzufügen",
         "📉 Artikel reduzieren (Verkauf)",
-        "📥 Auto-списание по отчету о продажах",
+        "📥 Auto-Abverkauf per Bericht",
         "📷 Live-Kamera-Scanner",
         "📁 Katalog aus Datei hochladen",
         "🖨 Etiketten drucken",
@@ -143,7 +143,7 @@ action = st.sidebar.radio(
 )
 
 
-# Функция для универсального поиска по DataFrame (Name, Article, SAP, Barcode)
+# Funktion für die universelle Suche im DataFrame (Name, Article, SAP, Barcode)
 def search_items(dataframe, query):
   if dataframe.empty or not query:
     return dataframe
@@ -157,7 +157,7 @@ def search_items(dataframe, query):
   return dataframe[mask]
 
 
-# Функция для отрисовки виджета камеры
+# Funktion zum Rendern des Kamera-Scanner-Widgets
 def render_camera_scanner_widget(key_suffix=""):
   scanner_html = f"""
     <div style="width: 100%; max-width: 400px; margin: auto; text-align: center; background: #f9f9f9; padding: 10px; border-radius: 8px; border: 1px solid #ddd;">
@@ -418,17 +418,17 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
             except Exception as e:
               st.error(f"Fehler: {e}")
 
-# 4. АВТО-СПИСАНИЕ ПО ОТЧЕТУ О ПРОДАЖАХ
-elif action == "📥 Авто-списание по отчету о продажах":
-  st.header("📥 Автоматическое обновление остатков по отчету о продажах")
+# 4. AUTO-ABVERKAUF PER BERICHT
+elif action == "📥 Auto-Abverkauf per Bericht":
+  st.header("📥 Automatische Bestandsaktualisierung per Verkaufsbericht")
   st.write(
-      "Загрузите отчет о продажах (Excel или CSV). В файле должны быть колонки"
-      " с артикулом (`article` или `sap`) и проданным количеством (`quantity`"
-      " или `sold`)."
+      "Laden Sie den Verkaufsbericht hoch (Excel oder CSV). Die Datei muss"
+      " Spalten für Artikel/SAP (`article` oder `sap`) und die verkaufte Menge"
+      " (`quantity` oder `sold`) enthalten."
   )
 
   sales_file = st.file_uploader(
-      "Выберите файл отчета о продажах", type=["xlsx", "csv"], key="sales_upload"
+      "Verkaufsbericht-Datei auswählen", type=["xlsx", "csv"], key="sales_upload"
   )
 
   if sales_file is not None:
@@ -438,9 +438,8 @@ elif action == "📥 Авто-списание по отчету о продаж
       else:
         sales_df = pd.read_excel(sales_file)
 
-      st.write("📋 Предпросмотр загруженного файла продаж:", sales_df.head())
+      st.write("📋 Vorschau des hochgeladenen Berichts:", sales_df.head())
 
-      # Определяем названия колонок автоматически
       cols_lower = {c.lower().strip(): c for c in sales_df.columns}
 
       art_col = None
@@ -465,18 +464,18 @@ elif action == "📥 Авто-списание по отчету о продаж
 
       if not art_col or not qty_col:
         st.error(
-            "❌ Не удалось автоматически найти колонку с артикулом/SAP или"
-            f" количеством. Доступные колонки в файле: {list(sales_df.columns)}"
+            "❌ Spalten für Artikel/SAP oder Menge konnten nicht automatisch"
+            f" ermittelt werden. Vorhandene Spalten: {list(sales_df.columns)}"
         )
       else:
         st.success(
-            f"✅ Колонки определены: Артикул/SAP -> `{art_col}`, Продано ->"
+            f"✅ Spalten erkannt: Artikel/SAP -> `{art_col}`, Menge ->"
             f" `{qty_col}`"
         )
 
-        if st.button("🚀 Запустить авто-списание со склада"):
+        if st.button("🚀 Automatisches Abchreiben starten"):
           if df.empty:
-            st.error("В базе данных нет товаров для обновления.")
+            st.error("Keine Artikel in der Datenbank vorhanden.")
           else:
             updated_count = 0
             report_log = []
@@ -488,7 +487,6 @@ elif action == "📥 Авто-списание по отчету о продаж
               if sold_qty <= 0 or not item_id_val:
                 continue
 
-              # Ищем товар в нашем основном каталоге по article или sap
               matched = df[
                   (df["article"].astype(str).str.strip() == item_id_val)
                   | (df["sap"].astype(str).str.strip() == item_id_val)
@@ -501,7 +499,6 @@ elif action == "📥 Авто-списание по отчету о продаж
                 current_q = int(db_item["quantity"])
                 new_q = max(0, current_q - sold_qty)
 
-                # Обновляем в Supabase
                 if supabase is not None:
                   try:
                     supabase.table("inventory").update(
@@ -509,38 +506,37 @@ elif action == "📥 Авто-списание по отчету о продаж
                     ).eq("id", db_id).execute()
                     updated_count += 1
                     report_log.append({
-                        "Артикул / SAP": item_id_val,
-                        "Название": db_name,
-                        "Было": current_q,
-                        "Продано": sold_qty,
-                        "Стало": new_q,
+                        "Artikel / SAP": item_id_val,
+                        "Bezeichnung": db_name,
+                        "Vorher": current_q,
+                        "Verkauft": sold_qty,
+                        "Neu": new_q,
                     })
                   except Exception as ex:
                     pass
 
-            st.success(
-                f"✅ Успешно обработано и списано товаров: {updated_count}"
-            )
+            st.success(f"✅ Erfolgreich aktualisierte Artikel: {updated_count}")
 
             if report_log:
-              st.markdown("### 📊 Отчет о списаниях:")
+              st.markdown("### 📊 Berichtsübersicht:")
               report_result_df = pd.DataFrame(report_log)
               st.dataframe(report_result_df, use_container_width=True)
 
-              # Кнопка скачивания отчета
               out_buf = io.BytesIO()
               with pd.ExcelWriter(out_buf, engine="openpyxl") as writer:
                 report_result_df.to_excel(writer, index=False, sheet_name="Bericht")
               st.download_button(
-                  label="📥 Скачать отчет об авто-списании (Excel)",
+                  label="📥 Abverkaufsbericht als Excel herunterladen",
                   data=out_buf.getvalue(),
                   file_name="KaDeWe_Verkaufsbericht.xlsx",
-                  mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                  mime=(
+                      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  ),
               )
             else:
               st.warning(
-                  "⚠️ Ни один товар из отчета не был найден в базе данных по"
-                  " артикулу/SAP."
+                  "⚠️ Keiner der Artikel aus dem Bericht wurde in der"
+                  " Datenbank gefunden."
               )
 
     except Exception as e:
@@ -633,19 +629,20 @@ elif action == "📁 Katalog aus Datei hochladen":
         if not duplicates_series.empty:
           dup_counts = duplicates_series["article"].value_counts()
           st.warning(
-              f"⚠️ В загруженном файле обнаружены повторяющиеся артикулы"
-              f" ({len(duplicates_series)} строк всего с дубликатами):"
+              f"⚠️ In der hochgeladenen Datei wurden doppelte Artikel"
+              f" gefunden ({len(duplicates_series)} Zeilen insgesamt mit"
+              " Duplikaten):"
           )
           dup_info_df = pd.DataFrame(
               {
-                  "Артикул (article)": dup_counts.index,
-                  "Количество повторов в файле": dup_counts.values,
+                  "Artikel (article)": dup_counts.index,
+                  "Anzahl der Wiederholungen": dup_counts.values,
               }
           )
           st.dataframe(dup_info_df, use_container_width=True)
           st.info(
-              "ℹ️ При импорте дубликаты автоматически объединяются (берется"
-              " последняя запись из файла для каждого артикула)."
+              "ℹ️ Beim Import werden Duplikate automatisch zusammengefasst (der"
+              " letzte Datensatz pro Artikel wird verwendet)."
           )
 
         upload_df = upload_df.drop_duplicates(subset=["article"], keep="last")
