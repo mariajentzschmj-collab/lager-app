@@ -1,3 +1,4 @@
+import hashlib
 import io
 import time
 import urllib.parse
@@ -433,111 +434,130 @@ elif action == "📥 Auto-Abverkauf per Bericht":
 
   if sales_file is not None:
     try:
-      if sales_file.name.endswith(".csv"):
-        sales_df = pd.read_csv(sales_file)
-      else:
-        sales_df = pd.read_excel(sales_file)
+      file_bytes = sales_file.getvalue()
+      file_hash = hashlib.md5(file_bytes).hexdigest()
 
-      st.write("📋 Vorschau des hochgeladenen Berichts:", sales_df.head())
+      if "processed_files" not in st.session_state:
+        st.session_state["processed_files"] = set()
 
-      cols_lower = {c.lower().strip(): c for c in sales_df.columns}
-
-      art_col = None
-      for k in [
-          "article",
-          "art-nr",
-          "artikelnr",
-          "artikel",
-          "sap",
-          "sku",
-          "barcode",
-      ]:
-        if k in cols_lower:
-          art_col = cols_lower[k]
-          break
-
-      qty_col = None
-      for k in ["quantity", "qty", "menge", "sold", "anzahl", "verkauf"]:
-        if k in cols_lower:
-          qty_col = cols_lower[k]
-          break
-
-      if not art_col or not qty_col:
+      if file_hash in st.session_state["processed_files"]:
         st.error(
-            "❌ Spalten für Artikel/SAP oder Menge konnten nicht automatisch"
-            f" ermittelt werden. Vorhandene Spalten: {list(sales_df.columns)}"
+            "🚫 **Achtung!** Diese Datei wurde bereits für den automatischen"
+            " Abverkauf verwendet. Jede Datei kann nur einmal verarbeitet"
+            " werden, um doppelte Abchreibungen zu verhindern."
         )
       else:
-        st.success(
-            f"✅ Spalten erkannt: Artikel/SAP -> `{art_col}`, Menge ->"
-            f" `{qty_col}`"
-        )
+        if sales_file.name.endswith(".csv"):
+          sales_df = pd.read_csv(io.BytesIO(file_bytes))
+        else:
+          sales_df = pd.read_excel(io.BytesIO(file_bytes))
 
-        if st.button("🚀 Automatisches Abchreiben starten"):
-          if df.empty:
-            st.error("Keine Artikel in der Datenbank vorhanden.")
-          else:
-            updated_count = 0
-            report_log = []
+        st.write("📋 Vorschau des hochgeladenen Berichts:", sales_df.head())
 
-            for _, row in sales_df.iterrows():
-              item_id_val = str(row[art_col]).strip()
-              sold_qty = int(pd.to_numeric(row[qty_col], errors="coerce") or 0)
+        cols_lower = {c.lower().strip(): c for c in sales_df.columns}
 
-              if sold_qty <= 0 or not item_id_val:
-                continue
+        art_col = None
+        for k in [
+            "article",
+            "art-nr",
+            "artikelnr",
+            "artikel",
+            "sap",
+            "sku",
+            "barcode",
+        ]:
+          if k in cols_lower:
+            art_col = cols_lower[k]
+            break
 
-              matched = df[
-                  (df["article"].astype(str).str.strip() == item_id_val)
-                  | (df["sap"].astype(str).str.strip() == item_id_val)
-              ]
+        qty_col = None
+        for k in ["quantity", "qty", "menge", "sold", "anzahl", "verkauf"]:
+          if k in cols_lower:
+            qty_col = cols_lower[k]
+            break
 
-              if not matched.empty:
-                db_item = matched.iloc[0]
-                db_id = db_item["id"]
-                db_name = db_item["name"]
-                current_q = int(db_item["quantity"])
-                new_q = max(0, current_q - sold_qty)
+        if not art_col or not qty_col:
+          st.error(
+              "❌ Spalten für Artikel/SAP oder Menge konnten nicht"
+              f" automatisch ermittelt werden. Vorhandene Spalten:"
+              f" {list(sales_df.columns)}"
+          )
+        else:
+          st.success(
+              f"✅ Spalten erkannt: Artikel/SAP -> `{art_col}`, Menge ->"
+              f" `{qty_col}`"
+          )
 
-                if supabase is not None:
-                  try:
-                    supabase.table("inventory").update(
-                        {"quantity": int(new_q)}
-                    ).eq("id", db_id).execute()
-                    updated_count += 1
-                    report_log.append({
-                        "Artikel / SAP": item_id_val,
-                        "Bezeichnung": db_name,
-                        "Vorher": current_q,
-                        "Verkauft": sold_qty,
-                        "Neu": new_q,
-                    })
-                  except Exception as ex:
-                    pass
-
-            st.success(f"✅ Erfolgreich aktualisierte Artikel: {updated_count}")
-
-            if report_log:
-              st.markdown("### 📊 Berichtsübersicht:")
-              report_result_df = pd.DataFrame(report_log)
-              st.dataframe(report_result_df, use_container_width=True)
-
-              out_buf = io.BytesIO()
-              with pd.ExcelWriter(out_buf, engine="openpyxl") as writer:
-                report_result_df.to_excel(writer, index=False, sheet_name="Bericht")
-              st.download_button(
-                  label="📥 Abverkaufsbericht als Excel herunterladen",
-                  data=out_buf.getvalue(),
-                  file_name="KaDeWe_Verkaufsbericht.xlsx",
-                  mime=(
-                      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                  ),
-              )
+          if st.button("🚀 Automatisches Abchreiben starten"):
+            if df.empty:
+              st.error("Keine Artikel in der Datenbank vorhanden.")
             else:
-              st.warning(
-                  "⚠️ Keiner der Artikel aus dem Bericht wurde in der"
-                  " Datenbank gefunden."
-              )
+              updated_count = 0
+              report_log = []
+
+              for _, row in sales_df.iterrows():
+                item_id_val = str(row[art_col]).strip()
+                sold_qty = int(
+                    pd.to_numeric(row[qty_col], errors="coerce") or 0
+                )
+
+                if sold_qty <= 0 or not item_id_val:
+                  continue
+
+                matched = df[
+                    (df["article"].astype(str).str.strip() == item_id_val)
+                    | (df["sap"].astype(str).str.strip() == item_id_val)
+                ]
+
+                if not matched.empty:
+                  db_item = matched.iloc[0]
+                  db_id = db_item["id"]
+                  db_name = db_item["name"]
+                  current_q = int(db_item["quantity"])
+                  new_q = max(0, current_q - sold_qty)
+
+                  if supabase is not None:
+                    try:
+                      supabase.table("inventory").update(
+                          {"quantity": int(new_q)}
+                      ).eq("id", db_id).execute()
+                      updated_count += 1
+                      report_log.append({
+                          "Artikel / SAP": item_id_val,
+                          "Bezeichnung": db_name,
+                          "Vorher": current_q,
+                          "Verkauft": sold_qty,
+                          "Neu": new_q,
+                      })
+                    except Exception as ex:
+                      pass
+
+              st.session_state["processed_files"].add(file_hash)
+              st.success(f"✅ Erfolgreich aktualisierte Artikel: {updated_count}")
+
+              if report_log:
+                st.markdown("### 📊 Berichtsübersicht:")
+                report_result_df = pd.DataFrame(report_log)
+                st.dataframe(report_result_df, use_container_width=True)
+
+                out_buf = io.BytesIO()
+                with pd.ExcelWriter(out_buf, engine="openpyxl") as writer:
+                  report_result_df.to_excel(
+                      writer, index=False, sheet_name="Bericht"
+                  )
+                st.download_button(
+                    label="📥 Abverkaufsbericht als Excel herunterladen",
+                    data=out_buf.getvalue(),
+                    file_name="KaDeWe_Verkaufsbericht.xlsx",
+                    mime=(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    ),
+                )
+              else:
+                st.warning(
+                    "⚠️ Keiner der Artikel aus dem Bericht wurde in der"
+                    " Datenbank gefunden."
+                )
 
     except Exception as e:
       st.error(f"Fehler beim Lesen der Datei: {e}")
@@ -722,7 +742,7 @@ elif action == "🖨 Etiketten drucken":
             </style>
             <div id="printable-label" style="border: 1px solid #000; width: 4cm; height: 1.5cm; padding: 2px; box-sizing: border-box; background: white; color: black; display: flex; flex-direction: column; justify-content: space-between; font-family: Arial, sans-serif;">
                 <div style="display: flex; justify-content: space-between; font-size: 7pt; font-weight: bold; line-height: 1;">
-                    <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%;">{chosen_item.get('name')}</span>
+                    <span style="overflow: hidden; text-origin: ellipsis; white-space: nowrap; max-width: 70%;">{chosen_item.get('name')}</span>
                     <span><b>{chosen_item.get('preis', 0.0):.2f} €</b></span>
                 </div>
                 <div style="text-align: center; margin: auto 0;">
@@ -743,7 +763,7 @@ elif action == "📱 QR-Code für Kollegen":
   st.header("📱 App-Zugang für das Team")
   st.write(
       "Scannen Sie diesen QR-Code mit einem Smartphone, um direkt zur"
-      " Lager-App zu gelangen:"
+      " Lager-app zu gelangen:"
   )
   app_url = "https://mtcbfvpjnxlkvvtuknyv.streamlit.app"
   qr_code_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(app_url)}"
