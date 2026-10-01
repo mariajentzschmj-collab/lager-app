@@ -120,6 +120,20 @@ action = st.sidebar.radio(
 )
 
 
+# Функция для универсального поиска по DataFrame (Name, Article, SAP, Barcode)
+def search_items(dataframe, query):
+  if dataframe.empty or not query:
+    return dataframe
+  q = str(query).strip().lower()
+  mask = (
+      dataframe["name"].astype(str).str.lower().str.contains(q, na=False)
+      | dataframe["barcode"].astype(str).str.lower().str.contains(q, na=False)
+      | dataframe["sap"].astype(str).str.lower().str.contains(q, na=False)
+      | dataframe["article"].astype(str).str.lower().str.contains(q, na=False)
+  )
+  return dataframe[mask]
+
+
 # Функция для отрисовки виджета камеры
 def render_camera_scanner_widget(key_suffix=""):
   scanner_html = f"""
@@ -175,16 +189,11 @@ def render_camera_scanner_widget(key_suffix=""):
 if action == "📊 Bestände anzeigen":
   st.header("📋 Aktuelles Sortiment & Bestände")
 
-  with st.expander(
-      "📷 Kamera-Scanner öffnen (zum schnellen Finden per Barcode)"
-  ):
-    render_camera_scanner_widget("stock_cam")
-
   col1, col2 = st.columns([2, 1])
   with col1:
     stock_search = st.text_input(
-        "🔍 Barcode scannen oder nach Name / SAP suchen:",
-        placeholder="Barcode eingeben oder scannen...",
+        "🔍 Suche (Name, Artikel, SAP, Barcode):",
+        placeholder="Suchbegriff eingeben...",
     )
   with col2:
     brand_filter = st.selectbox(
@@ -201,15 +210,7 @@ if action == "📊 Bestände anzeigen":
     ]
 
   if stock_search:
-    q = stock_search.strip().lower()
-    filtered_df = filtered_df[
-        filtered_df["name"].astype(str).str.lower().str.contains(q, na=False)
-        | filtered_df["barcode"].astype(str).str.lower().str.contains(q, na=False)
-        | filtered_df["article"].astype(str).str.lower().str.contains(
-            q, na=False
-        )
-        | filtered_df["sap"].astype(str).str.lower().str.contains(q, na=False)
-    ]
+    filtered_df = search_items(filtered_df, stock_search)
 
   if not filtered_df.empty:
     total_items = filtered_df["quantity"].sum()
@@ -242,15 +243,12 @@ if action == "📊 Bestände anzeigen":
 
 # 2. ARTIKEL HINZUFÜGEN
 elif action == "➕ Artikel hinzufügen":
-  st.header("✨ Neuen Artikel hinzufügen oder Bestand aufstocken")
-
-  with st.expander("📷 Kamera-Scanner öffnen (zum Erfassen des Barcodes)"):
-    render_camera_scanner_widget("add")
+  st.header("✨ Neuen Artikel hinzufügen oder Bestand anpassen (auch 0)")
 
   with st.form("search_add_form"):
     add_search = st.text_input(
-        "🔍 Bestehenden Artikel per Barcode / SAP suchen:",
-        placeholder="Barcode eingeben oder scannen...",
+        "🔍 Artikel suchen (Name, Artikel, SAP oder Barcode):",
+        placeholder="Eingeben...",
     )
     add_submitted = st.form_submit_button("Artikel suchen")
 
@@ -259,7 +257,7 @@ elif action == "➕ Artikel hinzufügen":
 
   active_add_search = st.session_state.get("add_search_query", "")
 
-  pre_article, pre_name, pre_brand, pre_sap, pre_barcode, pre_preis, pre_location = (
+  pre_article, pre_name, pre_brand, pre_sap, pre_barcode, pre_preis, pre_location, pre_qty = (
       "",
       "",
       "Iittala",
@@ -267,20 +265,18 @@ elif action == "➕ Artikel hinzufügen":
       "",
       0.0,
       "Etage 5 Lager",
+      1,
   )
 
   if active_add_search and not df.empty:
-    aq = active_add_search.strip().lower()
-    found_items = df[
-        df["barcode"].astype(str).str.lower().str.contains(aq, na=False)
-        | df["article"].astype(str).str.lower().str.contains(aq, na=False)
-        | df["sap"].astype(str).str.lower().str.contains(aq, na=False)
-        | df["name"].astype(str).str.lower().str.contains(aq, na=False)
-    ]
+    found_items = search_items(df, active_add_search)
     if not found_items.empty:
       item = found_items.iloc[0]
-      st.success(f"📦 Gefunden: **{item.get('name')}**")
-      pre_article, pre_name, pre_brand, pre_sap, pre_barcode, pre_preis, pre_location = (
+      st.success(
+          f"📦 Gefunden: **{item.get('name')}** (Aktueller Bestand:"
+          f" **{int(item.get('quantity', 0))} Stk.**)"
+      )
+      pre_article, pre_name, pre_brand, pre_sap, pre_barcode, pre_preis, pre_location, pre_qty = (
           str(item.get("article", "")),
           str(item.get("name", "")),
           str(item.get("brand", "Iittala")),
@@ -288,6 +284,7 @@ elif action == "➕ Artikel hinzufügen":
           str(item.get("barcode", "")),
           float(item.get("preis", 0.0)),
           str(item.get("location", "Etage 5 Lager")),
+          int(item.get("quantity", 0)),
       )
 
   with st.form("add_form"):
@@ -298,7 +295,9 @@ elif action == "➕ Artikel hinzufügen":
         brands_list.index(pre_brand) if pre_brand in brands_list else 0
     )
     new_brand = st.selectbox("Marke", brands_list, index=brand_index)
-    new_qty = st.number_input("Menge", min_value=0, value=1, step=1)
+    new_qty = st.number_input(
+        "Menge (auch 0)", min_value=0, value=pre_qty, step=1
+    )
     new_location = st.text_input("Lagerort", value=pre_location)
     new_preis = st.number_input(
         "Preis (€)", min_value=0.0, value=pre_preis, format="%.2f"
@@ -324,7 +323,7 @@ elif action == "➕ Artikel hinzufügen":
           supabase.table("inventory").upsert(
               data, on_conflict="article"
           ).execute()
-          st.success(f"✅ Artikel '{new_name}' gespeichert!")
+          st.success(f"✅ Artikel '{new_name}' (Menge: {new_qty}) gespeichert!")
           st.rerun()
         except Exception as e:
           st.error(f"Fehler: {e}")
@@ -333,15 +332,10 @@ elif action == "➕ Artikel hinzufügen":
 elif action == "📉 Artikel reduzieren (Verkauf)":
   st.header("🛒 Verkauf / Bestandsreduzierung erfassen")
 
-  with st.expander(
-      "📷 Kamera-Scanner öffnen (für Direktverkauf per Barcode)"
-  ):
-    render_camera_scanner_widget("sale")
-
   with st.form("search_sale_form"):
     sale_search = st.text_input(
-        "🔍 Barcode scannen oder nach Name / SAP suchen:",
-        placeholder="Barcode eingeben oder scannen...",
+        "🔍 Suche (Name, Artikel, SAP, Barcode):",
+        placeholder="Suchbegriff eingeben...",
     )
     search_submitted = st.form_submit_button("Suchen")
 
@@ -355,19 +349,13 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
   else:
     working_df = df
     if active_search:
-      sq = active_search.strip().lower()
-      working_df = df[
-          df["name"].astype(str).str.lower().str.contains(sq, na=False)
-          | df["barcode"].astype(str).str.lower().str.contains(sq, na=False)
-          | df["sap"].astype(str).str.lower().str.contains(sq, na=False)
-          | df["article"].astype(str).str.lower().str.contains(sq, na=False)
-      ]
+      working_df = search_items(df, active_search)
 
     if working_df.empty:
       st.warning("⚠️ Kein Artikel gefunden.")
     else:
       item_options = [
-          f"{r.get('name', 'Unbekannt')} | Barcode: {r.get('barcode', '-')} | SAP: {r.get('sap', '-')} (Bestand: {int(r.get('quantity', 0))} Stk.)"
+          f"{r.get('name', 'Unbekannt')} | SAP: {r.get('sap', '-')} | Barcode: {r.get('barcode', '-')} (Bestand: {int(r.get('quantity', 0))} Stk.)"
           for _, r in working_df.iterrows()
       ]
 
@@ -400,23 +388,67 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
 
 # 4. LIVE-KAMERA-SCANNER
 elif action == "📷 Live-Kamera-Scanner":
-  st.header("📷 Live-Barcode-Scanner für Smartphones")
+  st.header("📷 Live-Barcode-Scanner (Bestand anpassen)")
   render_camera_scanner_widget("main")
 
+  st.markdown("---")
   scanned_input = st.text_input(
-      "Gescannter Barcode (hier einfügen):", key="scanner_input_field"
+      "Gescannter Barcode, SAP-Nummer, Artikel oder Name manuell eingeben:",
+      key="scanner_input_field",
   )
+
   if scanned_input and not df.empty:
-    matched = df[
-        df["barcode"].astype(str).str.contains(scanned_input.strip(), na=False)
-    ]
+    matched = search_items(df, scanned_input)
+
     if not matched.empty:
-      st.success(
-          f"Gefunden: {matched.iloc[0]['name']} (Bestand:"
-          f" {matched.iloc[0]['quantity']} Stk.)"
-      )
+      item = matched.iloc[0]
+      item_name = item.get("name", "Unbekannt")
+      current_qty = int(float(item.get("quantity", 0)))
+      item_brand = item.get("brand", "-")
+      item_preis = float(item.get("preis", 0.0))
+      item_sap = item.get("sap", "-")
+      item_barcode = item.get("barcode", "-")
+
+      st.success(f"📦 Gefunden: **{item_name}** ({item_brand})")
+
+      col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+      col_m1.metric("📊 Aktueller Bestand", f"{current_qty} Stk.")
+      col_m2.metric("💶 Preis", f"{item_preis:.2f} €")
+      col_m3.metric("🏷 SAP", f"{item_sap}")
+      col_m4.metric("📟 Barcode", f"{item_barcode}")
+
+      st.markdown("### Bestandsänderung:")
+      with st.form("camera_update_qty_form"):
+        change_type = st.radio(
+            "Aktion wählen:", ["➕ Bestand hinzufügen", "➖ Bestand reduzieren"]
+        )
+        delta_qty = st.number_input(
+            "Anzahl der Stück:", min_value=1, value=1, step=1
+        )
+
+        if st.form_submit_button("Bestand aktualisieren"):
+          if "hinzufügen" in change_type.lower():
+            new_qty = current_qty + int(delta_qty)
+          else:
+            new_qty = max(0, current_qty - int(delta_qty))
+
+          if supabase is not None:
+            try:
+              supabase.table("inventory").update(
+                  {"quantity": int(new_qty)}
+              ).eq("id", item["id"]).execute()
+              st.success(
+                  f"✅ Bestand erfolgreich aktualisiert! Neuer Bestand:"
+                  f" {new_qty} Stk."
+              )
+              st.rerun()
+            except Exception as e:
+              st.error(f"Fehler beim Speichern: {e}")
     else:
-      st.warning("Barcode nicht in der Datenbank gefunden.")
+      st.warning(
+          "⚠️️ Artikel mit diesem Barcode / SAP / Suchbegriff wurde in der"
+          " Datenbank nicht gefunden."
+      )
 
 # 5. KATALOG AUS DATEI HOCHLADEN
 elif action == "📁 Katalog aus Datei hochladen":
@@ -430,7 +462,30 @@ elif action == "📁 Katalog aus Datei hochladen":
         upload_df = pd.read_csv(uploaded_file)
       else:
         upload_df = pd.read_excel(uploaded_file)
-      st.write("Vorschau der hochgeladenen Daten:", upload_df.head())
+
+      if "article" in upload_df.columns:
+        duplicates_series = upload_df[
+            upload_df.duplicated(subset=["article"], keep=False)
+        ]
+
+        if not duplicates_series.empty:
+          dup_counts = duplicates_series["article"].value_counts()
+          st.warning(
+              f"⚠️ В загруженном файле обнаружены повторяющиеся артикулы"
+              f" ({len(duplicates_series)} строк всего с дубликатами):"
+          )
+          dup_info_df = pd.DataFrame(
+              {"Артикул (article)": dup_counts.index, "Количество повторов в файле": dup_counts.values}
+          )
+          st.dataframe(dup_info_df, use_container_width=True)
+          st.info(
+              "ℹ️ При импорте дубликаты автоматически объединяются (берется"
+              " последняя запись из файла для каждого артикула)."
+          )
+
+        upload_df = upload_df.drop_duplicates(subset=["article"], keep="last")
+
+      st.write("Vorschau der bereinigten Daten:", upload_df.head())
       if st.button("Daten in Supabase importieren"):
         if supabase is not None:
           records = upload_df.to_dict(orient="records")
@@ -449,7 +504,7 @@ elif action == "🖨 Etiketten drucken":
     st.warning("Keine Artikel im Bestand.")
   else:
     print_options = [
-        f"{r.get('name')} (SAP: {r.get('sap')}) - {r.get('preis')} €"
+        f"{r.get('name')} (SAP: {r.get('sap')} | Barcode: {r.get('barcode')}) - {r.get('preis')} €"
         for _, r in df.iterrows()
     ]
     selected_to_print = st.selectbox(
@@ -487,7 +542,9 @@ elif action == "🖨 Etiketten drucken":
           unsafe_allow_html=True,
       )
       if st.button("Druckansicht öffnen"):
-        st.info("Bitte nutzen Sie Strg+P (Cmd+P auf Mac), um das Etikett zu drucken.")
+        st.info(
+            "Bitte nutzen Sie Strg+P (Cmd+P auf Mac), um das Etikett zu drucken."
+        )
 
 # 7. QR-CODE FÜR KOLLEGEN
 elif action == "📱 QR-Code für Kollegen":
