@@ -590,28 +590,33 @@ elif action == "🖨 Etiketten drucken":
 
       st.markdown("---")
       st.subheader("Etiketten-Vorschau (Höhe 1.5 cm × Breite 4 cm):")
-      st.markdown(
-          f"""
-            <div style="border: 2px dashed #333; width: 4cm; height: 1.5cm; padding: 2px; box-sizing: border-box; background: white; color: black; border-radius: 2px; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden;">
-                <div style="display: flex; justify-content: space-between; font-size: 6px; font-weight: bold; padding: 0 1px;">
-                    <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 65%;">{chosen_item.get('name')}</span>
+
+      # Четкая верстка без размытия + кнопка прямой печати
+      label_html = f"""
+            <style>
+                @media print {{
+                    body * {{ visibility: hidden; }}
+                    #printable-label, #printable-label * {{ visibility: visible; }}
+                    #printable-label {{ position: absolute; left: 0; top: 0; }}
+                }}
+            </style>
+            <div id="printable-label" style="border: 1px solid #000; width: 4cm; height: 1.5cm; padding: 2px; box-sizing: border-box; background: white; color: black; display: flex; flex-direction: column; justify-content: space-between; font-family: Arial, sans-serif;">
+                <div style="display: flex; justify-content: space-between; font-size: 7pt; font-weight: bold; line-height: 1;">
+                    <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%;">{chosen_item.get('name')}</span>
                     <span><b>{chosen_item.get('preis', 0.0):.2f} €</b></span>
                 </div>
-                <div style="text-align: center; flex-grow: 1; display: flex; align-items: center; justify-content: center; margin: 1px 0;">
-                    <img src="{barcode_url}" style="height: 0.75cm; width: 98%; object-fit: fill;" />
+                <div style="text-align: center; margin: auto 0;">
+                    <img src="{barcode_url}" style="height: 0.6cm; max-width: 100%; image-rendering: pixelated;" />
                 </div>
-                <div style="display: flex; justify-content: space-between; font-size: 5.5px; color: #555; padding: 0 1px;">
+                <div style="display: flex; justify-content: space-between; font-size: 6pt; color: #000; line-height: 1;">
                     <span>{chosen_item.get('brand', 'KaDeWe')}</span>
                     <span>SAP: {chosen_item.get('sap', '-')}</span>
                 </div>
             </div>
-            """,
-          unsafe_allow_html=True,
-      )
-      if st.button("Druckansicht öffnen"):
-        st.info(
-            "Bitte nutzen Sie Strg+P (Cmd+P auf Mac), um das Etikett zu drucken."
-        )
+            <br>
+            <button onclick="window.print();" style="background-color: #ff4b4b; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold;">🖨 Etikett jetzt drucken</button>
+            """
+      components.html(label_html, height=140)
 
 # 7. QR-CODE FÜR KOLLEGEN
 elif action == "📱 QR-Code für Kollegen":
