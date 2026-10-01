@@ -134,6 +134,7 @@ action = st.sidebar.radio(
         "📊 Bestände anzeigen",
         "➕ Artikel hinzufügen",
         "📉 Artikel reduzieren (Verkauf)",
+        "📥 Auto-списание по отчету о продажах",
         "📷 Live-Kamera-Scanner",
         "📁 Katalog aus Datei hochladen",
         "🖨 Etiketten drucken",
@@ -225,7 +226,6 @@ if action == "📊 Bestände anzeigen":
 
   filtered_df = df.copy()
 
-  # Мягкий нечувствительный к регистру и пробелам фильтр по бренду
   if brand_filter != "Alle Marken":
     filtered_df = filtered_df[
         filtered_df["brand"]
@@ -247,11 +247,7 @@ if action == "📊 Bestände anzeigen":
     m2.metric("🔢 Gesamtstückzahl", int(total_items))
     m3.metric("💶 Gesamtwert (Bestand)", f"{total_value:,.2f} €")
   else:
-    st.info(
-        "Keine Artikel im Lager gefunden. (Tipp: Wählen Sie 'Alle Marken',"
-        " um zu prüfen, ob die Artikel unter einem anderen Brand-Namen"
-        " gespeichert sind)."
-    )
+    st.info("Keine Artikel im Lager gefunden.")
 
   st.markdown("---")
   st.dataframe(filtered_df, use_container_width=True)
@@ -422,7 +418,135 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
             except Exception as e:
               st.error(f"Fehler: {e}")
 
-# 4. LIVE-KAMERA-SCANNER
+# 4. АВТО-СПИСАНИЕ ПО ОТЧЕТУ О ПРОДАЖАХ
+elif action == "📥 Авто-списание по отчету о продажах":
+  st.header("📥 Автоматическое обновление остатков по отчету о продажах")
+  st.write(
+      "Загрузите отчет о продажах (Excel или CSV). В файле должны быть колонки"
+      " с артикулом (`article` или `sap`) и проданным количеством (`quantity`"
+      " или `sold`)."
+  )
+
+  sales_file = st.file_uploader(
+      "Выберите файл отчета о продажах", type=["xlsx", "csv"], key="sales_upload"
+  )
+
+  if sales_file is not None:
+    try:
+      if sales_file.name.endswith(".csv"):
+        sales_df = pd.read_csv(sales_file)
+      else:
+        sales_df = pd.read_excel(sales_file)
+
+      st.write("📋 Предпросмотр загруженного файла продаж:", sales_df.head())
+
+      # Определяем названия колонок автоматически
+      cols_lower = {c.lower().strip(): c for c in sales_df.columns}
+
+      art_col = None
+      for k in [
+          "article",
+          "art-nr",
+          "artikelnr",
+          "artikel",
+          "sap",
+          "sku",
+          "barcode",
+      ]:
+        if k in cols_lower:
+          art_col = cols_lower[k]
+          break
+
+      qty_col = None
+      for k in ["quantity", "qty", "menge", "sold", "anzahl", "verkauf"]:
+        if k in cols_lower:
+          qty_col = cols_lower[k]
+          break
+
+      if not art_col or not qty_col:
+        st.error(
+            "❌ Не удалось автоматически найти колонку с артикулом/SAP или"
+            f" количеством. Доступные колонки в файле: {list(sales_df.columns)}"
+        )
+      else:
+        st.success(
+            f"✅ Колонки определены: Артикул/SAP -> `{art_col}`, Продано ->"
+            f" `{qty_col}`"
+        )
+
+        if st.button("🚀 Запустить авто-списание со склада"):
+          if df.empty:
+            st.error("В базе данных нет товаров для обновления.")
+          else:
+            updated_count = 0
+            report_log = []
+
+            for _, row in sales_df.iterrows():
+              item_id_val = str(row[art_col]).strip()
+              sold_qty = int(pd.to_numeric(row[qty_col], errors="coerce") or 0)
+
+              if sold_qty <= 0 or not item_id_val:
+                continue
+
+              # Ищем товар в нашем основном каталоге по article или sap
+              matched = df[
+                  (df["article"].astype(str).str.strip() == item_id_val)
+                  | (df["sap"].astype(str).str.strip() == item_id_val)
+              ]
+
+              if not matched.empty:
+                db_item = matched.iloc[0]
+                db_id = db_item["id"]
+                db_name = db_item["name"]
+                current_q = int(db_item["quantity"])
+                new_q = max(0, current_q - sold_qty)
+
+                # Обновляем в Supabase
+                if supabase is not None:
+                  try:
+                    supabase.table("inventory").update(
+                        {"quantity": int(new_q)}
+                    ).eq("id", db_id).execute()
+                    updated_count += 1
+                    report_log.append({
+                        "Артикул / SAP": item_id_val,
+                        "Название": db_name,
+                        "Было": current_q,
+                        "Продано": sold_qty,
+                        "Стало": new_q,
+                    })
+                  except Exception as ex:
+                    pass
+
+            st.success(
+                f"✅ Успешно обработано и списано товаров: {updated_count}"
+            )
+
+            if report_log:
+              st.markdown("### 📊 Отчет о списаниях:")
+              report_result_df = pd.DataFrame(report_log)
+              st.dataframe(report_result_df, use_container_width=True)
+
+              # Кнопка скачивания отчета
+              out_buf = io.BytesIO()
+              with pd.ExcelWriter(out_buf, engine="openpyxl") as writer:
+                report_result_df.to_excel(writer, index=False, sheet_name="Bericht")
+              st.download_button(
+                  label="📥 Скачать отчет об авто-списании (Excel)",
+                  data=out_buf.getvalue(),
+                  file_name="KaDeWe_Verkaufsbericht.xlsx",
+                  mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              )
+            else:
+              st.warning(
+                  "⚠️ Ни один товар из отчета не был найден в базе данных по"
+                  " артикулу/SAP."
+              )
+
+    except Exception as e:
+      st.error(f"Fehler beim Lesen der Datei: {e}")
+
+# 5. LIVE-KAMERA-SCANNER
 elif action == "📷 Live-Kamera-Scanner":
   st.header("📷 Live-Barcode-Scanner (Bestand anpassen)")
   render_camera_scanner_widget("main")
@@ -488,7 +612,7 @@ elif action == "📷 Live-Kamera-Scanner":
           " in der Datenbank nicht gefunden."
       )
 
-# 5. KATALOG AUS DATEI HOCHLADEN
+# 6. KATALOG AUS DATEI HOCHLADEN
 elif action == "📁 Katalog aus Datei hochladen":
   st.header("📂 Massen-Upload (Excel / CSV) — Alle Artikel inkl. 0 Stk.")
   uploaded_file = st.file_uploader(
@@ -562,7 +686,7 @@ elif action == "📁 Katalog aus Datei hochladen":
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten der Datei: {e}")
 
-# 6. ETIKETTEN DRUCKEN
+# 7. ETIKETTEN DRUCKEN
 elif action == "🖨 Etiketten drucken":
   st.header("🖨 Etiketten & Preisschilder drucken")
   if df.empty:
@@ -591,7 +715,6 @@ elif action == "🖨 Etiketten drucken":
       st.markdown("---")
       st.subheader("Etiketten-Vorschau (Höhe 1.5 cm × Breite 4 cm):")
 
-      # Увеличенный и четкий баркод (высота 0.85cm)
       label_html = f"""
             <style>
                 @media print {{
@@ -618,7 +741,7 @@ elif action == "🖨 Etiketten drucken":
             """
       components.html(label_html, height=150)
 
-# 7. QR-CODE FÜR KOLLEGEN
+# 8. QR-CODE FÜR KOLLEGEN
 elif action == "📱 QR-Code für Kollegen":
   st.header("📱 App-Zugang für das Team")
   st.write(
