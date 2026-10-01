@@ -591,7 +591,7 @@ elif action == "🖨 Etiketten drucken":
       st.markdown("---")
       st.subheader("Etiketten-Vorschau (Höhe 1.5 cm × Breite 4 cm):")
 
-      # Четкая верстка без размытия + кнопка прямой печати
+      # Увеличенный и четкий баркод (высота 0.85cm)
       label_html = f"""
             <style>
                 @media print {{
@@ -606,7 +606,7 @@ elif action == "🖨 Etiketten drucken":
                     <span><b>{chosen_item.get('preis', 0.0):.2f} €</b></span>
                 </div>
                 <div style="text-align: center; margin: auto 0;">
-                    <img src="{barcode_url}" style="height: 0.6cm; max-width: 100%; image-rendering: pixelated;" />
+                    <img src="{barcode_url}" style="height: 0.85cm; max-width: 100%; image-rendering: pixelated;" />
                 </div>
                 <div style="display: flex; justify-content: space-between; font-size: 6pt; color: #000; line-height: 1;">
                     <span>{chosen_item.get('brand', 'KaDeWe')}</span>
@@ -616,7 +616,7 @@ elif action == "🖨 Etiketten drucken":
             <br>
             <button onclick="window.print();" style="background-color: #ff4b4b; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold;">🖨 Etikett jetzt drucken</button>
             """
-      components.html(label_html, height=140)
+      components.html(label_html, height=150)
 
 # 7. QR-CODE FÜR KOLLEGEN
 elif action == "📱 QR-Code für Kollegen":
