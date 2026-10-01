@@ -68,6 +68,7 @@ except Exception as e:
   pass
 
 
+# Функция полной загрузки ВСЕХ товаров с пагинацией (обход лимита Supabase)
 def load_data():
   cols = [
       "id",
@@ -82,10 +83,29 @@ def load_data():
   ]
   if supabase is None:
     return pd.DataFrame(columns=cols)
+
+  all_rows = []
+  batch_size = 1000
+  start = 0
+
   try:
-    response = supabase.table("inventory").select("*").execute()
-    if response.data is not None:
-      df_loaded = pd.DataFrame(response.data)
+    while True:
+      response = (
+          supabase.table("inventory")
+          .select("*")
+          .range(start, start + batch_size - 1)
+          .execute()
+      )
+      data = response.data
+      if not data:
+        break
+      all_rows.extend(data)
+      if len(data) < batch_size:
+        break
+      start += batch_size
+
+    if all_rows:
+      df_loaded = pd.DataFrame(all_rows)
       if "quantity" in df_loaded.columns:
         df_loaded["quantity"] = (
             pd.to_numeric(df_loaded["quantity"], errors="coerce")
@@ -97,8 +117,10 @@ def load_data():
             df_loaded["preis"], errors="coerce"
         ).fillna(0.0)
       return df_loaded
+
   except Exception as e:
     st.error(f"❌ Fehler beim Laden der Daten: {e}")
+
   return pd.DataFrame(columns=cols)
 
 
