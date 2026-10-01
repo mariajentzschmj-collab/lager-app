@@ -247,7 +247,7 @@ elif action == "➕ Artikel hinzufügen":
 
   with st.form("search_add_form"):
     add_search = st.text_input(
-        "🔍 Artikel suchen (Name, Artikel, SAP oder Barcode):",
+        "🔍 Artikel suchen (Name, Artikel, SAP или Barcode):",
         placeholder="Eingeben...",
     )
     add_submitted = st.form_submit_button("Artikel suchen")
@@ -446,7 +446,7 @@ elif action == "📷 Live-Kamera-Scanner":
               st.error(f"Fehler beim Speichern: {e}")
     else:
       st.warning(
-          "⚠️️ Artikel mit diesem Barcode / SAP / Suchbegriff wurde in der"
+          "⚠️ Artikel mit diesem Barcode / SAP / Suchbegriff wurde in der"
           " Datenbank nicht gefunden."
       )
 
@@ -475,7 +475,10 @@ elif action == "📁 Katalog aus Datei hochladen":
               f" ({len(duplicates_series)} строк всего с дубликатами):"
           )
           dup_info_df = pd.DataFrame(
-              {"Артикул (article)": dup_counts.index, "Количество повторов в файле": dup_counts.values}
+              {
+                  "Артикул (article)": dup_counts.index,
+                  "Количество повторов в файле": dup_counts.values,
+              }
           )
           st.dataframe(dup_info_df, use_container_width=True)
           st.info(
@@ -486,14 +489,36 @@ elif action == "📁 Katalog aus Datei hochladen":
         upload_df = upload_df.drop_duplicates(subset=["article"], keep="last")
 
       st.write("Vorschau der bereinigten Daten:", upload_df.head())
+
       if st.button("Daten in Supabase importieren"):
         if supabase is not None:
+          # Исправление ошибки NaN для Supabase/JSON
+          upload_df["quantity"] = (
+              pd.to_numeric(upload_df.get("quantity", 0), errors="coerce")
+              .fillna(0)
+              .astype(int)
+          )
+          upload_df["preis"] = pd.to_numeric(
+              upload_df.get("preis", 0.0), errors="coerce"
+          ).fillna(0.0)
+
+          for col in ["article", "name", "brand", "location", "sap", "barcode"]:
+            if col in upload_df.columns:
+              upload_df[col] = upload_df[col].fillna("").astype(str)
+            else:
+              upload_df[col] = ""
+
           records = upload_df.to_dict(orient="records")
-          supabase.table("inventory").upsert(
-              records, on_conflict="article"
-          ).execute()
-          st.success("✅ Erfolgreich in Supabase importiert!")
-          st.rerun()
+
+          try:
+            supabase.table("inventory").upsert(
+                records, on_conflict="article"
+            ).execute()
+            st.success("✅ Erfolgreich in Supabase importiert!")
+            st.rerun()
+          except Exception as e:
+            st.error(f"Fehler beim Import: {e}")
+
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten der Datei: {e}")
 
