@@ -203,10 +203,14 @@ if action == "📊 Bestände anzeigen":
 
   filtered_df = df.copy()
 
+  # Мягкий нечувствительный к регистру и пробелам фильтр по бренду
   if brand_filter != "Alle Marken":
     filtered_df = filtered_df[
-        filtered_df["brand"].astype(str).str.lower()
-        == brand_filter.lower()
+        filtered_df["brand"]
+        .astype(str)
+        .str.strip()
+        .str.lower()
+        .str.contains(brand_filter.lower(), na=False)
     ]
 
   if stock_search:
@@ -221,7 +225,11 @@ if action == "📊 Bestände anzeigen":
     m2.metric("🔢 Gesamtstückzahl", int(total_items))
     m3.metric("💶 Gesamtwert (Bestand)", f"{total_value:,.2f} €")
   else:
-    st.info("Keine Artikel im Lager gefunden.")
+    st.info(
+        "Keine Artikel im Lager gefunden. (Tipp: Wählen Sie 'Alle Marken',"
+        " um zu prüfen, ob die Artikel unter einem anderen Brand-Namen"
+        " gespeichert sind)."
+    )
 
   st.markdown("---")
   st.dataframe(filtered_df, use_container_width=True)
@@ -385,7 +393,7 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
                   {"quantity": int(new_qty)}
               ).eq("id", selected_row["id"]).execute()
               st.success(
-                  f"✅ Verkauf erfasst! Neuer Bestand: {new_qty} Stk. (wર્ડ"
+                  f"✅ Verkauf erfasst! Neuer Bestand: {new_qty} Stk. (wird"
                   " im System behalten)"
               )
               st.rerun()
@@ -500,7 +508,6 @@ elif action == "📁 Katalog aus Datei hochladen":
 
       if st.button("Daten in Supabase importieren"):
         if supabase is not None:
-          # Безопасное преобразование количеств (если в файле пусто, ставится 0, товар не удаляется)
           upload_df["quantity"] = (
               pd.to_numeric(upload_df.get("quantity", 0), errors="coerce")
               .fillna(0)
