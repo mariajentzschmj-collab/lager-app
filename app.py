@@ -187,7 +187,7 @@ def render_camera_scanner_widget(key_suffix=""):
 
 # 1. BESTÄNDE ANZEIGEN
 if action == "📊 Bestände anzeigen":
-  st.header("📋 Aktuelles Sortiment & Bestände")
+  st.header("📋 Aktuelles Sortiment & Bestände (inkl. 0 Stk.)")
 
   col1, col2 = st.columns([2, 1])
   with col1:
@@ -221,7 +221,7 @@ if action == "📊 Bestände anzeigen":
     m2.metric("🔢 Gesamtstückzahl", int(total_items))
     m3.metric("💶 Gesamtwert (Bestand)", f"{total_value:,.2f} €")
   else:
-    st.info("Keine Artikel gefunden.")
+    st.info("Keine Artikel im Lager gefunden.")
 
   st.markdown("---")
   st.dataframe(filtered_df, use_container_width=True)
@@ -247,7 +247,7 @@ elif action == "➕ Artikel hinzufügen":
 
   with st.form("search_add_form"):
     add_search = st.text_input(
-        "🔍 Artikel suchen (Name, Artikel, SAP или Barcode):",
+        "🔍 Artikel suchen (Name, Artikel, SAP oder Barcode):",
         placeholder="Eingeben...",
     )
     add_submitted = st.form_submit_button("Artikel suchen")
@@ -265,7 +265,7 @@ elif action == "➕ Artikel hinzufügen":
       "",
       0.0,
       "Etage 5 Lager",
-      1,
+      0,
   )
 
   if active_add_search and not df.empty:
@@ -323,7 +323,10 @@ elif action == "➕ Artikel hinzufügen":
           supabase.table("inventory").upsert(
               data, on_conflict="article"
           ).execute()
-          st.success(f"✅ Artikel '{new_name}' (Menge: {new_qty}) gespeichert!")
+          st.success(
+              f"✅ Artikel '{new_name}' (Menge: {new_qty} Stk.) erfolgreich"
+              " gespeichert!"
+          )
           st.rerun()
         except Exception as e:
           st.error(f"Fehler: {e}")
@@ -355,7 +358,7 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
       st.warning("⚠️ Kein Artikel gefunden.")
     else:
       item_options = [
-          f"{r.get('name', 'Unbekannt')} | SAP: {r.get('sap', '-')} | Barcode: {r.get('barcode', '-')} (Bestand: {int(r.get('quantity', 0))} Stk.)"
+          f"{r.get('name', 'Unbekannt')} | Art: {r.get('article', '-')} | SAP: {r.get('sap', '-')} | Barcode: {r.get('barcode', '-')} (Bestand: {int(r.get('quantity', 0))} Stk.)"
           for _, r in working_df.iterrows()
       ]
 
@@ -381,7 +384,10 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
               supabase.table("inventory").update(
                   {"quantity": int(new_qty)}
               ).eq("id", selected_row["id"]).execute()
-              st.success(f"✅ Verkauf erfasst! Neuer Bestand: {new_qty} Stk.")
+              st.success(
+                  f"✅ Verkauf erfasst! Neuer Bestand: {new_qty} Stk. (wર્ડ"
+                  " im System behalten)"
+              )
               st.rerun()
             except Exception as e:
               st.error(f"Fehler: {e}")
@@ -408,14 +414,16 @@ elif action == "📷 Live-Kamera-Scanner":
       item_preis = float(item.get("preis", 0.0))
       item_sap = item.get("sap", "-")
       item_barcode = item.get("barcode", "-")
+      item_article = item.get("article", "-")
 
       st.success(f"📦 Gefunden: **{item_name}** ({item_brand})")
 
-      col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-      col_m1.metric("📊 Aktueller Bestand", f"{current_qty} Stk.")
+      col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
+      col_m1.metric("📊 Bestand", f"{current_qty} Stk.")
       col_m2.metric("💶 Preis", f"{item_preis:.2f} €")
       col_m3.metric("🏷 SAP", f"{item_sap}")
       col_m4.metric("📟 Barcode", f"{item_barcode}")
+      col_m5.metric("📋 Art.-Nr.", f"{item_article}")
 
       st.markdown("### Bestandsänderung:")
       with st.form("camera_update_qty_form"):
@@ -446,13 +454,13 @@ elif action == "📷 Live-Kamera-Scanner":
               st.error(f"Fehler beim Speichern: {e}")
     else:
       st.warning(
-          "⚠️ Artikel mit diesem Barcode / SAP / Suchbegriff wurde in der"
-          " Datenbank nicht gefunden."
+          "⚠️ Artikel mit diesem Barcode / SAP / Artikel / Suchbegriff wurde"
+          " in der Datenbank nicht gefunden."
       )
 
 # 5. KATALOG AUS DATEI HOCHLADEN
 elif action == "📁 Katalog aus Datei hochladen":
-  st.header("📂 Massen-Upload (Excel / CSV)")
+  st.header("📂 Massen-Upload (Excel / CSV) — Alle Artikel inkl. 0 Stk.")
   uploaded_file = st.file_uploader(
       "Wählen Sie eine Excel- oder CSV-Datei aus", type=["xlsx", "csv"]
   )
@@ -492,7 +500,7 @@ elif action == "📁 Katalog aus Datei hochladen":
 
       if st.button("Daten in Supabase importieren"):
         if supabase is not None:
-          # Исправление ошибки NaN для Supabase/JSON
+          # Безопасное преобразование количеств (если в файле пусто, ставится 0, товар не удаляется)
           upload_df["quantity"] = (
               pd.to_numeric(upload_df.get("quantity", 0), errors="coerce")
               .fillna(0)
@@ -514,7 +522,10 @@ elif action == "📁 Katalog aus Datei hochladen":
             supabase.table("inventory").upsert(
                 records, on_conflict="article"
             ).execute()
-            st.success("✅ Erfolgreich in Supabase importiert!")
+            st.success(
+                "✅ Erfolgreich in Supabase importiert! Alle Artikel (auch mit"
+                " 0 Bestand) sind im System."
+            )
             st.rerun()
           except Exception as e:
             st.error(f"Fehler beim Import: {e}")
@@ -529,7 +540,7 @@ elif action == "🖨 Etiketten drucken":
     st.warning("Keine Artikel im Bestand.")
   else:
     print_options = [
-        f"{r.get('name')} (SAP: {r.get('sap')} | Barcode: {r.get('barcode')}) - {r.get('preis')} €"
+        f"{r.get('name')} | Art: {r.get('article')} | SAP: {r.get('sap')} | Barcode: {r.get('barcode')} (Bestand: {int(r.get('quantity', 0))} Stk.)"
         for _, r in df.iterrows()
     ]
     selected_to_print = st.selectbox(
@@ -541,6 +552,8 @@ elif action == "🖨 Etiketten drucken":
       raw_bc = str(chosen_item.get("barcode", ""))
       if not raw_bc or raw_bc == "nan":
         raw_bc = str(chosen_item.get("sap", ""))
+      if not raw_bc or raw_bc == "nan":
+        raw_bc = str(chosen_item.get("article", ""))
       if not raw_bc or raw_bc == "nan":
         raw_bc = "12345678"
 
