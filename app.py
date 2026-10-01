@@ -444,7 +444,7 @@ elif action == "📥 Auto-Abverkauf per Bericht":
         st.error(
             "🚫 **Achtung!** Diese Datei wurde bereits für den automatischen"
             " Abverkauf verwendet. Jede Datei kann nur einmal verarbeitet"
-            " werden, um doppelte Abchreibungen zu verhindern."
+            " werden, um doppelte Abschreibungen zu verhindern."
         )
       else:
         if sales_file.name.endswith(".csv"):
@@ -730,7 +730,7 @@ elif action == "🖨 Etiketten drucken":
       barcode_url = f"https://barcodeapi.org/api/128/{urllib.parse.quote(raw_bc)}"
 
       st.markdown("---")
-      st.subheader("Etiketten-Vorschau (Höhe 1.5 cm × Breite 4 cm):")
+      st.subheader("Etiketten-Vorschau (Höhe 1.4 cm × Breite 4 cm):")
 
       label_html = f"""
             <style>
@@ -740,13 +740,13 @@ elif action == "🖨 Etiketten drucken":
                     #printable-label {{ position: absolute; left: 0; top: 0; }}
                 }}
             </style>
-            <div id="printable-label" style="border: 1px solid #000; width: 4cm; height: 1.5cm; padding: 2px; box-sizing: border-box; background: white; color: black; display: flex; flex-direction: column; justify-content: space-between; font-family: Arial, sans-serif;">
+            <div id="printable-label" style="border: 1px solid #000; width: 4cm; height: 1.4cm; padding: 2px; box-sizing: border-box; background: white; color: black; display: flex; flex-direction: column; justify-content: space-between; font-family: Arial, sans-serif;">
                 <div style="display: flex; justify-content: space-between; font-size: 7pt; font-weight: bold; line-height: 1;">
-                    <span style="overflow: hidden; text-origin: ellipsis; white-space: nowrap; max-width: 70%;">{chosen_item.get('name')}</span>
+                    <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%;">{chosen_item.get('name')}</span>
                     <span><b>{chosen_item.get('preis', 0.0):.2f} €</b></span>
                 </div>
                 <div style="text-align: center; margin: auto 0;">
-                    <img src="{barcode_url}" style="height: 0.85cm; max-width: 100%; image-rendering: pixelated;" />
+                    <img src="{barcode_url}" style="height: 0.75cm; max-width: 100%; image-rendering: pixelated;" />
                 </div>
                 <div style="display: flex; justify-content: space-between; font-size: 6pt; color: #000; line-height: 1;">
                     <span>{chosen_item.get('brand', 'KaDeWe')}</span>
