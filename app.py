@@ -158,12 +158,12 @@ def search_items(dataframe, query):
   return dataframe[mask]
 
 
-# Funktion zum Rendern des Kamera-Scanner-Widgets
+# Funktion zum Rendern des Kamera-Scanner-Widgets (fixiert auf Hauptkamera / Rückkamera)
 def render_camera_scanner_widget(key_suffix=""):
   scanner_html = f"""
     <div style="width: 100%; max-width: 400px; margin: auto; text-align: center; background: #f9f9f9; padding: 10px; border-radius: 8px; border: 1px solid #ddd;">
         <div id="reader_{key_suffix}" style="width: 100%;"></div>
-        <div style="margin-top: 10px; font-size: 14px; font-weight: bold; color: #155724; background: #d4edda; padding: 6px; border-radius: 6px;" id="result_{key_suffix}">Kamera bereit...</div>
+        <div style="margin-top: 10px; font-size: 14px; font-weight: bold; color: #155724; background: #d4edda; padding: 6px; border-radius: 6px;" id="result_{key_suffix}">Kamera bereit (Rückkamera)...</div>
     </div>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <script>
@@ -189,21 +189,31 @@ def render_camera_scanner_widget(key_suffix=""):
             navigator.clipboard.writeText(decodedText);
         }}
 
-        const config_{key_suffix} = {{
-            fps: 15, 
-            qrbox: {{ width: 280, height: 100 }},
-            aspectRatio: 1.0,
-            formatsToSupport: [
-                Html5QrcodeSupportedFormats.EAN_13,
-                Html5QrcodeSupportedFormats.EAN_8,
-                Html5QrcodeSupportedFormats.CODE_128,
-                Html5QrcodeSupportedFormats.UPC_A,
-                Html5QrcodeSupportedFormats.UPC_E
-            ]
-        }};
-
-        let scanner_{key_suffix} = new Html5QrcodeScanner("reader_{key_suffix}", config_{key_suffix}, false);
-        scanner_{key_suffix}.render(onScanSuccess_{key_suffix}, (errorMessage) => {{}});
+        let scanner_{key_suffix} = new Html5Qrcode("reader_{key_suffix}");
+        
+        scanner_{key_suffix}.start(
+             {{ facingMode: "environment" }},
+             {{
+                fps: 15,
+                qrbox: {{ width: 280, height: 100 }},
+                formatsToSupport: [
+                    Html5QrcodeSupportedFormats.EAN_13,
+                    Html5QrcodeSupportedFormats.EAN_8,
+                    Html5QrcodeSupportedFormats.CODE_128,
+                    Html5QrcodeSupportedFormats.UPC_A,
+                    Html5QrcodeSupportedFormats.UPC_E
+                ]
+            }},
+            onScanSuccess_{key_suffix},
+            (errorMessage) => {{}}
+        ).catch((err) => {{
+            scanner_{key_suffix}.start(
+                {{ facingMode: "user" }},
+                {{ fps: 15, qrbox: {{ width: 280, height: 100 }} }},
+                onScanSuccess_{key_suffix},
+                (errorMessage) => {{}}
+            );
+        }});
     </script>
     """
   components.html(scanner_html, height=350)
