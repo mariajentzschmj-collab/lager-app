@@ -48,7 +48,7 @@ def check_login():
   password = st.text_input("Passwort", type="password")
 
   if st.button("Anmelden"):
-    if role_choice == "Manager" and password == "kadewe2026":
+    if role_choice == "Manager" and password == "KaDeWe2026!Mgr":
       st.session_state["logged_in"] = True
       st.session_state["role"] = "Manager"
       st.session_state["last_active"] = time.time()
@@ -179,10 +179,8 @@ if current_role == "Manager" and supabase is not None:
           )
           col_app1, col_app2 = st.columns(2)
           if col_app1.button("Genehmigen", key=f"app_{req['id']}"):
-            # Bestand anpassen
             art_id = req.get("inventory_id")
             delta = int(req.get("requested_qty", 0))
-            # Daten holen
             curr_item = (
                 supabase.table("inventory")
                 .select("quantity")
@@ -230,7 +228,6 @@ if current_role == "Manager":
       "📱 QR-Code für Kollegen",
   ]
 else:
-  # Agent hat Zugriff auf die wichtigsten täglichen Abläufe
   menu_options = [
       "📊 Bestände anzeigen",
       "➕ Artikel hinzufügen",
@@ -505,7 +502,6 @@ elif action == "➕ Artikel hinzufügen":
           except Exception as e:
             st.error(f"Fehler: {e}")
       else:
-        # Agent sendet Anfrage
         if supabase is not None:
           try:
             supabase.table("agent_requests").insert({
@@ -514,9 +510,7 @@ elif action == "➕ Artikel hinzufügen":
                 "req_type": "Artikel Hinzufügen/Ändern",
                 "status": "ausstehend",
             }).execute()
-            st.success(
-                "📤 Anfrage an den Manager zur Freigabe gesendet!"
-            )
+            st.success("📤 Anfrage an den Manager zur Freigabe gesendet!")
           except Exception as e:
             st.error(f"Fehler: {e}")
 
@@ -735,12 +729,11 @@ elif action == "📥 Auto-Abverkauf per Bericht":
       st.error(f"Fehler: {e}")
 
 # 6. AUTOMATISCHER BESTELLVORSCHLAG
-elif action == "📦 Automatischer Bestellvorschorschlag":
+elif action == "📦 Automatischer Bestellvorschlag":
   st.header("📦 Automatischer Bestellvorschlag (Min/Max)")
   if df.empty:
     st.warning("Keine Daten vorhanden.")
   else:
-    # Filter für Artikel unter Mindestbestand
     order_df = df[df["quantity"] < df["min_qty"]].copy()
     if order_df.empty:
       st.success(
@@ -750,7 +743,7 @@ elif action == "📦 Automatischer Bestellvorschorschlag":
     else:
       order_df["Bestellmenge"] = order_df["max_qty"] - order_df["quantity"]
       st.warning(
-          f"⚠️️ {len(order_df)} Artikel unterschreiten den Mindestbestand!"
+          f"⚠ {len(order_df)} Artikel unterschreiten den Mindestbestand!"
       )
       st.dataframe(
           order_df[
