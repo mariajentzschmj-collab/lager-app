@@ -10,6 +10,7 @@ import requests
 import streamlit as st
 import streamlit.components.v1 as components
 from supabase import create_client
+from datetime import datetime
 
 # Seitanordnung
 st.set_page_config(
@@ -51,7 +52,7 @@ def check_authentication():
   st.title("🔐 KaDeWe Lagerverwaltung - Login")
   st.subheader("Bitte wählen Sie Ihre Rolle aus:")
 
-  role_choice = st.radio("Ich bin ein(e):", ["👔 Manager (Maria)", "🧑‍‍💼 Agent / Mitarbeiter"])
+  role_choice = st.radio("Ich bin ein(e):", ["👔 Manager (Maria)", "🧑‍‍‍💼 Agent / Mitarbeiter"])
 
   if role_choice == "👔 Manager (Maria)":
     manager_password = st.text_input("Manager-Passwort", type="password")
@@ -269,6 +270,7 @@ action = st.sidebar.radio(
         "📉 Artikel reduzieren (Verkauf)",
         "📥 Massen-Wareneingang (Zuwachs)",
         "📥 Auto-Abverkauf per Bericht",
+        "📦 Automatischer Bestellvorschlag",
         "📁 Katalog aus Datei hochladen",
         "📷 Live-Kamera-Scanner",
         "🖨 Etiketten drucken",
@@ -583,7 +585,7 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
           }
           request_manager_approval("reduce_stock", payload)
 
-# 4. MASSEN-WARENEINGANG (ZUWACHS) ПО SAP — МАССОВЫЙ ПРИХОД ПО SAP С АВТОМАТИЧЕСКИМ ПРИБАВЛЕНИЕМ
+# 4. MASSEN-WARENEINGANG (ZUWACHS) ПО SAP
 elif action == "📥 Massen-Wareneingang (Zuwachs)":
   is_manager = st.session_state.get("role") == "manager"
   st.header("📥 Massen-Wareneingang (Bestand erhöhen nach SAP)" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
@@ -656,7 +658,7 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten des Wareneingangs: {e}")
 
-# 5. AUTO-ABVERKAUF PER BERICHT (МАССОВЫЙ ВЫЧЕТ ПО ОТЧЕТУ О ПРОДАЖАХ)
+# 5. AUTO-ABVERKAUF PER BERICHT
 elif action == "📥 Auto-Abverkauf per Bericht":
   is_manager = st.session_state.get("role") == "manager"
   st.header("📥 Automatischer Abverkauf per Verkaufsbericht" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
@@ -700,7 +702,49 @@ elif action == "📥 Auto-Abverkauf per Bericht":
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten des Berichts: {e}")
 
-# 6. KATALOG AUS DATEI HOCHLADEN (ВКЛЮЧАЯ 0 ЗНАЧЕНИЯ)
+# 6. АВТОМАТИЧЕСКИЙ ЗАКАЗ ПОСТАВЩИКУ (НОВЫЙ МОДУЛЬ)
+elif action == "📦 Automatischer Bestellvorschlag":
+  st.header("📦 Automatischer Bestellvorschlag (Lieferzeit ~1 Monat)")
+  st.markdown("Überprüfung der Bestände: Wenn der Bestand unter den Mindestwert fällt, wird ein Vorschlag zur Nachbestellung generiert.")
+
+  min_threshold = st.number_input("Mindestbestand-Schwelle (unter der nachbestellt wird):", min_value=1, value=5, step=1)
+  target_stock = st.number_input("Zielbestand nach Lieferung:", min_value=5, value=20, step=1)
+
+  if st.button("🔄 Bestellvorschlag generieren"):
+    if df.empty:
+      st.warning("Keine Artikel im Lager gefunden.")
+    else:
+      orders = []
+      for _, row in df.iterrows():
+        qty = int(row.get("quantity", 0))
+        if qty <= min_threshold:
+          suggested = max(0, target_stock - qty)
+          if suggested > 0:
+            orders.append({
+                "Artikelname": row.get("name", ""),
+                "Marke": row.get("brand", ""),
+                "SAP-Nummer": row.get("sap", ""),
+                "Aktueller Bestand": qty,
+                "Empfohlene Bestellmenge": suggested,
+                "Preis (€)": row.get("preis", 0.0)
+            })
+
+      order_df = pd.DataFrame(orders)
+      if not order_df.empty:
+        st.success(f"Gefundene Positionen für Nachbestellung: {len(order_df)}")
+        st.dataframe(order_df, use_container_width=True)
+
+        csv_data = order_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Bestellliste als CSV herunterladen",
+            data=csv_data,
+            file_name=f"bestellvorschlag_{datetime.now().strftime('%Y-%m-%d')}.csv",
+            mime="text/csv"
+        )
+      else:
+        st.info("Alle Bestände sind oberhalb des Schwellenwerts. Keine Nachbestellung nötig.")
+
+# 7. KATALOG AUS DATEI HOCHLADEN
 elif action == "📁 Katalog aus Datei hochladen":
   is_manager = st.session_state.get("role") == "manager"
   st.header("📂 Gesamtkatalog hochladen (inkl. 0 Bestände)" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
@@ -757,7 +801,7 @@ elif action == "📁 Katalog aus Datei hochladen":
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten des Katalogs: {e}")
 
-# 7. LIVE-KAMERA-SCANNER
+# 8. LIVE-KAMERA-SCANNER
 elif action == "📷 Live-Kamera-Scanner":
   is_manager = st.session_state.get("role") == "manager"
   st.header("📷 Live-Barcode-Scanner (Bestand anpassen)")
@@ -803,7 +847,7 @@ elif action == "📷 Live-Kamera-Scanner":
           }
           request_manager_approval("reduce_stock", payload)
 
-# 8. ETIKETTEN DRUCKEN
+# 9. ETIKETTEN DRUCKEN
 elif action == "🖨 Etiketten drucken":
   st.header("🖨 Etiketten & Preisschilder drucken")
   if df.empty:
@@ -837,7 +881,7 @@ elif action == "🖨 Etiketten drucken":
             """
       components.html(label_html, height=150)
 
-# 9. QR-CODE FÜR KOLLEGEN
+# 10. QR-CODE FÜR KOLLEGEN
 elif action == "📱 QR-Code für Kollegen":
   st.header("📱 App-Zugang für das Team")
   app_url = "https://mtcbfvpjnxlkvvtuknyv.streamlit.app"
