@@ -845,53 +845,7 @@ elif action == "📱 QR-Code für Kollegen":
   st.image(qr_code_url, width=300)
   st.markdown(f"Direktlink: [{app_url}]({app_url})")
 
-# ==========================================
-# KOMPLETT-BLOCK: MIN/MAX UPLOAD & AUTOMATISCHE BESTELLUNG
-# ==========================================
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("📦 Automatische Bestellung & Min/Max")
-
-# 1. Sektion: Min/Max-Werte per Excel aktualisieren
-st.sidebar.markdown("**1. Min/Max-Werte per Excel aktualisieren**")
-uploaded_minmax = st.sidebar.file_uploader(
-    "Excel-Datei (SAP, min_stock, max_stock) hochladen", 
-    type=["xlsx", "xls"],
-    key="minmax_uploader"
-)
-
-if uploaded_minmax is not None:
-  try:
-    update_df = pd.read_excel(uploaded_minmax)
-    st.sidebar.success(f"Datei geladen! Zeilen: {len(update_df)}")
-      
-    if st.sidebar.button("💾 In Datenbank speichern"):
-      success_count = 0
-      error_count = 0
-      
-      for _, row in update_df.iterrows():
-        try:
-          sap_val = str(row.get("sap", "")).strip()
-          min_val = int(row.get("min_stock", 2))
-          max_val = int(row.get("max_stock", 10))
-          
-          if sap_val and sap_val != "nan":
-            supabase.table("inventory").update({
-                "min_stock": min_val,
-                "max_stock": max_val
-            }).eq("sap", sap_val).execute()
-            success_count += 1
-          else:
-            error_count += 1
-        except Exception:
-          error_count += 1
-          
-      st.sidebar.success(f"Aktualisiert! Erfolgreich: {success_count}, Fehler: {error_count}")
-      st.info("Bitte aktualisieren Sie die App, um die neuen Grenzwerte zu laden.")
-  except Exception as e:
-    st.sidebar.error(f"Fehler beim Verlesen der Datei: {e}")
-
-# ==========================================
+        # ==========================================
 # KOMPLETT-BLOCK: MIN/MAX UPLOAD & AUTOMATISCHE BESTELLUNG
 # ==========================================
 
