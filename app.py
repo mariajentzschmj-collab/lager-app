@@ -844,3 +844,105 @@ elif action == "📱 QR-Code für Kollegen":
   qr_code_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(app_url)}"
   st.image(qr_code_url, width=300)
   st.markdown(f"Direktlink: [{app_url}]({app_url})")
+
+# ==========================================
+# KOMPLETT-BLOCK: MIN/MAX UPLOAD & AUTOMATISCHE BESTELLUNG
+# ==========================================
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("📦 Automatische Bestellung & Min/Max")
+
+# 1. Sektion: Min/Max-Werte per Excel aktualisieren
+st.sidebar.markdown("**1. Min/Max-Werte per Excel aktualisieren**")
+uploaded_minmax = st.sidebar.file_uploader(
+    "Excel-Datei (SAP, min_stock, max_stock) hochladen", 
+    type=["xlsx", "xls"],
+    key="minmax_uploader"
+)
+
+if uploaded_minmax is not None:
+  try:
+    update_df = pd.read_excel(uploaded_minmax)
+    st.sidebar.success(f"Datei geladen! Zeilen: {len(update_df)}")
+      
+    if st.sidebar.button("💾 In Datenbank speichern"):
+      success_count = 0
+      error_count = 0
+      
+      for _, row in update_df.iterrows():
+        try:
+          sap_val = str(row.get("sap", "")).strip()
+          min_val = int(row.get("min_stock", 2))
+          max_val = int(row.get("max_stock", 10))
+          
+          if sap_val and sap_val != "nan":
+            supabase.table("inventory").update({
+                "min_stock": min_val,
+                "max_stock": max_val
+            }).eq("sap", sap_val).execute()
+            success_count += 1
+          else:
+            error_count += 1
+        except Exception:
+          error_count += 1
+          
+      st.sidebar.success(f"Aktualisiert! Erfolgreich: {success_count}, Fehler: {error_count}")
+      st.info("Bitte aktualisieren Sie die App, um die neuen Grenzwerte zu laden.")
+  except Exception as e:
+    st.sidebar.error(f"Fehler beim Verlesen der Datei: {e}")
+
+st.sidebar.markdown("---")
+
+# 2. Sektion: Nachbestellung prüfen und generieren
+st.sidebar.markdown("**2. Nachbestellung ausführen**")
+if st.sidebar.button("🚀 Nachbestellung prüfen"):
+  if df.empty:
+    st.sidebar.warning("⚠️ Keine Daten im Bestand gefunden.")
+  else:
+    check_df = df.copy()
+    check_df["quantity"] = pd.to_numeric(check_df["quantity"], errors="coerce").fillna(0)
+    
+    # Standardwerte falls Spalten fehlen
+    if "min_stock" not in check_df.columns:
+      check_df["min_stock"] = 2
+    if "max_stock" not in check_df.columns:
+      check_df["max_stock"] = 10
+
+    check_df["min_stock"] = pd.to_numeric(check_df["min_stock"], errors="coerce").fillna(2)
+    check_df["max_stock"] = pd.to_numeric(check_df["max_stock"], errors="coerce").fillna(10)
+
+    # WICHTIG: Nur Artikel berücksichtigen, deren Mindestbestand STRICT GREATER THAN 0 ist (min_stock > 0)
+    # Artikel mit min_stock = 0 werden komplett ignoriert
+    active_check_df = check_df[check_df["min_stock"] > 0]
+
+    # Filtern nach individuellem Mindestbestand (Bestand <= min_stock)
+    reorder_df = active_check_df[active_check_df["quantity"] <= active_check_df["min_stock"]].copy()
+
+    if reorder_df.empty:
+      st.sidebar.success("✅ Alle aktiven Artikel über ihrem Mindestbestand!")
+    else:
+      # Bestellmenge bis zum individuellen Max-Bestand berechnen
+      reorder_df["order_qty"] = reorder_df["max_stock"] - reorder_df["quantity"]
+      reorder_df["order_qty"] = reorder_df["order_qty"].apply(lambda x: max(1, x))
+      
+      st.sidebar.error(f"🚨 {len(reorder_df)} Artikel unter Minimum!")
+      
+      # Anzeige im Hauptbereich
+      st.markdown("---")
+      st.header("🚨 Automatische Bestellliste (nach Min/Max-Werten)")
+      st.markdown("Folgende Artikel haben ihren **individuellen Mindestbestand** unterschritten (Artikel mit Mindestbestand = 0 wurden ausgeschlossen):")
+      
+      display_cols = [c for c in ["article", "name", "brand", "quantity", "min_stock", "max_stock", "order_qty", "sap", "preis"] if c in reorder_df.columns]
+      st.dataframe(reorder_df[display_cols], use_container_width=True)
+
+      # Excel-Download vorbereiten
+      out_excel = io.BytesIO()
+      with pd.ExcelWriter(out_excel, engine="openpyxl") as writer:
+        reorder_df[display_cols].to_excel(writer, index=False, sheet_name="Bestellung")
+      
+      st.download_button(
+          label="📥 Bestellliste als Excel herunterladen",
+          data=out_excel.getvalue(),
+          file_name="KaDeWe_Individuelle_Bestellung.xlsx",
+          mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      )
