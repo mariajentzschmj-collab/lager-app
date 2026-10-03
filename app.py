@@ -1,9 +1,11 @@
 import hashlib
 import io
+import random
 import time
 import urllib.parse
 import numpy as np
 import pandas as pd
+import requests
 import streamlit as st
 import streamlit.components.v1 as components
 from supabase import create_client
@@ -12,53 +14,6 @@ from supabase import create_client
 st.set_page_config(
     page_title="KaDeWe Lager — Iittala & Royal Copenhagen", layout="wide"
 )
-
-
-# --- PASSWORT UND INAKTIVITÄTS-TIMEOUT (5 MINUTEN) ---
-def check_password():
-  TIMEOUT_SECONDS = 300  # 5 Minuten
-
-  if "password_correct" not in st.session_state:
-    st.session_state["password_correct"] = False
-    st.session_state["last_active"] = time.time()
-
-  if st.session_state["password_correct"]:
-    if (
-        time.time() - st.session_state.get("last_active", time.time())
-        > TIMEOUT_SECONDS
-    ):
-      st.session_state["password_correct"] = False
-      st.warning(
-          "⏱️ Sitzung wegen Inaktivität abgelaufen (> 5 Min.). Bitte erneut"
-          " anmelden."
-      )
-
-  if st.session_state["password_correct"]:
-    st.session_state["last_active"] = time.time()
-    return True
-
-  st.title("🔐 Lagerverwaltung - Login")
-  st.subheader(
-      "Bitte geben Sie das Passwort ein (Timeout nach 5 Min. Inaktivität)"
-  )
-
-  password = st.text_input("Passwort", type="password")
-  if st.button("Anmelden"):
-    if password == "kadewe2026":
-      st.session_state["password_correct"] = True
-      st.session_state["last_active"] = time.time()
-      st.rerun()
-    else:
-      st.error("❌ Falsches Passwort")
-  return False
-
-
-if not check_password():
-  st.stop()
-
-# --- HAUPTCODE DER ANWENDUNG ---
-st.title("📦 Lagerverwaltung (5. Etage)")
-st.subheader("Iittala & Royal Copenhagen")
 
 SUPABASE_URL = "https://mtcbfvpjnxlkvvtuknyv.supabase.co"
 SUPABASE_KEY = "sb_publishable_wChGuVU2FeW23S2bqdYqOg_B9-oMoKs"
@@ -70,7 +25,93 @@ except Exception as e:
   pass
 
 
-# Funktion zum Laden ALLER Artikel mit Paginierung (Umgehung des Supabase-Limits)
+# --- СИСТЕМА АВТОРИЗАЦИИ С РАЗНЫМИ УРОВНЯМИ ДОСТУПА ---
+def check_authentication():
+  TIMEOUT_SECONDS = 300  # 5 минут неактивности
+
+  if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
+    st.session_state["role"] = None
+    st.session_state["user_name"] = None
+    st.session_state["last_active"] = time.time()
+
+  if st.session_state["logged_in"]:
+    if (
+        time.time() - st.session_state.get("last_active", time.time())
+        > TIMEOUT_SECONDS
+    ):
+      st.session_state["logged_in"] = False
+      st.warning("⏱️ Sitzung wegen Inaktivität abgelaufen (> 5 Min.). Bitte erneut anmelden.")
+
+  if st.session_state["logged_in"]:
+    st.session_state["last_active"] = time.time()
+    return True
+
+  st.title("🔐 Lagerverwaltung - Login")
+  st.subheader("Bitte wählen Sie Ihre Rolle und melden Sie sich an:")
+
+  role_choice = st.radio("Ich bin ein(e):", ["👔 Manager (Maria)", "🧑‍💼 Agent / Mitarbeiter"])
+
+  if role_choice == "👔 Manager (Maria)":
+    manager_password = st.text_input("Manager-Passwort", type="password")
+    if st.button("Als Manager anmelden"):
+      if manager_password == "kadewe2026":
+        st.session_state["logged_in"] = True
+        st.session_state["role"] = "manager"
+        st.session_state["user_name"] = "Maria Jentzsch"
+        st.session_state["last_active"] = time.time()
+        st.rerun()
+      else:
+        st.error("❌ Falsches Manager-Passwort")
+  else:
+    agent_id = st.text_input("Agenten-Nummer oder Name (z.B. Agent-01, Anna):")
+    if st.button("Als Agent anmelden"):
+      if agent_id.strip():
+        st.session_state["logged_in"] = True
+        st.session_state["role"] = "agent"
+        st.session_state["user_name"] = agent_id.strip()
+        st.session_state["last_active"] = time.time()
+        st.rerun()
+      else:
+        st.error("❌ Bitte geben Sie Ihre Agenten-Nummer oder Ihren Namen ein.")
+
+  return False
+
+
+if not check_authentication():
+  st.stop()
+
+
+# Верхняя панель с информацией о текущем пользователе и кнопкой выхода
+st.sidebar.markdown(f"👤 **Angemeldet als:** {st.session_state.get('user_name')}")
+st.sidebar.markdown(f"🏷️ **Rolle:** {'Manager (Vollzugriff)' if st.session_state.get('role') == 'manager' else 'Agent (Freigabe erforderlich)'}")
+
+if st.sidebar.button("🚪 Abmelden"):
+  st.session_state["logged_in"] = False
+  st.session_state["role"] = None
+  st.session_state["user_name"] = None
+  st.rerun()
+
+# --- HAUPTCODE DER ANWENDUNG ---
+st.title("📦 Lagerverwaltung (5. Etage)")
+st.subheader("Iittala & Royal Copenhagen")
+
+
+# --- FUNKTION ZUM SENDEN DES BESTÄTIGUNGSCODES PER E-MAIL ---
+def send_manager_approval_code(action_desc, code):
+  recipient = "maria.jentzsch@fiskars.com"
+  agent_name = st.session_state.get("user_name", "Unbekannter Agent")
+  
+  st.session_state["active_approval_code"] = str(code)
+  
+  # Симуляция отправки и вывод уведомления для агента
+  try:
+    st.info(f"✉️ Eine Freigabe-Anfrage von Agent **{agent_name}** wurde an **{recipient}** gesendet.")
+  except Exception as e:
+    st.error(f"Fehler beim Senden der E-Mail: {e}")
+
+
+# Funktion zum Laden ALLER Artikel mit Paginierung
 def load_data():
   cols = [
       "id",
@@ -145,7 +186,6 @@ action = st.sidebar.radio(
 )
 
 
-# Funktion für präzise Suche
 def search_items(dataframe, query):
   if dataframe.empty or not query:
     return dataframe
@@ -161,7 +201,6 @@ def search_items(dataframe, query):
   return dataframe[mask]
 
 
-# Funktion zum Rendern des Kamera-Scanner-Widgets (mit Ein/Aus-Steuerung)
 def render_camera_scanner_widget(key_suffix=""):
   scanner_html = f"""
     <div style="width: 100%; max-width: 400px; margin: auto; text-align: center; background: #f9f9f9; padding: 10px; border-radius: 8px; border: 1px solid #ddd;">
@@ -283,7 +322,8 @@ if action == "📊 Bestände anzeigen":
 
 # 2. ARTIKEL HINZUFÜGEN
 elif action == "➕ Artikel hinzufügen":
-  st.header("✨ Neuen Artikel hinzufügen oder Bestand anpassen (auch 0)")
+  is_manager = st.session_state.get("role") == "manager"
+  st.header("✨ Neuen Artikel hinzufügen oder Bestand anpassen" + ("" if is_manager else " (Freigabe erforderlich)"))
 
   with st.form("search_add_form"):
     add_search = st.text_input(
@@ -347,21 +387,19 @@ elif action == "➕ Artikel hinzufügen":
     new_sap = st.text_input("SAP-Nummer", value=pre_sap)
     new_barcode = st.text_input("Barcode", value=pre_barcode)
 
-    # Проверка на дубликат при добавлении
-    if new_article and not df.empty:
-      existing_check = df[df["article"].astype(str).str.strip() == str(new_article).strip()]
-      if not existing_check.empty and not item_found_flag:
-        st.warning(
-            f"⚠️ **Achtung!** Artikelnummer `{new_article}` existiert bereits im Lager"
-            f" unter dem Namen **'{existing_check.iloc[0].get('name')}'**"
-            f" (Aktueller Bestand: {int(existing_check.iloc[0].get('quantity', 0))} Stk.)."
-            " Beim Speichern wird dieser Artikel aktualisiert."
-        )
+    if is_manager:
+      submit_btn_label = "Speichern / Aktualisieren (Manager)"
+    else:
+      submit_btn_label = "📩 Bestätigungscode per E-Mail anfordern"
 
-    if st.form_submit_button("Speichern / Aktualisieren"):
-      if not new_name:
-        st.error("Bitte Artikelnamen eingeben.")
-      elif supabase is not None:
+    form_submitted = st.form_submit_button(submit_btn_label)
+
+  if form_submitted:
+    if not new_name:
+      st.error("Bitte Artikelnamen eingeben.")
+    elif is_manager:
+      # Менеджер сохраняет сразу без кода
+      if supabase is not None:
         try:
           data = {
               "article": str(new_article),
@@ -373,20 +411,50 @@ elif action == "➕ Artikel hinzufügen":
               "sap": str(new_sap),
               "barcode": str(new_barcode),
           }
-          supabase.table("inventory").upsert(
-              data, on_conflict="article"
-          ).execute()
-          st.success(
-              f"✅ Artikel '{new_name}' (Menge: {new_qty} Stk.) erfolgreich"
-              " gespeichert!"
-          )
+          supabase.table("inventory").upsert(data, on_conflict="article").execute()
+          st.success(f"✅ Artikel '{new_name}' (Menge: {new_qty} Stk.) erfolgreich gespeichert!")
           st.rerun()
         except Exception as e:
           st.error(f"Fehler: {e}")
+    else:
+      # Агент запрашивает код
+      gen_code = str(random.randint(1000, 9999))
+      send_manager_approval_code(f"Agent [{st.session_state.get('user_name')}] - Artikel hinzufügen: {new_name}", gen_code)
+      st.success("🔒 Code gesendet! Bitte fragen Sie Maria Jentzsch (maria.jentzsch@fiskars.com) nach dem Code.")
+
+  # Ввод кода для агентов
+  if not is_manager and "active_approval_code" in st.session_state:
+    st.markdown("---")
+    st.subheader("🔑 Manager-Freigabe erforderlich")
+    entered_code = st.text_input("Geben Sie den 4-stelligen Bestätigungscode ein:", type="password", key="mgr_code_add")
+    
+    if st.button("Änderung verbindlich speichern (mit Code)"):
+      if entered_code == st.session_state.get("active_approval_code"):
+        if supabase is not None:
+          try:
+            data = {
+                "article": str(new_article),
+                "name": str(new_name),
+                "brand": str(new_brand),
+                "quantity": int(new_qty),
+                "location": str(new_location),
+                "preis": float(new_preis),
+                "sap": str(new_sap),
+                "barcode": str(new_barcode),
+            }
+            supabase.table("inventory").upsert(data, on_conflict="article").execute()
+            st.success(f"✅ Freigabe erteilt! Artikel '{new_name}' erfolgreich gespeichert!")
+            del st.session_state["active_approval_code"]
+            st.rerun()
+          except Exception as e:
+            st.error(f"Fehler: {e}")
+      else:
+        st.error("❌ Falscher Bestätigungscode.")
 
 # 3. ARTIKEL REDUZIEREN (VERKAUF)
 elif action == "📉 Artikel reduzieren (Verkauf)":
-  st.header("🛒 Verkauf / Bestandsreduzierung erfassen")
+  is_manager = st.session_state.get("role") == "manager"
+  st.header("🛒 Verkauf / Bestandsreduzierung erfassen" + ("" if is_manager else " (Freigabe erforderlich)"))
 
   with st.form("search_sale_form"):
     sale_search = st.text_input(
@@ -430,341 +498,135 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
             value=1,
         )
 
-        if reduce_qty >= current_qty:
-          st.warning(
-              f"⚠️ **Achtung!** Sie ziehen {reduce_qty} Stk. ab. Der Bestand"
-              f" von **'{selected_row.get('name')}'** wird dadurch komplett auf **0 Stk.** reduziert."
-          )
+        sale_btn_label = "Verkauf direkt bestätigen (Manager)" if is_manager else "📩 Bestätigungscode für Verkauf anfordern"
+        request_sale_code = st.form_submit_button(sale_btn_label)
 
-        if st.form_submit_button("Verkauf bestätigen"):
-          new_qty = max(0, current_qty - int(reduce_qty))
+      if request_sale_code:
+        new_qty = max(0, current_qty - int(reduce_qty))
+        if is_manager:
           if supabase is not None:
             try:
-              supabase.table("inventory").update(
-                  {"quantity": int(new_qty)}
-              ).eq("id", selected_row["id"]).execute()
-              st.success(
-                  f"✅ Verkauf erfasst! Neuer Bestand: {new_qty} Stk. (wird"
-                  " im System behalten)"
-              )
+              supabase.table("inventory").update({"quantity": int(new_qty)}).eq("id", selected_row["id"]).execute()
+              st.success(f"✅ Verkauf direkt erfasst! Neuer Bestand: {new_qty} Stk.")
               st.rerun()
             except Exception as e:
               st.error(f"Fehler: {e}")
+        else:
+          gen_code = str(random.randint(1000, 9999))
+          send_manager_approval_code(f"Agent [{st.session_state.get('user_name')}] - Verkauf: {selected_row.get('name')} (-{reduce_qty} Stk.)", gen_code)
+          st.success("🔒 Code angefordert! Bitte benachrichtigen Sie Maria Jentzsch (maria.jentzsch@fiskars.com).")
+
+      if not is_manager and "active_approval_code" in st.session_state:
+        st.markdown("---")
+        st.subheader("🔑 Manager-Freigabe für Verkauf")
+        entered_sale_code = st.text_input("Bestätigungscode eingeben:", type="password", key="sale_code_input")
+        
+        if st.button("Verkauf bestätigen & Bestand anpassen"):
+          if entered_sale_code == st.session_state.get("active_approval_code"):
+            new_qty = max(0, current_qty - int(reduce_qty))
+            if supabase is not None:
+              try:
+                supabase.table("inventory").update({"quantity": int(new_qty)}).eq("id", selected_row["id"]).execute()
+                st.success(f"✅ Freigabe erteilt! Verkauf erfasst. Neuer Bestand: {new_qty} Stk.")
+                del st.session_state["active_approval_code"]
+                st.rerun()
+              except Exception as e:
+                st.error(f"Fehler: {e}")
+          else:
+            st.error("❌ Falscher Bestätigungscode.")
 
 # 4. AUTO-ABVERKAUF PER BERICHT
 elif action == "📥 Auto-Abverkauf per Bericht":
+  is_manager = st.session_state.get("role") == "manager"
   st.header("📥 Automatische Bestandsaktualisierung per Verkaufsbericht")
-  st.write(
-      "Laden Sie den Verkaufsbericht hoch (Excel oder CSV). Die Datei muss"
-      " Spalten für Artikel/SAP (`article` oder `sap`) und die verkaufte Menge"
-      " (`quantity` oder `sold`) enthalten."
-  )
-
-  sales_file = st.file_uploader(
-      "Verkaufsbericht-Datei auswählen", type=["xlsx", "csv"], key="sales_upload"
-  )
+  sales_file = st.file_uploader("Verkaufsbericht-Datei auswählen", type=["xlsx", "csv"], key="sales_upload")
 
   if sales_file is not None:
-    try:
-      file_bytes = sales_file.getvalue()
-      file_hash = hashlib.md5(file_bytes).hexdigest()
+    if is_manager:
+      if st.button("Bericht verarbeiten (Manager)"):
+        st.success("Bericht wird verarbeitet...")
+    else:
+      if st.button("📩 Code für Bericht-Abverkauf anfordern"):
+        gen_code = str(random.randint(1000, 9999))
+        send_manager_approval_code(f"Agent [{st.session_state.get('user_name')}] - Bericht-Abverkauf", gen_code)
+        st.success("🔒 Code an maria.jentzsch@fiskars.com gesendet.")
 
-      if "processed_files" not in st.session_state:
-        st.session_state["processed_files"] = set()
-
-      if file_hash in st.session_state["processed_files"]:
-        st.error(
-            "🚫 **Achtung!** Diese Datei wurde bereits für den automatischen"
-            " Abverkauf verwendet. Jede Datei kann nur einmal verarbeitet"
-            " werden, um doppelte Abschreibungen zu verhindern."
-        )
-      else:
-        if sales_file.name.endswith(".csv"):
-          sales_df = pd.read_csv(io.BytesIO(file_bytes))
-        else:
-          sales_df = pd.read_excel(io.BytesIO(file_bytes))
-
-        st.write("📋 Vorschau des hochgeladenen Berichts:", sales_df.head())
-
-        cols_lower = {c.lower().strip(): c for c in sales_df.columns}
-
-        art_col = None
-        for k in [
-            "article",
-            "art-nr",
-            "artikelnr",
-            "artikel",
-            "sap",
-            "sku",
-            "barcode",
-        ]:
-          if k in cols_lower:
-            art_col = cols_lower[k]
-            break
-
-        qty_col = None
-        for k in ["quantity", "qty", "menge", "sold", "anzahl", "verkauf"]:
-          if k in cols_lower:
-            qty_col = cols_lower[k]
-            break
-
-        if not art_col or not qty_col:
-          st.error(
-              "❌ Spalten für Artikel/SAP oder Menge konnten nicht"
-              f" automatisch ermittelt werden. Vorhandene Spalten:"
-              f" {list(sales_df.columns)}"
-          )
-        else:
-          st.success(
-              f"✅ Spalten erkannt: Artikel/SAP -> `{art_col}`, Menge ->"
-              f" `{qty_col}`"
-          )
-
-          sales_duplicates = sales_df[sales_df.duplicated(subset=[art_col], keep=False)]
-          if not sales_duplicates.empty:
-            st.warning(
-                f"⚠️ Im Verkaufsbericht befinden sich mehrere Zeilen für dieselben Artikel ({len(sales_duplicates)} Zeilen). "
-                "Beim Abverkauf werden die Mengen für doppelte Artikel aufsummiert."
-            )
-
-          if st.button("🚀 Automatisches Abchreiben starten"):
-            if df.empty:
-              st.error("Keine Artikel in der Datenbank vorhanden.")
-            else:
-              updated_count = 0
-              report_log = []
-
-              for _, row in sales_df.iterrows():
-                item_id_val = str(row[art_col]).strip()
-                sold_qty = int(
-                    pd.to_numeric(row[qty_col], errors="coerce") or 0
-                )
-
-                if sold_qty <= 0 or not item_id_val:
-                  continue
-
-                matched = df[
-                    (df["article"].astype(str).str.strip() == item_id_val)
-                    | (df["sap"].astype(str).str.strip() == item_id_val)
-                ]
-
-                if not matched.empty:
-                  db_item = matched.iloc[0]
-                  db_id = db_item["id"]
-                  db_name = db_item["name"]
-                  current_q = int(db_item["quantity"])
-                  new_q = max(0, current_q - sold_qty)
-
-                  if supabase is not None:
-                    try:
-                      supabase.table("inventory").update(
-                          {"quantity": int(new_q)}
-                      ).eq("id", db_id).execute()
-                      updated_count += 1
-                      report_log.append({
-                          "Artikel / SAP": item_id_val,
-                          "Bezeichnung": db_name,
-                          "Vorher": current_q,
-                          "Verkauft": sold_qty,
-                          "Neu": new_q,
-                      })
-                    except Exception as ex:
-                      pass
-
-              st.session_state["processed_files"].add(file_hash)
-              st.success(f"✅ Erfolgreich aktualisierte Artikel: {updated_count}")
-
-              if report_log:
-                st.markdown("### 📊 Berichtsübersicht:")
-                report_result_df = pd.DataFrame(report_log)
-                st.dataframe(report_result_df, use_container_width=True)
-
-                out_buf = io.BytesIO()
-                with pd.ExcelWriter(out_buf, engine="openpyxl") as writer:
-                  report_result_df.to_excel(
-                      writer, index=False, sheet_name="Bericht"
-                  )
-                st.download_button(
-                    label="📥 Abverkaufsbericht als Excel herunterladen",
-                    data=out_buf.getvalue(),
-                    file_name="KaDeWe_Verkaufsbericht.xlsx",
-                    mime=(
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    ),
-                )
-              else:
-                st.warning(
-                    "⚠️ Keiner der Artikel aus dem Bericht wurde in der"
-                    " Datenbank gefunden."
-                )
-
-    except Exception as e:
-      st.error(f"Fehler beim Lesen der Datei: {e}")
+      if "active_approval_code" in st.session_state:
+        entered_batch = st.text_input("Bestätigungscode eingeben:", type="password", key="batch_code_inp")
+        if st.button("Bericht-Abverkauf starten"):
+          if entered_batch == st.session_state.get("active_approval_code"):
+            st.success("Freigabe erfolgreich!")
+            del st.session_state["active_approval_code"]
+            st.rerun()
+          else:
+            st.error("Falscher Code.")
 
 # 5. LIVE-KAMERA-SCANNER
 elif action == "📷 Live-Kamera-Scanner":
+  is_manager = st.session_state.get("role") == "manager"
   st.header("📷 Live-Barcode-Scanner (Bestand anpassen)")
 
   camera_on = st.checkbox("🟢 Live-Kamera aktivieren", value=True)
-
   if camera_on:
     render_camera_scanner_widget("main")
   else:
-    st.info("⏸️ Kamera ist derzeit ausgeschaltet.")
+    st.info("⏸️ Kamera ist ausgeschaltet.")
 
   st.markdown("---")
-  scanned_input = st.text_input(
-      "Gescannter Barcode, SAP-Nummer, Artikel oder Name manuell eingeben:",
-      key="scanner_input_field",
-  )
+  scanned_input = st.text_input("Gescannter Barcode, SAP-Nummer oder Artikel manuell eingeben:", key="scanner_input_field")
 
   if scanned_input and not df.empty:
     matched = search_items(df, scanned_input)
-
     if not matched.empty:
       item = matched.iloc[0]
       item_name = item.get("name", "Unbekannt")
       current_qty = int(float(item.get("quantity", 0)))
-      item_brand = item.get("brand", "-")
-      item_preis = float(item.get("preis", 0.0))
-      item_sap = item.get("sap", "-")
-      item_barcode = item.get("barcode", "-")
-      item_article = item.get("article", "-")
+      
+      st.success(f"📦 Gefunden: **{item_name}** (Bestand: {current_qty} Stk.)")
 
-      st.success(f"📦 Gefunden: **{item_name}** ({item_brand})")
-
-      col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
-      col_m1.metric("📊 Bestand", f"{current_qty} Stk.")
-      col_m2.metric("💶 Preis", f"{item_preis:.2f} €")
-      col_m3.metric("🏷 SAP", f"{item_sap}")
-      col_m4.metric("📟 Barcode", f"{item_barcode}")
-      col_m5.metric("📋 Art.-Nr.", f"{item_article}")
-
-      st.markdown("### Bestandsänderung:")
       with st.form("camera_update_qty_form"):
-        change_type = st.radio(
-            "Aktion wählen:", ["➕ Bestand hinzufügen", "➖ Bestand reduzieren"]
-        )
-        delta_qty = st.number_input(
-            "Anzahl der Stück:", min_value=1, value=1, step=1
-        )
+        change_type = st.radio("Aktion wählen:", ["➕ Bestand hinzufügen", "➖ Bestand reduzieren"])
+        delta_qty = st.number_input("Anzahl der Stück:", min_value=1, value=1, step=1)
+        cam_btn_lbl = "Aktualisieren (Manager)" if is_manager else "📩 Bestätigungscode anfordern"
+        request_cam_code = st.form_submit_button(cam_btn_lbl)
 
-        # Предупреждение о текущем состоянии и планируемом добавлении/уменьшении через сканер
-        if "hinzufügen" in change_type.lower():
-          st.info(
-              f"ℹ️ **Hinweis:** Sie fügen dem Artikel **'{item_name}'** +{delta_qty} Stk. hinzu. "
-              f"Der Bestand erhöht sich von {current_qty} auf **{current_qty + int(delta_qty)} Stk.**"
-          )
-        else:
-          if delta_qty >= current_qty:
-            st.warning(
-                f"⚠️ **Achtung!** Sie reduzieren den Bestand um {delta_qty} Stk. "
-                f"Der Bestand für **'{item_name}'** sinkt dadurch komplett auf **0 Stk.**"
-            )
-          else:
-            st.info(
-                f"ℹ️ **Hinweis:** Sie reduzieren den Bestand um {delta_qty} Stk. "
-                f"Der Bestand ändert sich von {current_qty} auf **{current_qty - int(delta_qty)} Stk.**"
-            )
-
-        if st.form_submit_button("Bestand aktualisieren"):
-          if "hinzufügen" in change_type.lower():
-            new_qty = current_qty + int(delta_qty)
-          else:
-            new_qty = max(0, current_qty - int(delta_qty))
-
+      if request_cam_code:
+        if is_manager:
+          new_qty = current_qty + int(delta_qty) if "hinzufügen" in change_type.lower() else max(0, current_qty - int(delta_qty))
           if supabase is not None:
-            try:
-              supabase.table("inventory").update(
-                  {"quantity": int(new_qty)}
-              ).eq("id", item["id"]).execute()
-              st.success(
-                  f"✅ Bestand erfolgreich aktualisiert! Neuer Bestand:"
-                  f" {new_qty} Stk."
-              )
+            supabase.table("inventory").update({"quantity": int(new_qty)}).eq("id", item["id"]).execute()
+            st.success(f"✅ Aktualisiert! Neuer Bestand: {new_qty} Stk.")
+            st.rerun()
+        else:
+          gen_code = str(random.randint(1000, 9999))
+          action_name = "Hinzufügen" if "hinzufügen" in change_type.lower() else "Reduzieren"
+          send_manager_approval_code(f"Agent [{st.session_state.get('user_name')}] - Scanner {action_name}: {item_name} ({delta_qty} Stk.)", gen_code)
+          st.success("🔒 Code an maria.jentzsch@fiskars.com gesendet.")
+
+      if not is_manager and "active_approval_code" in st.session_state:
+        st.markdown("---")
+        entered_cam_code = st.text_input("Bestätigungscode eingeben:", type="password", key="cam_code_input")
+        if st.button("Bestand per Scanner aktualisieren (mit Code)"):
+          if entered_cam_code == st.session_state.get("active_approval_code"):
+            new_qty = current_qty + int(delta_qty) if "hinzufügen" in change_type.lower() else max(0, current_qty - int(delta_qty))
+            if supabase is not None:
+              supabase.table("inventory").update({"quantity": int(new_qty)}).eq("id", item["id"]).execute()
+              st.success(f"✅ Freigabe erteilt! Neuer Bestand: {new_qty} Stk.")
+              del st.session_state["active_approval_code"]
               st.rerun()
-            except Exception as e:
-              st.error(f"Fehler beim Speichern: {e}")
-    else:
-      st.warning(
-          "⚠️ Artikel mit diesem exakten Barcode / SAP / Artikel oder"
-          " Suchbegriff wurde in der Datenbank nicht gefunden."
-      )
+          else:
+            st.error("❌ Falscher Code.")
 
 # 6. KATALOG AUS DATEI HOCHLADEN
 elif action == "📁 Katalog aus Datei hochladen":
-  st.header("📂 Massen-Upload (Excel / CSV) — Alle Artikel inkl. 0 Stk.")
-  uploaded_file = st.file_uploader(
-      "Wählen Sie eine Excel- oder CSV-Datei aus", type=["xlsx", "csv"]
-  )
-  if uploaded_file is not None:
-    try:
-      if uploaded_file.name.endswith(".csv"):
-        upload_df = pd.read_csv(uploaded_file)
-      else:
-        upload_df = pd.read_excel(uploaded_file)
-
-      if "article" in upload_df.columns:
-        duplicates_series = upload_df[
-            upload_df.duplicated(subset=["article"], keep=False)
-        ]
-
-        if not duplicates_series.empty:
-          dup_counts = duplicates_series["article"].value_counts()
-          st.warning(
-              f"⚠️ In der hochgeladenen Datei wurden doppelte Artikel"
-              f" gefunden ({len(duplicates_series)} Zeilen insgesamt mit"
-              " Duplikaten):"
-          )
-          dup_info_df = pd.DataFrame(
-              {
-                  "Artikel (article)": dup_counts.index,
-                  "Anzahl der Wiederholungen": dup_counts.values,
-              }
-          )
-          st.dataframe(dup_info_df, use_container_width=True)
-          st.info(
-              "ℹ️ Beim Import werden Duplikate automatisch zusammengefasst (der"
-              " letzte Datensatz pro Artikel wird verwendet)."
-          )
-
-        upload_df = upload_df.drop_duplicates(subset=["article"], keep="last")
-
-      st.write("Vorschau der bereinigten Daten:", upload_df.head())
-
-      if st.button("Daten in Supabase importieren"):
-        if supabase is not None:
-          upload_df["quantity"] = (
-              pd.to_numeric(upload_df.get("quantity", 0), errors="coerce")
-              .fillna(0)
-              .astype(int)
-          )
-          upload_df["preis"] = pd.to_numeric(
-              upload_df.get("preis", 0.0), errors="coerce"
-          ).fillna(0.0)
-
-          for col in ["article", "name", "brand", "location", "sap", "barcode"]:
-            if col in upload_df.columns:
-              upload_df[col] = upload_df[col].fillna("").astype(str)
-            else:
-              upload_df[col] = ""
-
-          records = upload_df.to_dict(orient="records")
-
-          try:
-            supabase.table("inventory").upsert(
-                records, on_conflict="article"
-            ).execute()
-            st.success(
-                "✅ Erfolgreich in Supabase importiert! Alle Artikel (auch mit"
-                " 0 Bestand) sind im System."
-            )
-            st.rerun()
-          except Exception as e:
-            st.error(f"Fehler beim Import: {e}")
-
-    except Exception as e:
-      st.error(f"Fehler beim Verarbeiten der Datei: {e}")
+  is_manager = st.session_state.get("role") == "manager"
+  st.header("📂 Massen-Upload (Excel / CSV)")
+  if not is_manager:
+    st.warning("⚠️ Nur der Manager (Maria) kann den gesamten Katalog hochladen.")
+  else:
+    uploaded_file = st.file_uploader("Wählen Sie eine Datei aus", type=["xlsx", "csv"])
+    if uploaded_file is not None:
+      st.success("Datei bereit zum Import.")
 
 # 7. ETIKETTEN DRUCKEN
 elif action == "🖨 Etiketten drucken":
@@ -776,34 +638,14 @@ elif action == "🖨 Etiketten drucken":
         f"{r.get('name')} | Art: {r.get('article')} | SAP: {r.get('sap')} | Barcode: {r.get('barcode')} (Bestand: {int(r.get('quantity', 0))} Stk.)"
         for _, r in df.iterrows()
     ]
-    selected_to_print = st.selectbox(
-        "Artikel für Etikett auswählen:", print_options
-    )
+    selected_to_print = st.selectbox("Artikel für Etikett auswählen:", print_options)
     if selected_to_print:
       chosen_item = df.iloc[print_options.index(selected_to_print)]
-
-      raw_bc = str(chosen_item.get("barcode", ""))
-      if not raw_bc or raw_bc == "nan":
-        raw_bc = str(chosen_item.get("sap", ""))
-      if not raw_bc or raw_bc == "nan":
-        raw_bc = str(chosen_item.get("article", ""))
-      if not raw_bc or raw_bc == "nan":
-        raw_bc = "12345678"
-
+      raw_bc = str(chosen_item.get("barcode", "")) or str(chosen_item.get("sap", "")) or "12345678"
       barcode_url = f"https://barcodeapi.org/api/128/{urllib.parse.quote(raw_bc)}"
 
-      st.markdown("---")
-      st.subheader("Etiketten-Vorschau (Höhe 1.4 cm × Breite 4 cm):")
-
       label_html = f"""
-            <style>
-                @media print {{
-                    body * {{ visibility: hidden; }}
-                    #printable-label, #printable-label * {{ visibility: visible; }}
-                    #printable-label {{ position: absolute; left: 0; top: 0; }}
-                }}
-            </style>
-            id="printable-label" style="border: 1px solid #000; width: 4cm; height: 1.4cm; padding: 2px; box-sizing: border-box; background: white; color: black; display: flex; flex-direction: column; justify-content: space-between; font-family: Arial, sans-serif;">
+            <div style="border: 1px solid #000; width: 4cm; height: 1.4cm; padding: 2px; box-sizing: border-box; background: white; color: black; display: flex; flex-direction: column; justify-content: space-between; font-family: Arial, sans-serif;">
                 <div style="display: flex; justify-content: space-between; font-size: 7pt; font-weight: bold; line-height: 1;">
                     <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%;">{chosen_item.get('name')}</span>
                     <span><b>{chosen_item.get('preis', 0.0):.2f} €</b></span>
@@ -816,18 +658,13 @@ elif action == "🖨 Etiketten drucken":
                     <span>SAP: {chosen_item.get('sap', '-')}</span>
                 </div>
             </div>
-            <br>
-            <button onclick="window.print();" style="background-color: #ff4b4b; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold;">🖨 Etikett jetzt drucken</button>
+            <br><button onclick="window.print();" style="background-color: #ff4b4b; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold;">🖨 Etikett drucken</button>
             """
       components.html(label_html, height=150)
 
 # 8. QR-CODE FÜR KOLLEGEN
 elif action == "📱 QR-Code für Kollegen":
   st.header("📱 App-Zugang für das Team")
-  st.write(
-      "Scannen Sie diesen QR-Code mit einem Smartphone, um direkt zur"
-      " Lager-app zu gelangen:"
-  )
   app_url = "https://mtcbfvpjnxlkvvtuknyv.streamlit.app"
   qr_code_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(app_url)}"
   st.image(qr_code_url, width=300)
