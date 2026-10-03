@@ -430,7 +430,6 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
             value=1,
         )
 
-        # Предупреждение, если списанием обнуляется или уменьшается важный товар
         if reduce_qty >= current_qty:
           st.warning(
               f"⚠️ **Achtung!** Sie ziehen {reduce_qty} Stk. ab. Der Bestand"
@@ -521,7 +520,6 @@ elif action == "📥 Auto-Abverkauf per Bericht":
               f" `{qty_col}`"
           )
 
-          # Проверка внутри файла на дубли строк по артикулу
           sales_duplicates = sales_df[sales_df.duplicated(subset=[art_col], keep=False)]
           if not sales_duplicates.empty:
             st.warning(
@@ -651,16 +649,23 @@ elif action == "📷 Live-Kamera-Scanner":
             "Anzahl der Stück:", min_value=1, value=1, step=1
         )
 
-        # Предупреждение в сканере при уменьшении или добавлении больших объемов
-        if "reduzieren" in change_type.lower() and delta_qty >= current_qty:
-          st.warning(
-              f"⚠️ **Achtung!** Sie reduzieren den Bestand um {delta_qty} Stk. "
-              f"Der Bestand für **'{item_name}'** sinkt dadurch auf **0 Stk.**"
-          )
-        elif "hinzufügen" in change_type.lower() and delta_qty > 50:
+        # Предупреждение о текущем состоянии и планируемом добавлении/уменьшении через сканер
+        if "hinzufügen" in change_type.lower():
           st.info(
-              f"ℹ️ Sie fügen dem Bestand von **'{item_name}'** eine große Menge (+{delta_qty} Stk.) hinzu."
+              f"ℹ️ **Hinweis:** Sie fügen dem Artikel **'{item_name}'** +{delta_qty} Stk. hinzu. "
+              f"Der Bestand erhöht sich von {current_qty} auf **{current_qty + int(delta_qty)} Stk.**"
           )
+        else:
+          if delta_qty >= current_qty:
+            st.warning(
+                f"⚠️ **Achtung!** Sie reduzieren den Bestand um {delta_qty} Stk. "
+                f"Der Bestand für **'{item_name}'** sinkt dadurch komplett auf **0 Stk.**"
+            )
+          else:
+            st.info(
+                f"ℹ️ **Hinweis:** Sie reduzieren den Bestand um {delta_qty} Stk. "
+                f"Der Bestand ändert sich von {current_qty} auf **{current_qty - int(delta_qty)} Stk.**"
+            )
 
         if st.form_submit_button("Bestand aktualisieren"):
           if "hinzufügen" in change_type.lower():
