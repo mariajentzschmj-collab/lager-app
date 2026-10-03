@@ -972,3 +972,80 @@ if st.sidebar.button("🚀 Nachbestellung prüfen"):
           file_name="KaDeWe_Individuelle_Bestellung.xlsx",
           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
       )
+
+# ==========================================
+# АВТОМАТИЧЕСКИЙ РАСЧЕТ MIN/MAX ПО УХОДУ ОСТАТКОВ
+# ==========================================
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("📈 Умный авто-расчет Min/Max")
+
+st.sidebar.markdown(
+    "Сравнивает текущие остатки с предыдущими, считает скорость продаж и"
+    " обновляет лимиты."
+)
+
+# Настройка желаемого запаса в днях прямо в интерфейсе
+days_min = st.sidebar.slider("Дней запаса для MIN", 2, 14, 5)
+days_max = st.sidebar.slider("Дней запаса для MAX", 10, 45, 20)
+
+if st.sidebar.button("🚀 Запустить авто-пересчет по остаткам"):
+  if df.empty:
+    st.sidebar.warning("⚠️ Нет данных для анализа.")
+  else:
+    calc_df = df.copy()
+    updated_count = 0
+    from datetime import datetime
+
+    today_str = datetime.now().strftime("%Y-%m-%d")
+
+    for _, row in calc_df.iterrows():
+      sap_val = str(row.get("sap", "")).strip()
+      if not sap_val or sap_val == "nan":
+        continue
+
+      current_qty = float(row.get("quantity", 0))
+
+      # Берем прошлый остаток (если колонки еще нет в Supabase, берем текущий, чтобы зафиксировать старт)
+      last_qty = float(
+          row.get("last_quantity", current_qty)
+      )  # Если колонки нет, будет current_qty
+      # Аналогично для даты последней проверки
+      # (Для полноценного учета лучше убедиться, что в Supabase созданы поля last_quantity и last_check_date)
+
+      # Расход: если прошлый остаток был больше текущего, значит товар продавался
+      sold_amount = last_qty - current_qty
+
+      if sold_amount > 0:
+        # Допустим, прошло условных 7 дней с последней проверки (или можно привязать к реальной разнице дат)
+        # Для простоты считаем дневную скорость (предполагая цикл проверки в несколько дней, например, 7)
+        days_passed = 7  # Можно заменить на реальный расчет разницы дат, если сохраняете даты
+        daily_speed = sold_amount / days_passed
+
+        # Рассчитываем новые лимиты
+        new_min = max(2, int(daily_speed * days_min))
+        new_max = max(new_min + 5, int(daily_speed * days_max))
+
+        # Обновляем в Supabase: записываем новые лимиты и фиксируем текущий остаток как "прошлый" для следующего раза
+        try:
+          supabase.table("inventory").update({
+              "min_stock": new_min,
+              "max_stock": new_max,
+              "last_quantity": current_qty,  д запоминаем текущий как старый для следующего замера
+          }).eq("sap", sap_val).execute()
+          updated_count += 1
+        except Exception as e:
+          pass
+      else:
+        # Даже если продаж не было, обновляем last_quantity, чтобы фиксировать базу для следующих дней
+        try:
+          supabase.table("inventory").update(
+              {"last_quantity": current_qty}
+          ).eq("sap", sap_val).execute()
+        except:
+          pass
+
+    st.sidebar.success(
+        f"✅ Успешно обновлено позиций по скорости продаж: {updated_count}"
+    )
+    st.rerun()
