@@ -1,5 +1,6 @@
 import hashlib
 import io
+import json
 import random
 import time
 import urllib.parse
@@ -25,7 +26,7 @@ except Exception as e:
   pass
 
 
-# --- СИСТЕМА АВТОРИЗАЦИИ (МЕНЕДЖЕР И АГЕНТЫ С ПИН-КОДАМИ) ---
+# --- СИСТЕМА АВТОРИЗАЦИИ (МЕНЕДЖЕР И АГЕНТЫ С ПИН-КОДОМ) ---
 def check_authentication():
   TIMEOUT_SECONDS = 300  # 5 минут неактивности
 
@@ -55,7 +56,6 @@ def check_authentication():
   if role_choice == "👔 Manager (Maria)":
     manager_password = st.text_input("Manager-Passwort", type="password")
     if st.button("Als Manager anmelden"):
-      # НОВЫЙ ПАРОЛЬ МЕНЕДЖЕРА
       if manager_password == "KaDeWe2026!Mgr":
         st.session_state["logged_in"] = True
         st.session_state["role"] = "manager"
@@ -70,7 +70,6 @@ def check_authentication():
     
     if st.button("Als Agent anmelden"):
       if agent_id.strip() and agent_pin.strip():
-        # Проверка пин-кода агента (можно задать общий или индивидуальный, здесь стандартный 2026)
         if agent_pin == "2026":
           st.session_state["logged_in"] = True
           st.session_state["role"] = "agent"
@@ -91,7 +90,19 @@ if not check_authentication():
 
 # Верхняя панель с информацией о текущем пользователе и кнопкой выхода
 st.sidebar.markdown(f"👤 **Angemeldet als:** {st.session_state.get('user_name')}")
-st.sidebar.markdown(f"🏷️ **Rolle:** {'Manager (Vollzugriff)' if st.session_state.get('role') == 'manager' else 'Agent (Freigabe erforderlich)'}")
+st.sidebar.markdown(f"🏷️ **Rolle:** {'Manager (Vollzugriff)' if st.session_state.get('role') == 'manager' else 'Agent (Freigabe in App)'}")
+
+# Если менеджер — проверяем количество ожидающих запросов в базе данных
+pending_count = 0
+if st.session_state.get("role") == "manager" and supabase is not None:
+  try:
+    res = supabase.table("approvals").select("*", count="exact").eq("status", "pending").execute()
+    pending_count = res.count if res.count is not None else len(res.data)
+  except Exception:
+    pending_count = 0
+
+if pending_count > 0:
+  st.sidebar.error(f"🔔 **Wartet auf Freigabe:** {pending_count} Anfrage(n)")
 
 if st.sidebar.button("🚪 Abmelden"):
   st.session_state["logged_in"] = False
@@ -104,20 +115,24 @@ st.title("📦 Lagerverwaltung (5. Etage)")
 st.subheader("Iittala & Royal Copenhagen")
 
 
-# --- FUNKTION ZUM SENDEN DES BESTÄTIGUNGSCODES PER E-MAIL ---
-def send_manager_approval_code(action_desc, code):
-  recipient = "maria.jentzsch@fiskars.com"
+# --- ФУНКЦИЯ СОЗДАНИЯ ЗАПРОСА НА ПОДТВЕРЖДЕНИЕ В БАЗЕ ---
+def request_manager_approval(action_type, payload_dict):
   agent_name = st.session_state.get("user_name", "Unbekannter Agent")
-  
-  st.session_state["active_approval_code"] = str(code)
-  
-  try:
-    st.info(f"✉️ Eine Freigabe-Anfrage von Agent **{agent_name}** ({action_desc}) wurde an **{recipient}** gesendet. Code: {code}")
-  except Exception as e:
-    st.error(f"Fehler beim Senden der E-Mail: {e}")
+  if supabase is not None:
+    try:
+      data = {
+          "agent_name": agent_name,
+          "action_type": action_type,
+          "payload": json.dumps(payload_dict),
+          "status": "pending"
+      }
+      supabase.table("approvals").insert(data).execute()
+      st.success("📤 Ihre Anfrage wurde an den Manager gesendet! Sobald Maria sie im System bestätigt, wird der Bestand aktualisiert.")
+    except Exception as e:
+      st.error(f"Fehler beim Senden der Anfrage: {e}")
 
 
-# Funktion zum Laden ALLER Artikel mit Paginierung
+# Функция для загрузки ALLER Artikel с Paginierung
 def load_data():
   cols = [
       "id",
@@ -175,6 +190,63 @@ def load_data():
 
 df = load_data()
 
+# --- СЕКЦИЯ УПРАВЛЕНИЯ ЗАПРОСАМИ ДЛЯ МЕНЕДЖЕРА ---
+if st.session_state.get("role") == "manager":
+  with st.expander(f"🔔 Anfragen von Agenten verwalten ({pending_count} ausstehend)", expanded=(pending_count > 0)):
+    if supabase is not None:
+      try:
+        pending_res = supabase.table("approvals").select("*").eq("status", "pending").execute()
+        pending_requests = pending_res.data
+        
+        if not pending_requests:
+          st.info("Keine ausstehenden Anfragen von Agenten.")
+        else:
+          for req in pending_requests:
+            req_id = req["id"]
+            agent = req["agent_name"]
+            act_type = req["action_type"]
+            payload = json.loads(req["payload"])
+            
+            st.markdown(f"**Agent:** `{agent}` | **Aktion:** `{act_type}` | **Zeit:** {req.get('created_at', '-')}")
+            st.json(payload)
+            
+            c1, c2, _ = st.columns([1, 1, 3])
+            with c1:
+              if st.button("✅ Bestätigen", key=f"app_yes_{req_id}"):
+                if act_type == "add_or_update":
+                  supabase.table("inventory").upsert(payload, on_conflict="article").execute()
+                elif act_type == "reduce_stock":
+                  item_id = payload.get("id")
+                  new_q = payload.get("new_quantity")
+                  supabase.table("inventory").update({"quantity": int(new_q)}).eq("id", item_id).execute()
+                elif act_type == "bulk_intake":
+                  # Массовое добавление при подтверждении менеджером
+                  for item in payload.get("items", []):
+                    art = str(item.get("article"))
+                    inc_qty = int(item.get("incoming_qty", 0))
+                    # Находим текущий товар в базе
+                    existing = supabase.table("inventory").select("*").eq("article", art).execute()
+                    if existing.data:
+                      curr_q = int(existing.data[0].get("quantity", 0))
+                      new_q = curr_q + inc_qty
+                      supabase.table("inventory").update({"quantity": new_q}).eq("article", art).execute()
+                    else:
+                      # Если новый товар
+                      supabase.table("inventory").upsert(item, on_conflict="article").execute()
+
+                supabase.table("approvals").update({"status": "approved"}).eq("id", req_id).execute()
+                st.success("✅ Anfrage erfolgreich bestätigt und Lagerbestand aktualisiert!")
+                st.rerun()
+            
+            with c2:
+              if st.button("❌ Ablehnen", key=f"app_no_{req_id}"):
+                supabase.table("approvals").update({"status": "rejected"}).eq("id", req_id).execute()
+                st.warning("❌ Anfrage abgelehnt.")
+                st.rerun()
+            st.markdown("---")
+      except Exception as e:
+        st.error(f"Fehler beim Laden der Anfragen: {e}")
+
 # --- SEITENMENÜ ---
 st.sidebar.header("⚙️ Lagersteuerung")
 action = st.sidebar.radio(
@@ -183,9 +255,8 @@ action = st.sidebar.radio(
         "📊 Bestände anzeigen",
         "➕ Artikel hinzufügen",
         "📉 Artikel reduzieren (Verkauf)",
-        "📥 Auto-Abverkauf per Bericht",
+        "📥 Massen-Wareneingang (Excel/CSV)",
         "📷 Live-Kamera-Scanner",
-        "📁 Katalog aus Datei hochladen",
         "🖨 Etiketten drucken",
         "📱 QR-Code für Kollegen",
     ],
@@ -329,7 +400,7 @@ if action == "📊 Bestände anzeigen":
 # 2. ARTIKEL HINZUFÜGEN
 elif action == "➕ Artikel hinzufügen":
   is_manager = st.session_state.get("role") == "manager"
-  st.header("✨ Neuen Artikel hinzufügen oder Bestand anpassen" + ("" if is_manager else " (Freigabe erforderlich)"))
+  st.header("✨ Neuen Artikel hinzufügen oder Bestand anpassen" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
 
   with st.form("search_add_form"):
     add_search = st.text_input(
@@ -391,7 +462,7 @@ elif action == "➕ Artikel hinzufügen":
     new_sap = st.text_input("SAP-Nummer", value=pre_sap)
     new_barcode = st.text_input("Barcode", value=pre_barcode)
 
-    submit_btn_label = "Speichern / Aktualisieren (Manager)" if is_manager else "📩 Bestätigungscode per E-Mail anfordern"
+    submit_btn_label = "Speichern / Aktualisieren (Manager)" if is_manager else "📤 Freigabe an Maria anfordern"
     form_submitted = st.form_submit_button(submit_btn_label)
 
   if form_submitted:
@@ -416,42 +487,22 @@ elif action == "➕ Artikel hinzufügen":
         except Exception as e:
           st.error(f"Fehler: {e}")
     else:
-      gen_code = str(random.randint(1000, 9999))
-      send_manager_approval_code(f"Artikel hinzufügen: {new_name}", gen_code)
-      st.success("🔒 Code gesendet! Bitte fragen Sie Maria Jentzsch nach dem Freigabe-Code.")
-
-  if not is_manager and "active_approval_code" in st.session_state:
-    st.markdown("---")
-    st.subheader("🔑 Manager-Freigabe erforderlich")
-    entered_code = st.text_input("Geben Sie den 4-stelligen Bestätigungscode ein:", type="password", key="mgr_code_add")
-    
-    if st.button("Änderung verbindlich speichern (mit Code)"):
-      if entered_code == st.session_state.get("active_approval_code"):
-        if supabase is not None:
-          try:
-            data = {
-                "article": str(new_article),
-                "name": str(new_name),
-                "brand": str(new_brand),
-                "quantity": int(new_qty),
-                "location": str(new_location),
-                "preis": float(new_preis),
-                "sap": str(new_sap),
-                "barcode": str(new_barcode),
-            }
-            supabase.table("inventory").upsert(data, on_conflict="article").execute()
-            st.success(f"✅ Freigabe erteilt! Artikel '{new_name}' gespeichert!")
-            del st.session_state["active_approval_code"]
-            st.rerun()
-          except Exception as e:
-            st.error(f"Fehler: {e}")
-      else:
-        st.error("❌ Falscher Bestätigungscode.")
+      payload = {
+          "article": str(new_article),
+          "name": str(new_name),
+          "brand": str(new_brand),
+          "quantity": int(new_qty),
+          "location": str(new_location),
+          "preis": float(new_preis),
+          "sap": str(new_sap),
+          "barcode": str(new_barcode),
+      }
+      request_manager_approval("add_or_update", payload)
 
 # 3. ARTIKEL REDUZIEREN (VERKAUF)
 elif action == "📉 Artikel reduzieren (Verkauf)":
   is_manager = st.session_state.get("role") == "manager"
-  st.header("🛒 Verkauf / Bestandsreduzierung erfassen" + ("" if is_manager else " (Freigabe erforderlich)"))
+  st.header("🛒 Verkauf / Bestandsreduzierung erfassen" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
 
   with st.form("search_sale_form"):
     sale_search = st.text_input(
@@ -473,7 +524,7 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
       working_df = search_items(df, active_search)
 
     if working_df.empty:
-      st.warning("⚠️️ Kein Artikel gefunden.")
+      st.warning("⚠️ Kein Artikel gefunden.")
     else:
       item_options = [
           f"{r.get('name', 'Unbekannt')} | Art: {r.get('article', '-')} | SAP: {r.get('sap', '-')} | Barcode: {r.get('barcode', '-')} (Bestand: {int(r.get('quantity', 0))} Stk.)"
@@ -495,7 +546,7 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
             value=1,
         )
 
-        sale_btn_label = "Verkauf direkt bestätigen (Manager)" if is_manager else "📩 Bestätigungscode für Verkauf anfordern"
+        sale_btn_label = "Verkauf direkt bestätigen (Manager)" if is_manager else "📤 Freigabe für Verkauf anfordern"
         request_sale_code = st.form_submit_button(sale_btn_label)
 
       if request_sale_code:
@@ -509,54 +560,88 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
             except Exception as e:
               st.error(f"Fehler: {e}")
         else:
-          gen_code = str(random.randint(1000, 9999))
-          send_manager_approval_code(f"Verkauf: {selected_row.get('name')} (-{reduce_qty} Stk.)", gen_code)
-          st.success("🔒 Code angefordert! Bitte benachrichtigen Sie Maria Jentzsch.")
+          payload = {
+              "id": int(selected_row["id"]),
+              "name": str(selected_row.get("name")),
+              "current_quantity": current_qty,
+              "reduce_by": int(reduce_qty),
+              "new_quantity": new_qty
+          }
+          request_manager_approval("reduce_stock", payload)
 
-      if not is_manager and "active_approval_code" in st.session_state:
-        st.markdown("---")
-        st.subheader("🔑 Manager-Freigabe für Verkauf")
-        entered_sale_code = st.text_input("Bestätigungscode eingeben:", type="password", key="sale_code_input")
-        
-        if st.button("Verkauf bestätigen & Bestand anpassen"):
-          if entered_sale_code == st.session_state.get("active_approval_code"):
-            new_qty = max(0, current_qty - int(reduce_qty))
-            if supabase is not None:
-              try:
-                supabase.table("inventory").update({"quantity": int(new_qty)}).eq("id", selected_row["id"]).execute()
-                st.success(f"✅ Freigabe erteilt! Neuer Bestand: {new_qty} Stk.")
-                del st.session_state["active_approval_code"]
-                st.rerun()
-              except Exception as e:
-                st.error(f"Fehler: {e}")
-          else:
-            st.error("❌ Falscher Bestätigungscode.")
-
-# 4. AUTO-ABVERKAUF PER BERICHT
-elif action == "📥 Auto-Abverkauf per Bericht":
+# 4. МАССОВЫЙ ВАРЕНЕИНГАНГ (МАССОВАЯ ЗАГРУЗКА ПРИХОДА)
+elif action == "📥 Massen-Wareneingang (Excel/CSV)":
   is_manager = st.session_state.get("role") == "manager"
-  st.header("📥 Automatische Bestandsaktualisierung per Verkaufsbericht")
-  sales_file = st.file_uploader("Verkaufsbericht-Datei auswählen", type=["xlsx", "csv"], key="sales_upload")
+  st.header("📥 Massen-Wareneingang per Excel/CSV" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
+  st.markdown("Laden Sie eine Excel- oder CSV-Datei mit den eintreffenden Waren hoch. Die Datei sollte Spalten wie `article` (oder `sap` / `barcode`) und `quantity` (Menge der Lieferung) enthalten. Die Mengen werden **automatisch zum bestehenden Bestand addiert**.")
 
-  if sales_file is not None:
-    if is_manager:
-      if st.button("Bericht verarbeiten (Manager)"):
-        st.success("Bericht wird verarbeitet...")
-    else:
-      if st.button("📩 Code für Bericht-Abverkauf anfordern"):
-        gen_code = str(random.randint(1000, 9999))
-        send_manager_approval_code("Bericht-Abverkauf", gen_code)
-        st.success("🔒 Code an maria.jentzsch@fiskars.com gesendet.")
+  # Шаблон для скачивания
+  template_df = pd.DataFrame(columns=["article", "name", "brand", "quantity", "preis", "sap", "barcode"])
+  template_df.loc[0] = ["101234", "Mussedeltid Teller 27cm", "Royal Copenhagen", 12, 45.00, "SAP12345", "5705140123456"]
+  
+  out_tmpl = io.BytesIO()
+  with pd.ExcelWriter(out_tmpl, engine="openpyxl") as writer:
+    template_df.to_excel(writer, index=False, sheet_name="Wareneingang")
+  st.download_button(
+      label="📥 Excel-Vorlage für Wareneingang herunterladen",
+      data=out_tmpl.getvalue(),
+      file_name="KaDeWe_Wareneingang_Vorlage.xlsx",
+      mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  )
 
-      if "active_approval_code" in st.session_state:
-        entered_batch = st.text_input("Bestätigungscode eingeben:", type="password", key="batch_code_inp")
-        if st.button("Bericht-Abverkauf starten"):
-          if entered_batch == st.session_state.get("active_approval_code"):
-            st.success("Freigabe erfolgreich!")
-            del st.session_state["active_approval_code"]
+  uploaded_file = st.file_uploader("Wareneingangs-Datei auswählen", type=["xlsx", "csv"], key="bulk_upload")
+
+  if uploaded_file is not None:
+    try:
+      if uploaded_file.name.endswith(".csv"):
+        upload_df = pd.read_csv(uploaded_file)
+      else:
+        upload_df = pd.read_excel(uploaded_file)
+
+      st.write("📋 Vorschau der hochgeladenen Daten:", upload_df.head())
+
+      if st.button("🚀 Wareneingang buchen / Freigabe anfordern"):
+        items_to_process = []
+        for _, row in upload_df.iterrows():
+          items_to_process.append({
+              "article": str(row.get("article", "")),
+              "name": str(row.get("name", "Unbekannter Artikel")),
+              "brand": str(row.get("brand", "Iittala")),
+              "incoming_qty": int(row.get("quantity", 0)),
+              "preis": float(row.get("preis", 0.0)),
+              "sap": str(row.get("sap", "")),
+              "barcode": str(row.get("barcode", ""))
+          })
+
+        if is_manager:
+          if supabase is not None:
+            for item in items_to_process:
+              art = item["article"]
+              inc_qty = item["incoming_qty"]
+              existing = supabase.table("inventory").select("*").eq("article", art).execute()
+              if existing.data:
+                curr_q = int(existing.data[0].get("quantity", 0))
+                new_q = curr_q + inc_qty
+                supabase.table("inventory").update({"quantity": new_q}).eq("article", art).execute()
+              else:
+                new_item_data = {
+                    "article": art,
+                    "name": item["name"],
+                    "brand": item["brand"],
+                    "quantity": inc_qty,
+                    "preis": item["preis"],
+                    "sap": item["sap"],
+                    "barcode": item["barcode"]
+                }
+                supabase.table("inventory").upsert(new_item_data, on_conflict="article").execute()
+            st.success("✅ Wareneingang erfolgreich gebucht und Bestände automatisch erhöht!")
             st.rerun()
-          else:
-            st.error("Falscher Code.")
+        else:
+          payload = {"items": items_to_process}
+          request_manager_approval("bulk_intake", payload)
+
+    except Exception as e:
+      st.error(f"Fehler beim Lesen der Datei: {e}")
 
 # 5. LIVE-KAMERA-SCANNER
 elif action == "📷 Live-Kamera-Scanner":
@@ -584,47 +669,27 @@ elif action == "📷 Live-Kamera-Scanner":
       with st.form("camera_update_qty_form"):
         change_type = st.radio("Aktion wählen:", ["➕ Bestand hinzufügen", "➖ Bestand reduzieren"])
         delta_qty = st.number_input("Anzahl der Stück:", min_value=1, value=1, step=1)
-        cam_btn_lbl = "Aktualisieren (Manager)" if is_manager else "📩 Bestätigungscode anfordern"
+        cam_btn_lbl = "Aktualisieren (Manager)" if is_manager else "📤 Freigabe über App anfordern"
         request_cam_code = st.form_submit_button(cam_btn_lbl)
 
       if request_cam_code:
+        new_qty = current_qty + int(delta_qty) if "hinzufügen" in change_type.lower() else max(0, current_qty - int(delta_qty))
         if is_manager:
-          new_qty = current_qty + int(delta_qty) if "hinzufügen" in change_type.lower() else max(0, current_qty - int(delta_qty))
           if supabase is not None:
             supabase.table("inventory").update({"quantity": int(new_qty)}).eq("id", item["id"]).execute()
             st.success(f"✅ Aktualisiert! Neuer Bestand: {new_qty} Stk.")
             st.rerun()
         else:
-          gen_code = str(random.randint(1000, 9999))
-          send_manager_approval_code(f"Scanner: {item_name} ({delta_qty} Stk.)", gen_code)
-          st.success("🔒 Code an maria.jentzsch@fiskars.com gesendet.")
+          payload = {
+              "id": int(item["id"]),
+              "name": str(item_name),
+              "current_quantity": current_qty,
+              "new_quantity": new_qty,
+              "change_description": f"{change_type} ({delta_qty} Stk.)"
+          }
+          request_manager_approval("reduce_stock", payload)
 
-      if not is_manager and "active_approval_code" in st.session_state:
-        st.markdown("---")
-        entered_cam_code = st.text_input("Bestätigungscode eingeben:", type="password", key="cam_code_input")
-        if st.button("Bestand per Scanner aktualisieren (mit Code)"):
-          if entered_cam_code == st.session_state.get("active_approval_code"):
-            new_qty = current_qty + int(delta_qty) if "hinzufügen" in change_type.lower() else max(0, current_qty - int(delta_qty))
-            if supabase is not None:
-              supabase.table("inventory").update({"quantity": int(new_qty)}).eq("id", item["id"]).execute()
-              st.success(f"✅ Freigabe erteilt! Neuer Bestand: {new_qty} Stk.")
-              del st.session_state["active_approval_code"]
-              st.rerun()
-          else:
-            st.error("❌ Falscher Code.")
-
-# 6. KATALOG AUS DATEI HOCHLADEN
-elif action == "📁 Katalog aus Datei hochladen":
-  is_manager = st.session_state.get("role") == "manager"
-  st.header("📂 Massen-Upload (Excel / CSV)")
-  if not is_manager:
-    st.warning("⚠️ Nur der Manager (Maria) kann den gesamten Katalog hochladen.")
-  else:
-    uploaded_file = st.file_uploader("Wählen Sie eine Datei aus", type=["xlsx", "csv"])
-    if uploaded_file is not None:
-      st.success("Datei bereit zum Import.")
-
-# 7. ETIKETTEN DRUCKEN
+# 6. ETIKETTEN DRUCKEN
 elif action == "🖨 Etiketten drucken":
   st.header("🖨 Etiketten & Preisschilder drucken")
   if df.empty:
@@ -658,7 +723,7 @@ elif action == "🖨 Etiketten drucken":
             """
       components.html(label_html, height=150)
 
-# 8. QR-CODE FÜR KOLLEGEN
+# 7. QR-CODE FÜR KOLLEGEN
 elif action == "📱 QR-Code für Kollegen":
   st.header("📱 App-Zugang für das Team")
   app_url = "https://mtcbfvpjnxlkvvtuknyv.streamlit.app"
