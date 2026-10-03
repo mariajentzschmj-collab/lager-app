@@ -220,15 +220,15 @@ if st.session_state.get("role") == "manager":
                   new_q = payload.get("new_quantity")
                   supabase.table("inventory").update({"quantity": int(new_q)}).eq("id", item_id).execute()
                 elif act_type == "bulk_wareneingang":
-                  # Массовый приход с прибавлением к текущему остатку
+                  # Массовый приход по SAP с прибавлением к текущему остатку
                   for item in payload.get("items", []):
-                    art = str(item.get("article"))
+                    sap_num = str(item.get("sap"))
                     inc_qty = int(item.get("incoming_qty", 0))
-                    existing = supabase.table("inventory").select("*").eq("article", art).execute()
+                    existing = supabase.table("inventory").select("*").eq("sap", sap_num).execute()
                     if existing.data:
                       curr_q = int(existing.data[0].get("quantity", 0))
                       new_q = curr_q + inc_qty
-                      supabase.table("inventory").update({"quantity": new_q}).eq("article", art).execute()
+                      supabase.table("inventory").update({"quantity": new_q}).eq("sap", sap_num).execute()
                     else:
                       supabase.table("inventory").upsert(item, on_conflict="article").execute()
                 elif act_type == "bulk_sales_report":
@@ -583,14 +583,14 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
           }
           request_manager_approval("reduce_stock", payload)
 
-# 4. MASSEN-WARENEINGANG (ZUWACHS) — МАССОВЫЙ ПРИХОД ТОВАРОВ С АВТОМАТИЧЕСКИМ ПРИБАВЛЕНИЕМ
+# 4. MASSEN-WARENEINGANG (ZUWACHS) ПО SAP — МАССОВЫЙ ПРИХОД ПО SAP С АВТОМАТИЧЕСКИМ ПРИБАВЛЕНИЕМ
 elif action == "📥 Massen-Wareneingang (Zuwachs)":
   is_manager = st.session_state.get("role") == "manager"
-  st.header("📥 Massen-Wareneingang (Bestand erhöhen)" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
-  st.markdown("Laden Sie eine Excel- oder CSV-Datei mit den eintreffenden Waren hoch (Spalten: `article`, `quantity`). Die angegebenen Mengen werden **automatisch zum bestehenden Bestand addiert**.")
+  st.header("📥 Massen-Wareneingang (Bestand erhöhen nach SAP)" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
+  st.markdown("Laden Sie eine Excel- oder CSV-Datei mit den eintreffenden Waren hoch (Spalten: `sap`, `quantity`). Die angegebenen Mengen werden **nach SAP-Nummer automatisch zum bestehenden Bestand addiert**.")
 
-  template_df = pd.DataFrame(columns=["article", "name", "brand", "quantity", "preis", "sap", "barcode"])
-  template_df.loc[0] = ["101234", "Mussedeltid Teller 27cm", "Royal Copenhagen", 12, 45.00, "SAP12345", "5705140123456"]
+  template_df = pd.DataFrame(columns=["sap", "name", "brand", "quantity", "preis", "article", "barcode"])
+  template_df.loc[0] = ["SAP12345", "Mussedeltid Teller 27cm", "Royal Copenhagen", 12, 45.00, "101234", "5705140123456"]
 
   out_tmpl = io.BytesIO()
   with pd.ExcelWriter(out_tmpl, engine="openpyxl") as writer:
@@ -617,37 +617,37 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
         items_incoming = []
         for _, row in inc_df.iterrows():
           items_incoming.append({
-              "article": str(row.get("article", row.get("sap", ""))),
+              "sap": str(row.get("sap", "")),
               "name": str(row.get("name", "Unbekannter Artikel")),
               "brand": str(row.get("brand", "Iittala")),
               "incoming_qty": int(row.get("quantity", 0)),
               "preis": float(row.get("preis", 0.0)),
-              "sap": str(row.get("sap", "")),
+              "article": str(row.get("article", "")),
               "barcode": str(row.get("barcode", ""))
           })
 
         if is_manager:
           if supabase is not None:
             for item in items_incoming:
-              art = item["article"]
+              sap_num = item["sap"]
               inc_qty = item["incoming_qty"]
-              existing = supabase.table("inventory").select("*").eq("article", art).execute()
+              existing = supabase.table("inventory").select("*").eq("sap", sap_num).execute()
               if existing.data:
                 curr_q = int(existing.data[0].get("quantity", 0))
                 new_q = curr_q + inc_qty
-                supabase.table("inventory").update({"quantity": new_q}).eq("article", art).execute()
+                supabase.table("inventory").update({"quantity": new_q}).eq("sap", sap_num).execute()
               else:
                 new_item = {
-                    "article": art,
+                    "sap": sap_num,
                     "name": item["name"],
                     "brand": item["brand"],
                     "quantity": inc_qty,
                     "preis": item["preis"],
-                    "sap": item["sap"],
+                    "article": item["article"],
                     "barcode": item["barcode"]
                 }
                 supabase.table("inventory").upsert(new_item, on_conflict="article").execute()
-            st.success("✅ Wareneingang erfolgreich gebucht und Bestände automatisch erhöht!")
+            st.success("✅ Wareneingang nach SAP erfolgreich gebucht und Bestände automatisch erhöht!")
             st.rerun()
         else:
           payload = {"items": items_incoming}
