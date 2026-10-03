@@ -145,14 +145,13 @@ action = st.sidebar.radio(
 )
 
 
-# Функция для точного поиска номеров (SAP, Barcode, Artikel) и частичного для названия
+# Funktion für präzise Suche
 def search_items(dataframe, query):
   if dataframe.empty or not query:
     return dataframe
   q = str(query).strip().lower()
   q_raw = str(query).strip()
 
-  # Каждое условие обязательно обернуто в круглые скобки для корректной работы pandas
   mask = (
       (dataframe["name"].astype(str).str.lower().str.contains(q, na=False))
       | (dataframe["barcode"].astype(str).str.strip() == q_raw)
@@ -309,10 +308,12 @@ elif action == "➕ Artikel hinzufügen":
       0,
   )
 
+  item_found_flag = False
   if active_add_search and not df.empty:
     found_items = search_items(df, active_add_search)
     if not found_items.empty:
       item = found_items.iloc[0]
+      item_found_flag = True
       st.success(
           f"📦 Gefunden: **{item.get('name')}** (Aktueller Bestand:"
           f" **{int(item.get('quantity', 0))} Stk.**)"
@@ -345,6 +346,17 @@ elif action == "➕ Artikel hinzufügen":
     )
     new_sap = st.text_input("SAP-Nummer", value=pre_sap)
     new_barcode = st.text_input("Barcode", value=pre_barcode)
+
+    # Дополнительная проверка на дубликат прямо при вводе в форму
+    if new_article and not df.empty:
+      existing_check = df[df["article"].astype(str).str.strip() == str(new_article).strip()]
+      if not existing_check.empty and not item_found_flag:
+        st.warning(
+            f"⚠️ **Achtung!** Artikelnummer `{new_article}` existiert bereits im Lager"
+            f" unter dem Namen **'{existing_check.iloc[0].get('name')}'**"
+            f" (Aktueller Bestand: {int(existing_check.iloc[0].get('quantity', 0))} Stk.)."
+            " Beim Speichern wird der bestehende Artikel aktualisiert."
+        )
 
     if st.form_submit_button("Speichern / Aktualisieren"):
       if not new_name:
@@ -760,7 +772,7 @@ elif action == "🖨 Etiketten drucken":
                     #printable-label {{ position: absolute; left: 0; top: 0; }}
                 }}
             </style>
-            <div id="printable-label" style="border: 1px solid #000; width: 4cm; height: 1.4cm; padding: 2px; box-sizing: border-box; background: white; color: black; display: flex; flex-direction: column; justify-content: space-between; font-family: Arial, sans-serif;">
+            id="printable-label" style="border: 1px solid #000; width: 4cm; height: 1.4cm; padding: 2px; box-sizing: border-box; background: white; color: black; display: flex; flex-direction: column; justify-content: space-between; font-family: Arial, sans-serif;">
                 <div style="display: flex; justify-content: space-between; font-size: 7pt; font-weight: bold; line-height: 1;">
                     <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%;">{chosen_item.get('name')}</span>
                     <span><b>{chosen_item.get('preis', 0.0):.2f} €</b></span>
