@@ -844,3 +844,49 @@ elif action == "📱 QR-Code für Kollegen":
   qr_code_url = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(app_url)}"
   st.image(qr_code_url, width=300)
   st.markdown(f"Direktlink: [{app_url}]({app_url})")
+
+  # ... ваш основной код приложения (все функции, загрузка данных, блоки if action == ...)
+
+# ==========================================
+# ВСТАВЬТЕ ЭТОТ БЛОК В САМЫЙ КОНЕЦ ФАЙЛА:
+# ==========================================
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("📦 Автозаказ")
+
+min_thresh = st.sidebar.number_input("Min. Restbestand (Schwellenwert)", min_value=0, value=3, step=1)
+target_qty = st.sidebar.number_input("Zielbestand (Soll)", min_value=1, value=10, step=1)
+
+if st.sidebar.button("🚀 Automatische Bestellung generieren"):
+  if df.empty:
+    st.sidebar.warning("⚠️ Keine Daten im Bestand gefunden.")
+  else:
+    check_df = df.copy()
+    check_df["quantity"] = pd.to_numeric(check_df["quantity"], errors="coerce").fillna(0)
+    
+    reorder_df = check_df[check_df["quantity"] <= min_thresh].copy()
+
+    if reorder_df.empty:
+      st.sidebar.success("✅ Alles im grünen Bereich! Kein Nachbestellbedarf.")
+    else:
+      reorder_df["order_qty"] = (target_qty - reorder_df["quantity"]).apply(lambda x: max(1, x))
+      
+      st.sidebar.error(f"🚨 {len(reorder_df)} Artikel unter Mindestbestand!")
+      
+      st.markdown("---")
+      st.header("🚨 Automatische Bestellliste (Nachbestellung)")
+      st.markdown(f"Folgende Artikel unterschreiten den Schwellenwert von **{min_thresh} Stück** und sollten nachbestellt werden:")
+      
+      display_cols = [c for c in ["article", "name", "brand", "quantity", "order_qty", "sap", "preis"] if c in reorder_df.columns]
+      st.dataframe(reorder_df[display_cols], use_container_width=True)
+
+      out_excel = io.BytesIO()
+      with pd.ExcelWriter(out_excel, engine="openpyxl") as writer:
+        reorder_df[display_cols].to_excel(writer, index=False, sheet_name="Bestellung")
+      
+      st.download_button(
+          label="📥 Bestellliste als Excel herunterladen",
+          data=out_excel.getvalue(),
+          file_name="KaDeWe_Bestellung_Lieferant.xlsx",
+          mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      )
