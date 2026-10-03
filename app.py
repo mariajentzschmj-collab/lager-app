@@ -347,7 +347,7 @@ elif action == "➕ Artikel hinzufügen":
     new_sap = st.text_input("SAP-Nummer", value=pre_sap)
     new_barcode = st.text_input("Barcode", value=pre_barcode)
 
-    # Дополнительная проверка на дубликат прямо при вводе в форму
+    # Проверка на дубликат при добавлении
     if new_article and not df.empty:
       existing_check = df[df["article"].astype(str).str.strip() == str(new_article).strip()]
       if not existing_check.empty and not item_found_flag:
@@ -355,7 +355,7 @@ elif action == "➕ Artikel hinzufügen":
             f"⚠️ **Achtung!** Artikelnummer `{new_article}` existiert bereits im Lager"
             f" unter dem Namen **'{existing_check.iloc[0].get('name')}'**"
             f" (Aktueller Bestand: {int(existing_check.iloc[0].get('quantity', 0))} Stk.)."
-            " Beim Speichern wird der bestehende Artikel aktualisiert."
+            " Beim Speichern wird dieser Artikel aktualisiert."
         )
 
     if st.form_submit_button("Speichern / Aktualisieren"):
@@ -429,6 +429,13 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
             max_value=max(1, current_qty),
             value=1,
         )
+
+        # Предупреждение, если списанием обнуляется или уменьшается важный товар
+        if reduce_qty >= current_qty:
+          st.warning(
+              f"⚠️ **Achtung!** Sie ziehen {reduce_qty} Stk. ab. Der Bestand"
+              f" von **'{selected_row.get('name')}'** wird dadurch komplett auf **0 Stk.** reduziert."
+          )
 
         if st.form_submit_button("Verkauf bestätigen"):
           new_qty = max(0, current_qty - int(reduce_qty))
@@ -513,6 +520,14 @@ elif action == "📥 Auto-Abverkauf per Bericht":
               f"✅ Spalten erkannt: Artikel/SAP -> `{art_col}`, Menge ->"
               f" `{qty_col}`"
           )
+
+          # Проверка внутри файла на дубли строк по артикулу
+          sales_duplicates = sales_df[sales_df.duplicated(subset=[art_col], keep=False)]
+          if not sales_duplicates.empty:
+            st.warning(
+                f"⚠️ Im Verkaufsbericht befinden sich mehrere Zeilen für dieselben Artikel ({len(sales_duplicates)} Zeilen). "
+                "Beim Abverkauf werden die Mengen für doppelte Artikel aufsummiert."
+            )
 
           if st.button("🚀 Automatisches Abchreiben starten"):
             if df.empty:
@@ -635,6 +650,17 @@ elif action == "📷 Live-Kamera-Scanner":
         delta_qty = st.number_input(
             "Anzahl der Stück:", min_value=1, value=1, step=1
         )
+
+        # Предупреждение в сканере при уменьшении или добавлении больших объемов
+        if "reduzieren" in change_type.lower() and delta_qty >= current_qty:
+          st.warning(
+              f"⚠️ **Achtung!** Sie reduzieren den Bestand um {delta_qty} Stk. "
+              f"Der Bestand für **'{item_name}'** sinkt dadurch auf **0 Stk.**"
+          )
+        elif "hinzufügen" in change_type.lower() and delta_qty > 50:
+          st.info(
+              f"ℹ️ Sie fügen dem Bestand von **'{item_name}'** eine große Menge (+{delta_qty} Stk.) hinzu."
+          )
 
         if st.form_submit_button("Bestand aktualisieren"):
           if "hinzufügen" in change_type.lower():
