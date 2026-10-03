@@ -13,51 +13,74 @@ st.set_page_config(
     page_title="KaDeWe Lager — Iittala & Royal Copenhagen", layout="wide"
 )
 
-# --- PASSWORT UND INAKTIVITÄTS-TIMEOUT (5 MINUTEN) ---
-def check_password():
-  TIMEOUT_SECONDS = 300  # 5 Minuten
+# --- ROLLEN- UND PASSWORT-LOGIN (MANAGER & AGENT) ---
+def check_login():
+  TIMEOUT_SECONDS = 300  # 5 Minuten Inaktivitäts-Timeout
 
-  if "password_correct" not in st.session_state:
-    st.session_state["password_correct"] = False
+  if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
+    st.session_state["role"] = None
     st.session_state["last_active"] = time.time()
 
-  if st.session_state["password_correct"]:
+  if st.session_state["logged_in"]:
     if (
         time.time() - st.session_state.get("last_active", time.time())
         > TIMEOUT_SECONDS
     ):
-      st.session_state["password_correct"] = False
+      st.session_state["logged_in"] = False
+      st.session_state["role"] = None
       st.warning(
           "⏱️ Sitzung wegen Inaktivität abgelaufen (> 5 Min.). Bitte erneut"
           " anmelden."
       )
 
-  if st.session_state["password_correct"]:
+  if st.session_state["logged_in"]:
     st.session_state["last_active"] = time.time()
     return True
 
-  st.title("🔐 Lagerverwaltung - Login")
+  st.title("🔐 KaDeWe Lagerverwaltung - Anmeldung")
   st.subheader(
-      "Bitte geben Sie das Passwort ein (Timeout nach 5 Min. Inaktivität)"
+      "Bitte wählen Sie Ihre Rolle und geben Sie das Passwort ein (Timeout nach"
+      " 5 Min.)"
   )
 
+  role_choice = st.selectbox("Zugriffsrolle:", ["Verkäufer / Agent", "Manager"])
   password = st.text_input("Passwort", type="password")
+
   if st.button("Anmelden"):
-    if password == "kadewe2026":
-      st.session_state["password_correct"] = True
+    if role_choice == "Manager" and password == "kadewe2026":
+      st.session_state["logged_in"] = True
+      st.session_state["role"] = "Manager"
+      st.session_state["last_active"] = time.time()
+      st.rerun()
+    elif role_choice == "Verkäufer / Agent" and password in [
+        "agent2026",
+        "kadewe2026",
+    ]:
+      st.session_state["logged_in"] = True
+      st.session_state["role"] = "Agent"
       st.session_state["last_active"] = time.time()
       st.rerun()
     else:
-      st.error("❌ Falsches Passwort")
+      st.error("❌ Falsches Passwort oder ungültige Rolle")
   return False
 
 
-if not check_password():
+if not check_login():
   st.stop()
+
+# Aktuelle Rolle abrufen
+current_role = st.session_state.get("role", "Agent")
 
 # --- HAUPTCODE DER ANWENDUNG ---
 st.title("📦 Lagerverwaltung (5. Etage)")
-st.subheader("Iittala & Royal Copenhagen")
+st.subheader(f"Iittala & Royal Copenhagen | Angemeldet als: **{current_role}**")
+
+# Abmelden-Button in der Seitenleiste
+if st.sidebar.button("🚪 Abmelden / Rolle wechseln"):
+  st.session_state["logged_in"] = False
+  st.session_state["role"] = None
+  st.rerun()
 
 SUPABASE_URL = "https://mtcbfvpjnxlkvvtuknyv.supabase.co"
 SUPABASE_KEY = "sb_publishable_wChGuVU2FeW23S2bqdYqOg_B9-oMoKs"
@@ -127,21 +150,30 @@ def load_data():
 
 df = load_data()
 
-# --- SEITENMENÜ ---
+# --- SEITENMENÜ JE NACH ROLLE ---
 st.sidebar.header("⚙️ Lagersteuerung")
-action = st.sidebar.radio(
-    "Aktion auswählen:",
-    [
-        "📊 Bestände anzeigen",
-        "➕ Artikel hinzufügen",
-        "📉 Artikel reduzieren (Verkauf)",
-        "📥 Auto-Abverkauf per Bericht",
-        "📷 Live-Kamera-Scanner",
-        "📁 Katalog aus Datei hochladen",
-        "🖨 Etiketten drucken",
-        "📱 QR-Code für Kollegen",
-    ],
-)
+
+if current_role == "Manager":
+  menu_options = [
+      "📊 Bestände anzeigen",
+      "➕ Artikel hinzufügen",
+      "📉 Artikel reduzieren (Verkauf)",
+      "📥 Auto-Abverkauf per Bericht",
+      "📷 Live-Kamera-Scanner",
+      "📁 Katalog aus Datei hochladen",
+      "🖨 Etiketten drucken",
+      "📱 QR-Code für Kollegen",
+  ]
+else:
+  # Agent hat Zugriff auf Abverkauf, Suche, Live-Scanner und Etiketten
+  menu_options = [
+      "📊 Bestände anzeigen",
+      "📉 Artikel reduzieren (Verkauf)",
+      "📷 Live-Kamera-Scanner",
+      "🖨 Etiketten drucken",
+  ]
+
+action = st.sidebar.radio("Aktion auswählen:", menu_options)
 
 
 # Funktion für präzise Suche: Name (teilweise), SAP / Barcode / Artikel (EXAKTES Trefferbild)
@@ -280,7 +312,7 @@ if action == "📊 Bestände anzeigen":
         ),
     )
 
-# 2. ARTIKEL HINZUFÜGEN
+# 2. ARTIKEL HINZUFÜGEN (Nur für Manager)
 elif action == "➕ Artikel hinzufügen":
   st.header("✨ Neuen Artikel hinzufügen oder Bestand anpassen (auch 0)")
 
@@ -359,7 +391,6 @@ elif action == "➕ Artikel hinzufügen":
               "sap": str(new_sap),
               "barcode": str(new_barcode),
           }
-          # Sicherer Upsert / Update per Artikelnummer
           existing = (
               supabase.table("inventory")
               .select("id")
@@ -442,12 +473,12 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
             except Exception as e:
               st.error(f"Fehler: {e}")
 
-# 4. AUTO-ABVERKAUF PER BERICHT
+# 4. AUTO-ABVERKAUF PER BERICHT (Nur für Manager)
 elif action == "📥 Auto-Abverkauf per Bericht":
   st.header("📥 Automatische Bestandsaktualisierung per Verkaufsbericht")
   st.write(
       "Laden Sie den Verkaufsbericht hoch (Excel oder CSV). Die Datei muss"
-      " Spalten für Artikel/SAP (`article` oder `sap`) und die verkaufte Menge"
+      " Spalten für Artikel/SAP (`article` или `sap`) und die verkaufte Menge"
       " (`quantity` oder `sold`) enthalten."
   )
 
@@ -657,7 +688,7 @@ elif action == "📷 Live-Kamera-Scanner":
           " Suchbegriff wurde in der Datenbank nicht gefunden."
       )
 
-# 6. KATALOG AUS DATEI HOCHLADEN
+# 6. KATALOG AUS DATEI HOCHLADEN (Nur für Manager)
 elif action == "📁 Katalog aus Datei hochladen":
   st.header("📂 Massen-Upload (Excel / CSV) — Alle Artikel inkl. 0 Stk.")
   uploaded_file = st.file_uploader(
@@ -700,7 +731,6 @@ elif action == "📁 Katalog aus Datei hochladen":
             for rec in records:
               art = rec.get("article")
               try:
-                # Prüfen, ob Artikel bereits existiert
                 existing = (
                     supabase.table("inventory")
                     .select("id")
@@ -781,7 +811,7 @@ elif action == "🖨 Etiketten drucken":
             """
       components.html(label_html, height=150)
 
-# 8. QR-CODE FÜR KOLLEGEN
+# 8. QR-CODE FÜR KOLLEGEN (Nur für Manager)
 elif action == "📱 QR-Code für Kollegen":
   st.header("📱 App-Zugang für das Team")
   st.write(
