@@ -1027,11 +1027,12 @@ if st.sidebar.button("🚀 Запустить авто-пересчет по о�
         new_max = max(new_min + 5, int(daily_speed * days_max))
 
         # Обновляем в Supabase: записываем новые лимиты и фиксируем текущий остаток как "прошлый" для следующего раза
+        # Обновляем в Supabase: записываем новые лимиты и фиксируем текущий остаток как "прошлый" для следующего раза
         try:
           supabase.table("inventory").update({
               "min_stock": new_min,
               "max_stock": new_max,
-              "last_quantity": current_qty,  д запоминаем текущий как старый для следующего замера
+              "last_quantity": current_qty,  # запоминаем текущий как старый для следующего замера
           }).eq("sap", sap_val).execute()
           updated_count += 1
         except Exception as e:
