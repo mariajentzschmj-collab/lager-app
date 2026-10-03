@@ -849,6 +849,10 @@ elif action == "📱 QR-Code für Kollegen":
 # KOMPLETT-BLOCK: MIN/MAX UPLOAD & AUTOMATISCHE BESTELLUNG
 # ==========================================
 
+# ==========================================
+# KOMPLETT-BLOCK: MIN/MAX UPLOAD & AUTOMATISCHE BESTELLUNG (MIT AUTO-REFRESH)
+# ==========================================
+
 st.sidebar.markdown("---")
 st.sidebar.subheader("📦 Automatische Bestellung & Min/Max")
 
@@ -907,7 +911,10 @@ if uploaded_minmax is not None:
       if error_count > 0:
         st.sidebar.error(f"Fehlerhafte Zeilen: {error_count}")
         
-      st.info("Bitte laden Sie die App jetzt neu (F5), um die Werte zu sehen.")
+      # WICHTIG: Automatischer Neustart des Skripts, ohne F5 zu drücken!
+      st.success("Änderungen gespeichert! Aktualisiere Ansicht...")
+      st.rerun()
+      
   except Exception as e:
     st.sidebar.error(f"Fehler beim Verlesen der Datei: {e}")
 
