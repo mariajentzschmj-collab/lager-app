@@ -891,6 +891,72 @@ if uploaded_minmax is not None:
   except Exception as e:
     st.sidebar.error(f"Fehler beim Verlesen der Datei: {e}")
 
+# ==========================================
+# KOMPLETT-BLOCK: MIN/MAX UPLOAD & AUTOMATISCHE BESTELLUNG
+# ==========================================
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("📦 Automatische Bestellung & Min/Max")
+
+# 1. Sektion: Min/Max-Werte per Excel aktualisieren
+st.sidebar.markdown("**1. Min/Max-Werte per Excel aktualisieren**")
+uploaded_minmax = st.sidebar.file_uploader(
+    "Excel-Datei (sap, min_stock, max_stock) hochladen", 
+    type=["xlsx", "xls"],
+    key="minmax_uploader_combined"
+)
+
+if uploaded_minmax is not None:
+  try:
+    update_df = pd.read_excel(uploaded_minmax)
+    # Alle Spaltennamen in Kleinbuchstaben umwandeln
+    update_df.columns = [str(c).strip().lower() for c in update_df.columns]
+    
+    st.sidebar.success(f"Datei geladen! Zeilen: {len(update_df)}")
+      
+    if st.sidebar.button("💾 In Datenbank speichern"):
+      success_count = 0
+      error_count = 0
+      not_found_count = 0
+      
+      for _, row in update_df.iterrows():
+        try:
+          # SAP-Nummer auslesen und .0-Endung von Excel entfernen
+          sap_val = str(row.get("sap", "")).strip()
+          if sap_val.endswith(".0"):
+            sap_val = sap_val[:-2]
+
+          min_val = int(row.get("min_stock", 2))
+          max_val = int(row.get("max_stock", 10))
+          
+          if sap_val and sap_val != "nan":
+            # Prüfen, ob der Artikel in Supabase existiert
+            existing = supabase.table("inventory").select("id, sap").eq("sap", sap_val).execute()
+            
+            if existing.data and len(existing.data) > 0:
+              # Werte in der Datenbank aktualisieren
+              supabase.table("inventory").update({
+                  "min_stock": min_val,
+                  "max_stock": max_val
+              }).eq("sap", sap_val).execute()
+              success_count += 1
+            else:
+              not_found_count += 1
+          else:
+            error_count += 1
+        except Exception:
+          error_count += 1
+          
+      st.sidebar.success(f"Aktualisiert: {success_count}")
+      if not_found_count > 0:
+        st.sidebar.warning(f"Nicht in DB gefunden: {not_found_count}")
+      if error_count > 0:
+        st.sidebar.error(f"Fehlerhafte Zeilen: {error_count}")
+        
+      st.info("Bitte laden Sie die App jetzt neu (F5), um die Werte zu sehen.")
+  except Exception as e:
+    st.sidebar.error(f"Fehler beim Verlesen der Datei: {e}")
+
 st.sidebar.markdown("---")
 
 # 2. Sektion: Nachbestellung prüfen und generieren
@@ -911,8 +977,7 @@ if st.sidebar.button("🚀 Nachbestellung prüfen"):
     check_df["min_stock"] = pd.to_numeric(check_df["min_stock"], errors="coerce").fillna(2)
     check_df["max_stock"] = pd.to_numeric(check_df["max_stock"], errors="coerce").fillna(10)
 
-    # WICHTIG: Nur Artikel berücksichtigen, deren Mindestbestand STRICT GREATER THAN 0 ist (min_stock > 0)
-    # Artikel mit min_stock = 0 werden komplett ignoriert
+    # WICHTIG: Nur Artikel berücksichtigen, deren Mindestbestand größer als 0 ist (min_stock > 0)
     active_check_df = check_df[check_df["min_stock"] > 0]
 
     # Filtern nach individuellem Mindestbestand (Bestand <= min_stock)
