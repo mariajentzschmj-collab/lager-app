@@ -25,7 +25,7 @@ except Exception as e:
   pass
 
 
-# --- СИСТЕМА АВТОРИЗАЦИИ С РАЗНЫМИ УРОВНЯМИ ДОСТУПА ---
+# --- СИСТЕМА АВТОРИЗАЦИИ (МЕНЕДЖЕР И АГЕНТЫ С ПИН-КОДАМИ) ---
 def check_authentication():
   TIMEOUT_SECONDS = 300  # 5 минут неактивности
 
@@ -47,15 +47,16 @@ def check_authentication():
     st.session_state["last_active"] = time.time()
     return True
 
-  st.title("🔐 Lagerverwaltung - Login")
-  st.subheader("Bitte wählen Sie Ihre Rolle und melden Sie sich an:")
+  st.title("🔐 KaDeWe Lagerverwaltung - Login")
+  st.subheader("Bitte wählen Sie Ihre Rolle aus:")
 
   role_choice = st.radio("Ich bin ein(e):", ["👔 Manager (Maria)", "🧑‍💼 Agent / Mitarbeiter"])
 
   if role_choice == "👔 Manager (Maria)":
     manager_password = st.text_input("Manager-Passwort", type="password")
     if st.button("Als Manager anmelden"):
-      if manager_password == "kadewe2026":
+      # НОВЫЙ ПАРОЛЬ МЕНЕДЖЕРА
+      if manager_password == "KaDeWe2026!Mgr":
         st.session_state["logged_in"] = True
         st.session_state["role"] = "manager"
         st.session_state["user_name"] = "Maria Jentzsch"
@@ -65,15 +66,21 @@ def check_authentication():
         st.error("❌ Falsches Manager-Passwort")
   else:
     agent_id = st.text_input("Agenten-Nummer oder Name (z.B. Agent-01, Anna):")
+    agent_pin = st.text_input("Persönlicher Agenten-PIN (z.B. 2026):", type="password")
+    
     if st.button("Als Agent anmelden"):
-      if agent_id.strip():
-        st.session_state["logged_in"] = True
-        st.session_state["role"] = "agent"
-        st.session_state["user_name"] = agent_id.strip()
-        st.session_state["last_active"] = time.time()
-        st.rerun()
+      if agent_id.strip() and agent_pin.strip():
+        # Проверка пин-кода агента (можно задать общий или индивидуальный, здесь стандартный 2026)
+        if agent_pin == "2026":
+          st.session_state["logged_in"] = True
+          st.session_state["role"] = "agent"
+          st.session_state["user_name"] = agent_id.strip()
+          st.session_state["last_active"] = time.time()
+          st.rerun()
+        else:
+          st.error("❌ Falscher Agenten-PIN.")
       else:
-        st.error("❌ Bitte geben Sie Ihre Agenten-Nummer oder Ihren Namen ein.")
+        st.error("❌ Bitte geben Sie sowohl Ihren Namen/Nummer als auch den PIN ein.")
 
   return False
 
@@ -104,9 +111,8 @@ def send_manager_approval_code(action_desc, code):
   
   st.session_state["active_approval_code"] = str(code)
   
-  # Симуляция отправки и вывод уведомления для агента
   try:
-    st.info(f"✉️ Eine Freigabe-Anfrage von Agent **{agent_name}** wurde an **{recipient}** gesendet.")
+    st.info(f"✉️ Eine Freigabe-Anfrage von Agent **{agent_name}** ({action_desc}) wurde an **{recipient}** gesendet. Code: {code}")
   except Exception as e:
     st.error(f"Fehler beim Senden der E-Mail: {e}")
 
@@ -348,12 +354,10 @@ elif action == "➕ Artikel hinzufügen":
       0,
   )
 
-  item_found_flag = False
   if active_add_search and not df.empty:
     found_items = search_items(df, active_add_search)
     if not found_items.empty:
       item = found_items.iloc[0]
-      item_found_flag = True
       st.success(
           f"📦 Gefunden: **{item.get('name')}** (Aktueller Bestand:"
           f" **{int(item.get('quantity', 0))} Stk.**)"
@@ -387,18 +391,13 @@ elif action == "➕ Artikel hinzufügen":
     new_sap = st.text_input("SAP-Nummer", value=pre_sap)
     new_barcode = st.text_input("Barcode", value=pre_barcode)
 
-    if is_manager:
-      submit_btn_label = "Speichern / Aktualisieren (Manager)"
-    else:
-      submit_btn_label = "📩 Bestätigungscode per E-Mail anfordern"
-
+    submit_btn_label = "Speichern / Aktualisieren (Manager)" if is_manager else "📩 Bestätigungscode per E-Mail anfordern"
     form_submitted = st.form_submit_button(submit_btn_label)
 
   if form_submitted:
     if not new_name:
       st.error("Bitte Artikelnamen eingeben.")
     elif is_manager:
-      # Менеджер сохраняет сразу без кода
       if supabase is not None:
         try:
           data = {
@@ -412,17 +411,15 @@ elif action == "➕ Artikel hinzufügen":
               "barcode": str(new_barcode),
           }
           supabase.table("inventory").upsert(data, on_conflict="article").execute()
-          st.success(f"✅ Artikel '{new_name}' (Menge: {new_qty} Stk.) erfolgreich gespeichert!")
+          st.success(f"✅ Artikel '{new_name}' erfolgreich gespeichert!")
           st.rerun()
         except Exception as e:
           st.error(f"Fehler: {e}")
     else:
-      # Агент запрашивает код
       gen_code = str(random.randint(1000, 9999))
-      send_manager_approval_code(f"Agent [{st.session_state.get('user_name')}] - Artikel hinzufügen: {new_name}", gen_code)
-      st.success("🔒 Code gesendet! Bitte fragen Sie Maria Jentzsch (maria.jentzsch@fiskars.com) nach dem Code.")
+      send_manager_approval_code(f"Artikel hinzufügen: {new_name}", gen_code)
+      st.success("🔒 Code gesendet! Bitte fragen Sie Maria Jentzsch nach dem Freigabe-Code.")
 
-  # Ввод кода для агентов
   if not is_manager and "active_approval_code" in st.session_state:
     st.markdown("---")
     st.subheader("🔑 Manager-Freigabe erforderlich")
@@ -443,7 +440,7 @@ elif action == "➕ Artikel hinzufügen":
                 "barcode": str(new_barcode),
             }
             supabase.table("inventory").upsert(data, on_conflict="article").execute()
-            st.success(f"✅ Freigabe erteilt! Artikel '{new_name}' erfolgreich gespeichert!")
+            st.success(f"✅ Freigabe erteilt! Artikel '{new_name}' gespeichert!")
             del st.session_state["active_approval_code"]
             st.rerun()
           except Exception as e:
@@ -476,7 +473,7 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
       working_df = search_items(df, active_search)
 
     if working_df.empty:
-      st.warning("⚠️ Kein Artikel gefunden.")
+      st.warning("⚠️️ Kein Artikel gefunden.")
     else:
       item_options = [
           f"{r.get('name', 'Unbekannt')} | Art: {r.get('article', '-')} | SAP: {r.get('sap', '-')} | Barcode: {r.get('barcode', '-')} (Bestand: {int(r.get('quantity', 0))} Stk.)"
@@ -513,8 +510,8 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
               st.error(f"Fehler: {e}")
         else:
           gen_code = str(random.randint(1000, 9999))
-          send_manager_approval_code(f"Agent [{st.session_state.get('user_name')}] - Verkauf: {selected_row.get('name')} (-{reduce_qty} Stk.)", gen_code)
-          st.success("🔒 Code angefordert! Bitte benachrichtigen Sie Maria Jentzsch (maria.jentzsch@fiskars.com).")
+          send_manager_approval_code(f"Verkauf: {selected_row.get('name')} (-{reduce_qty} Stk.)", gen_code)
+          st.success("🔒 Code angefordert! Bitte benachrichtigen Sie Maria Jentzsch.")
 
       if not is_manager and "active_approval_code" in st.session_state:
         st.markdown("---")
@@ -527,7 +524,7 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
             if supabase is not None:
               try:
                 supabase.table("inventory").update({"quantity": int(new_qty)}).eq("id", selected_row["id"]).execute()
-                st.success(f"✅ Freigabe erteilt! Verkauf erfasst. Neuer Bestand: {new_qty} Stk.")
+                st.success(f"✅ Freigabe erteilt! Neuer Bestand: {new_qty} Stk.")
                 del st.session_state["active_approval_code"]
                 st.rerun()
               except Exception as e:
@@ -548,7 +545,7 @@ elif action == "📥 Auto-Abverkauf per Bericht":
     else:
       if st.button("📩 Code für Bericht-Abverkauf anfordern"):
         gen_code = str(random.randint(1000, 9999))
-        send_manager_approval_code(f"Agent [{st.session_state.get('user_name')}] - Bericht-Abverkauf", gen_code)
+        send_manager_approval_code("Bericht-Abverkauf", gen_code)
         st.success("🔒 Code an maria.jentzsch@fiskars.com gesendet.")
 
       if "active_approval_code" in st.session_state:
@@ -599,8 +596,7 @@ elif action == "📷 Live-Kamera-Scanner":
             st.rerun()
         else:
           gen_code = str(random.randint(1000, 9999))
-          action_name = "Hinzufügen" if "hinzufügen" in change_type.lower() else "Reduzieren"
-          send_manager_approval_code(f"Agent [{st.session_state.get('user_name')}] - Scanner {action_name}: {item_name} ({delta_qty} Stk.)", gen_code)
+          send_manager_approval_code(f"Scanner: {item_name} ({delta_qty} Stk.)", gen_code)
           st.success("🔒 Code an maria.jentzsch@fiskars.com gesendet.")
 
       if not is_manager and "active_approval_code" in st.session_state:
