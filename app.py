@@ -974,24 +974,24 @@ if st.sidebar.button("🚀 Nachbestellung prüfen"):
       )
 
 # ==========================================
-# АВТОМАТИЧЕСКИЙ РАСЧЕТ MIN/MAX ПО УХОДУ ОСТАТКОВ
+# AUTOMATISCHE MIN/MAX-BERECHNUNG NACH LAGERABGANG
 # ==========================================
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("📈 Умный авто-расчет Min/Max")
+st.sidebar.subheader("📈 Intelligente Min/Max-Berechnung")
 
 st.sidebar.markdown(
-    "Сравнивает текущие остатки с предыдущими, считает скорость продаж и"
-    " обновляет лимиты."
+    "Vergleicht den aktuellen Bestand mit dem vorherigen, berechnet die"
+    " Verkaufsgeschwindigkeit und aktualisiert die Limits."
 )
 
-# Настройка желаемого запаса в днях прямо в интерфейсе
-days_min = st.sidebar.slider("Дней запаса для MIN", 2, 14, 5)
-days_max = st.sidebar.slider("Дней запаса для MAX", 10, 45, 20)
+# Einstellung der gewünschten Reichweite in Tagen direkt im Interface
+days_min = st.sidebar.slider("Reichweite in Tagen für MIN", 2, 14, 5)
+days_max = st.sidebar.slider("Reichweite in Tagen für MAX", 10, 45, 20)
 
-if st.sidebar.button("🚀 Запустить авто-пересчет по остаткам"):
+if st.sidebar.button("🚀 Automatische Neuberechnung starten"):
   if df.empty:
-    st.sidebar.warning("⚠️ Нет данных для анализа.")
+    st.sidebar.warning("⚠️️ Keine Daten zur Analyse gefunden.")
   else:
     calc_df = df.copy()
     updated_count = 0
@@ -1006,39 +1006,33 @@ if st.sidebar.button("🚀 Запустить авто-пересчет по о�
 
       current_qty = float(row.get("quantity", 0))
 
-      # Берем прошлый остаток (если колонки еще нет в Supabase, берем текущий, чтобы зафиксировать старт)
-      last_qty = float(
-          row.get("last_quantity", current_qty)
-      )  # Если колонки нет, будет current_qty
-      # Аналогично для даты последней проверки
-      # (Для полноценного учета лучше убедиться, что в Supabase созданы поля last_quantity и last_check_date)
+      # Vorherigen Bestand abrufen (falls noch nicht in Supabase vorhanden, aktuellen als Startwert nutzen)
+      last_qty = float(row.get("last_quantity", current_qty))
 
-      # Расход: если прошлый остаток был больше текущего, значит товар продавался
+      # Verbrauch: Wenn der vorige Bestand größer als der aktuelle ist, wurde Ware verkauft
       sold_amount = last_qty - current_qty
 
       if sold_amount > 0:
-        # Допустим, прошло условных 7 дней с последней проверки (или можно привязать к реальной разнице дат)
-        # Для простоты считаем дневную скорость (предполагая цикл проверки в несколько дней, например, 7)
-        days_passed = 7  # Можно заменить на реальный расчет разницы дат, если сохраняете даты
+        # Angenommen, es sind ca. 7 Tage seit der letzten Prüfung vergangen
+        days_passed = 7
         daily_speed = sold_amount / days_passed
 
-        # Рассчитываем новые лимиты
+        # Neue Limits berechnen
         new_min = max(2, int(daily_speed * days_min))
         new_max = max(new_min + 5, int(daily_speed * days_max))
 
-        # Обновляем в Supabase: записываем новые лимиты и фиксируем текущий остаток как "прошлый" для следующего раза
-        # Обновляем в Supabase: записываем новые лимиты и фиксируем текущий остаток как "прошлый" для следующего раза
+        # In Supabase aktualisieren: Neue Limits speichern und aktuellen Bestand als "alt" für die nächste Messung merken
         try:
           supabase.table("inventory").update({
               "min_stock": new_min,
               "max_stock": new_max,
-              "last_quantity": current_qty,  # запоминаем текущий как старый для следующего замера
+              "last_quantity": current_qty,  # Aktuellen Bestand für die nächste Messung speichern
           }).eq("sap", sap_val).execute()
           updated_count += 1
         except Exception as e:
           pass
       else:
-        # Даже если продаж не было, обновляем last_quantity, чтобы фиксировать базу для следующих дней
+        # Auch wenn es keine Verkäufe gab, last_quantity aktualisieren, um die Basis für die kommenden Tage zu sichern
         try:
           supabase.table("inventory").update(
               {"last_quantity": current_qty}
@@ -1047,6 +1041,7 @@ if st.sidebar.button("🚀 Запустить авто-пересчет по о�
           pass
 
     st.sidebar.success(
-        f"✅ Успешно обновлено позиций по скорости продаж: {updated_count}"
+        f"✅ Erfolgreich aktualisierte Artikel nach Verkaufsgeschwindigkeit:"
+        f" {updated_count}"
     )
     st.rerun()
