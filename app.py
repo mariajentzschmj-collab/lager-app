@@ -219,20 +219,20 @@ if st.session_state.get("role") == "manager":
                   item_id = payload.get("id")
                   new_q = payload.get("new_quantity")
                   supabase.table("inventory").update({"quantity": int(new_q)}).eq("id", item_id).execute()
-                elif act_type == "bulk_intake":
-                  # Массовое добавление при подтверждении менеджером
+                elif act_type == "bulk_sales_report":
+                  # Массовое вычитание по отчету о продажах
                   for item in payload.get("items", []):
                     art = str(item.get("article"))
-                    inc_qty = int(item.get("incoming_qty", 0))
-                    # Находим текущий товар в базе
+                    sold_qty = int(item.get("sold_qty", 0))
                     existing = supabase.table("inventory").select("*").eq("article", art).execute()
                     if existing.data:
                       curr_q = int(existing.data[0].get("quantity", 0))
-                      new_q = curr_q + inc_qty
+                      new_q = max(0, curr_q - sold_qty)
                       supabase.table("inventory").update({"quantity": new_q}).eq("article", art).execute()
-                    else:
-                      # Если новый товар
-                      supabase.table("inventory").upsert(item, on_conflict="article").execute()
+                elif act_type == "catalog_upload":
+                  # Массовая загрузка каталога (включая нулевые значения)
+                  for item in payload.get("items", []):
+                    supabase.table("inventory").upsert(item, on_conflict="article").execute()
 
                 supabase.table("approvals").update({"status": "approved"}).eq("id", req_id).execute()
                 st.success("✅ Anfrage erfolgreich bestätigt und Lagerbestand aktualisiert!")
@@ -255,7 +255,8 @@ action = st.sidebar.radio(
         "📊 Bestände anzeigen",
         "➕ Artikel hinzufügen",
         "📉 Artikel reduzieren (Verkauf)",
-        "📥 Massen-Wareneingang (Excel/CSV)",
+        "📥 Auto-Abverkauf per Bericht",
+        "📁 Katalog aus Datei hochladen",
         "📷 Live-Kamera-Scanner",
         "🖨 Etiketten drucken",
         "📱 QR-Code für Kollegen",
@@ -569,81 +570,108 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
           }
           request_manager_approval("reduce_stock", payload)
 
-# 4. МАССОВЫЙ ВАРЕНЕИНГАНГ (МАССОВАЯ ЗАГРУЗКА ПРИХОДА)
-elif action == "📥 Massen-Wareneingang (Excel/CSV)":
+# 4. AUTO-ABVERKAUF PER BERICHT (МАССОВЫЙ ВЫЧЕТ ПО ОТЧЕТУ О ПРОДАЖАХ)
+elif action == "📥 Auto-Abverkauf per Bericht":
   is_manager = st.session_state.get("role") == "manager"
-  st.header("📥 Massen-Wareneingang per Excel/CSV" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
-  st.markdown("Laden Sie eine Excel- oder CSV-Datei mit den eintreffenden Waren hoch. Die Datei sollte Spalten wie `article` (oder `sap` / `barcode`) und `quantity` (Menge der Lieferung) enthalten. Die Mengen werden **automatisch zum bestehenden Bestand addiert**.")
+  st.header("📥 Automatischer Abverkauf per Verkaufsbericht" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
+  st.markdown("Laden Sie einen Verkaufsbericht (Excel/CSV) hoch, der Spalten wie `article` (oder `sap`/`barcode`) und die verkaufte Menge `quantity` (oder `sold_qty`) enthält. Die verkauften Mengen werden **automatisch vom Bestand abgezogen**.")
 
-  # Шаблон для скачивания
-  template_df = pd.DataFrame(columns=["article", "name", "brand", "quantity", "preis", "sap", "barcode"])
-  template_df.loc[0] = ["101234", "Mussedeltid Teller 27cm", "Royal Copenhagen", 12, 45.00, "SAP12345", "5705140123456"]
-  
-  out_tmpl = io.BytesIO()
-  with pd.ExcelWriter(out_tmpl, engine="openpyxl") as writer:
-    template_df.to_excel(writer, index=False, sheet_name="Wareneingang")
-  st.download_button(
-      label="📥 Excel-Vorlage für Wareneingang herunterladen",
-      data=out_tmpl.getvalue(),
-      file_name="KaDeWe_Wareneingang_Vorlage.xlsx",
-      mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-  )
+  sales_file = st.file_uploader("Verkaufsbericht auswählen", type=["xlsx", "csv"], key="sales_report_upload")
 
-  uploaded_file = st.file_uploader("Wareneingangs-Datei auswählen", type=["xlsx", "csv"], key="bulk_upload")
-
-  if uploaded_file is not None:
+  if sales_file is not None:
     try:
-      if uploaded_file.name.endswith(".csv"):
-        upload_df = pd.read_csv(uploaded_file)
+      if sales_file.name.endswith(".csv"):
+        report_df = pd.read_csv(sales_file)
       else:
-        upload_df = pd.read_excel(uploaded_file)
+        report_df = pd.read_excel(sales_file)
 
-      st.write("📋 Vorschau der hochgeladenen Daten:", upload_df.head())
+      st.write("📋 Vorschau des Verkaufsberichts:", report_df.head())
 
-      if st.button("🚀 Wareneingang buchen / Freigabe anfordern"):
-        items_to_process = []
-        for _, row in upload_df.iterrows():
-          items_to_process.append({
-              "article": str(row.get("article", "")),
-              "name": str(row.get("name", "Unbekannter Artikel")),
-              "brand": str(row.get("brand", "Iittala")),
-              "incoming_qty": int(row.get("quantity", 0)),
-              "preis": float(row.get("preis", 0.0)),
-              "sap": str(row.get("sap", "")),
-              "barcode": str(row.get("barcode", ""))
+      if st.button("🚀 Abverkauf buchen / Freigabe anfordern"):
+        items_sold = []
+        for _, row in report_df.iterrows():
+          items_sold.append({
+              "article": str(row.get("article", row.get("sap", ""))),
+              "sold_qty": int(row.get("quantity", row.get("sold_qty", 0)))
           })
 
         if is_manager:
           if supabase is not None:
-            for item in items_to_process:
+            for item in items_sold:
               art = item["article"]
-              inc_qty = item["incoming_qty"]
+              sold_qty = item["sold_qty"]
               existing = supabase.table("inventory").select("*").eq("article", art).execute()
               if existing.data:
                 curr_q = int(existing.data[0].get("quantity", 0))
-                new_q = curr_q + inc_qty
+                new_q = max(0, curr_q - sold_qty)
                 supabase.table("inventory").update({"quantity": new_q}).eq("article", art).execute()
-              else:
-                new_item_data = {
-                    "article": art,
-                    "name": item["name"],
-                    "brand": item["brand"],
-                    "quantity": inc_qty,
-                    "preis": item["preis"],
-                    "sap": item["sap"],
-                    "barcode": item["barcode"]
-                }
-                supabase.table("inventory").upsert(new_item_data, on_conflict="article").execute()
-            st.success("✅ Wareneingang erfolgreich gebucht und Bestände automatisch erhöht!")
+            st.success("✅ Verkaufsbericht erfolgreich verarbeitet und Bestände reduziert!")
             st.rerun()
         else:
-          payload = {"items": items_to_process}
-          request_manager_approval("bulk_intake", payload)
+          payload = {"items": items_sold}
+          request_manager_approval("bulk_sales_report", payload)
 
     except Exception as e:
-      st.error(f"Fehler beim Lesen der Datei: {e}")
+      st.error(f"Fehler beim Verarbeiten des Berichts: {e}")
 
-# 5. LIVE-KAMERA-SCANNER
+# 5. KATALOG AUS DATEI HOCHLADEN (ВКЛЮЧАЯ 0 ЗНАЧЕНИЯ)
+elif action == "📁 Katalog aus Datei hochladen":
+  is_manager = st.session_state.get("role") == "manager"
+  st.header("📂 Gesamtkatalog hochladen (inkl. 0 Bestände)" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
+  st.markdown("Laden Sie eine vollständige Excel- oder CSV-Datei des Katalogs hoch. Artikel mit Bestand `0` werden ebenfalls korrekt mit 0 eingetragen oder aktualisiert.")
+
+  template_df = pd.DataFrame(columns=["article", "name", "brand", "quantity", "preis", "sap", "barcode", "location"])
+  template_df.loc[0] = ["10001", "Teema Teller 21cm", "Iittala", 0, 19.50, "SAP001", "641192000001", "Etage 5 Lager"]
+
+  out_tmpl = io.BytesIO()
+  with pd.ExcelWriter(out_tmpl, engine="openpyxl") as writer:
+    template_df.to_excel(writer, index=False, sheet_name="Katalog")
+  st.download_button(
+      label="📥 Excel-Vorlage für Katalog herunterladen",
+      data=out_tmpl.getvalue(),
+      file_name="KaDeWe_Katalog_Vorlage.xlsx",
+      mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  )
+
+  catalog_file = st.file_uploader("Katalog-Datei auswählen", type=["xlsx", "csv"], key="catalog_upload")
+
+  if catalog_file is not None:
+    try:
+      if catalog_file.name.endswith(".csv"):
+        cat_df = pd.read_csv(catalog_file)
+      else:
+        cat_df = pd.read_excel(catalog_file)
+
+      st.write("📋 Vorschau des Katalogs:", cat_df.head())
+
+      if st.button("🚀 Katalog in Datenbank übernehmen / Freigabe anfordern"):
+        catalog_items = []
+        for _, row in cat_df.iterrows():
+          catalog_items.append({
+              "article": str(row.get("article", "")),
+              "name": str(row.get("name", "Unbekannt")),
+              "brand": str(row.get("brand", "Iittala")),
+              "quantity": int(row.get("quantity", 0)),
+              "preis": float(row.get("preis", 0.0)),
+              "sap": str(row.get("sap", "")),
+              "barcode": str(row.get("barcode", "")),
+              "location": str(row.get("location", "Etage 5 Lager"))
+          })
+
+        if is_manager:
+          if supabase is not None:
+            for item in catalog_items:
+              supabase.table("inventory").upsert(item, on_conflict="article").execute()
+            st.success("✅ Gesamter Katalog erfolgreich aktualisiert (inkl. 0-Bestände)!")
+            st.rerun()
+        else:
+          payload = {"items": catalog_items}
+          request_manager_approval("catalog_upload", payload)
+
+    except Exception as e:
+      st.error(f"Fehler beim Verarbeiten des Katalogs: {e}")
+
+# 6. LIVE-KAMERA-SCANNER
 elif action == "📷 Live-Kamera-Scanner":
   is_manager = st.session_state.get("role") == "manager"
   st.header("📷 Live-Barcode-Scanner (Bestand anpassen)")
@@ -689,7 +717,7 @@ elif action == "📷 Live-Kamera-Scanner":
           }
           request_manager_approval("reduce_stock", payload)
 
-# 6. ETIKETTEN DRUCKEN
+# 7. ETIKETTEN DRUCKEN
 elif action == "🖨 Etiketten drucken":
   st.header("🖨 Etiketten & Preisschilder drucken")
   if df.empty:
@@ -723,7 +751,7 @@ elif action == "🖨 Etiketten drucken":
             """
       components.html(label_html, height=150)
 
-# 7. QR-CODE FÜR KOLLEGEN
+# 8. QR-CODE FÜR KOLLEGEN
 elif action == "📱 QR-Code für Kollegen":
   st.header("📱 App-Zugang für das Team")
   app_url = "https://mtcbfvpjnxlkvvtuknyv.streamlit.app"
