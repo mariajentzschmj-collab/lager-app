@@ -656,30 +656,27 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten des Wareneingangs: {e}")
 
-# 🛒 АВТОМАТИЧЕСКИЙ АБВЕРКАУФ (ПОЛНЫЙ И ИСПРАВЛЕННЫЙ БЛОК)
+# 🛒 АВТОМАТИЧЕСКИЙ АБВЕРКАУФ (ЧИСТАЯ СТРОКОВАЯ ОБРАБОТКА)
 st.subheader("🛒 Automatischer Abverkauf per Verkaufsbericht")
 st.markdown("Laden Sie den Verkaufsbericht hoch. Das System gleicht die Artikel ab und zeigt Ihnen eine Vorschau.")
 
 uploaded_report = st.file_uploader(
     "Verkaufsbericht hochladen (Excel/CSV)",
     type=["xlsx", "csv"],
-    key="smart_sales_upload_final"
+    key="smart_sales_upload_string_pure"
 )
 
 if uploaded_report is not None:
     import pandas as pd
     
     try:
-        # 1. Читаем файл отчета в зависимости от расширения
         if uploaded_report.name.endswith(".csv"):
             report_df = pd.read_csv(uploaded_report)
         else:
             report_df = pd.read_excel(uploaded_report)
             
-        # Приводим названия колонок к нижнему регистру
         report_df.columns = [str(c).strip().lower() for c in report_df.columns]
         
-        # Авто-определение колонок с SAP и количеством
         sap_candidates = [c for c in report_df.columns if 'sap' in c or 'artikel' in c or 'nummer' in c]
         qty_candidates = [c for c in report_df.columns if 'quan' in c or 'menge' in c or 'anzahl' in c or 'stk' in c]
         
@@ -688,7 +685,6 @@ if uploaded_report is not None:
         
         st.info(f"📌 Erkannte Spalten -> SAP: **{col_sap}** | Menge: **{col_qty}**")
         
-        # 2. Загружаем данные из Supabase
         res = supabase.table("inventory").select("id, sap, name, quantity").execute()
         db_data = res.data
         
@@ -697,18 +693,25 @@ if uploaded_report is not None:
         else:
             db_df = pd.DataFrame(db_data)
             
-            # 3. Жесткая очистка и приведение SAP к единому текстовому формату без точек и лишних пробелов
-            db_df["clean_sap"] = db_df["sap"].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
-            report_df["clean_file_sap"] = report_df[col_sap].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+            # Функция строковой нормализации: переводим в текст, убираем .0 на конце и лишние пробелы
+            def normalize_sap(val):
+                if pd.isna(val):
+                    return ""
+                s = str(val).strip()
+                if s.endswith(".0"):
+                    s = s[:-2]
+                return s.strip()
+            
+            db_df["clean_sap"] = db_df["sap"].apply(normalize_sap)
+            report_df["clean_file_sap"] = report_df[col_sap].apply(normalize_sap)
             
             preview_list = []
             
-            # 4. Проходим по строкам отчета и ищем совпадения
             for _, row in report_df.iterrows():
                 file_sap = row["clean_file_sap"]
                 raw_q = row.get(col_qty)
                 
-                if pd.isna(file_sap) or pd.isna(raw_q) or file_sap == "nan" or file_sap == "":
+                if not file_sap or file_sap == "nan":
                     continue
                     
                 try:
@@ -719,7 +722,7 @@ if uploaded_report is not None:
                 if sold_qty <= 0:
                     continue
                     
-                # Ищем точное совпадение очищенного SAP
+                # Ищем точное строковое совпадение
                 match = db_df[db_df["clean_sap"] == file_sap]
                 
                 if not match.empty:
@@ -737,14 +740,12 @@ if uploaded_report is not None:
                         "Bestand (Neu)": new_qty
                     })
             
-            # 5. Выводим превью или диагностику
             if preview_list:
                 preview_df = pd.DataFrame(preview_list)
                 st.success(f"✅ Übereinstimmung gefunden! **{len(preview_df)} Artikel** im Bericht passen zur Datenbank.")
                 st.dataframe(preview_df[["SAP", "Name", "Bestand (Alt)", "Verkauft", "Bestand (Neu)"]])
                 
-                # Кнопка подтверждения записи в базу
-                if st.button("🚀 JETZT ÄNDERUNGEN IN SUPABASE SPEICHERN", type="primary", key="btn_commit_batch_final"):
+                if st.button("🚀 JETZT ÄNDERUNGEN IN SUPABASE SPEICHERN", type="primary", key="btn_commit_batch_pure"):
                     with st.spinner("Aktualisiere Datenbank..."):
                         for item in preview_list:
                             supabase.table("inventory").update({
@@ -755,9 +756,9 @@ if uploaded_report is not None:
                     st.balloons()
                     st.rerun()
             else:
-                st.warning("⚠ Keine Übereinstimmungen gefunden. Hier ist die Kontrolle der Formate:")
-                st.write("🔍 **Bereinigte SAPs aus Ihrer Datei:**", report_df["clean_file_sap"].head(3).tolist())
-                st.write("🔍 **Bereinigte SAPs aus der Datenbank:**", db_df["clean_sap"].head(3).tolist())
+                st.warning("⚠ Keine Übereinstimmungen. Schauen Sie auf die sauberen Werte:")
+                st.write("🔍 **Datei SAPs:**", report_df["clean_file_sap"].head(3).tolist())
+                st.write("🔍 **Datenbank SAPs:**", db_df["clean_sap"].head(3).tolist())
                 
     except Exception as e:
         st.error(f"Fehler beim Verarbeiten der Datei: {e}")
