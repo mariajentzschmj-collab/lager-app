@@ -656,7 +656,7 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten des Wareneingangs: {e}")
 
-# 5. AUTO-ABVERKAUF PER BERICHT (МАССОВЫЙ ВЫЧЕТ ПО ОТЧЕТУ О ПРОДАЖАХ)
+
 # ==========================================
 # MASSER-ABVERKAUF PER BERICHT (EXCEL/CSV)
 # ==========================================
