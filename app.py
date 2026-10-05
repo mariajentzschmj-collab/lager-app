@@ -656,112 +656,23 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten des Wareneingangs: {e}")
 
-# 🛒 АВТОМАТИЧЕСКИЙ АБВЕРКАУФ (ЧИСТАЯ СТРОКОВАЯ ОБРАБОТКА)
-st.subheader("🛒 Automatischer Abverkauf per Verkaufsbericht")
-st.markdown("Laden Sie den Verkaufsbericht hoch. Das System gleicht die Artikel ab und zeigt Ihnen eine Vorschau.")
+# 🔍 ДИАГНОСТИКА ПОЛНОЙ СТРУКТУРЫ БАЗЫ ДАННЫХ
+st.subheader("🔍 Diagnose: Spalten in Supabase")
 
-uploaded_report = st.file_uploader(
-    "Verkaufsbericht hochladen (Excel/CSV)",
-    type=["xlsx", "csv"],
-    key="smart_sales_upload_string_pure"
-)
-
-if uploaded_report is not None:
-    import pandas as pd
+try:
+    res = supabase.table("inventory").select("*").limit(5).execute()
+    db_data = res.data
     
-    try:
-        if uploaded_report.name.endswith(".csv"):
-            report_df = pd.read_csv(uploaded_report)
-        else:
-            report_df = pd.read_excel(uploaded_report)
-            
-        report_df.columns = [str(c).strip().lower() for c in report_df.columns]
+    if db_data:
+        import pandas as pd
+        db_sample_df = pd.DataFrame(db_data)
+        st.write("📋 **Доступные колонки в вашей таблице Supabase:**", list(db_sample_df.columns))
+        st.dataframe(db_sample_df.head(3))
+    else:
+        st.warning("Таблица inventory пуста.")
         
-        sap_candidates = [c for c in report_df.columns if 'sap' in c or 'artikel' in c or 'nummer' in c]
-        qty_candidates = [c for c in report_df.columns if 'quan' in c or 'menge' in c or 'anzahl' in c or 'stk' in c]
-        
-        col_sap = sap_candidates[0] if sap_candidates else report_df.columns[0]
-        col_qty = qty_candidates[0] if qty_candidates else (report_df.columns[1] if len(report_df.columns) > 1 else report_df.columns[0])
-        
-        st.info(f"📌 Erkannte Spalten -> SAP: **{col_sap}** | Menge: **{col_qty}**")
-        
-        res = supabase.table("inventory").select("id, sap, name, quantity").execute()
-        db_data = res.data
-        
-        if not db_data:
-            st.error("❌ Keine Daten in Supabase gefunden!")
-        else:
-            db_df = pd.DataFrame(db_data)
-            
-            # Функция строковой нормализации: переводим в текст, убираем .0 на конце и лишние пробелы
-            def normalize_sap(val):
-                if pd.isna(val):
-                    return ""
-                s = str(val).strip()
-                if s.endswith(".0"):
-                    s = s[:-2]
-                return s.strip()
-            
-            db_df["clean_sap"] = db_df["sap"].apply(normalize_sap)
-            report_df["clean_file_sap"] = report_df[col_sap].apply(normalize_sap)
-            
-            preview_list = []
-            
-            for _, row in report_df.iterrows():
-                file_sap = row["clean_file_sap"]
-                raw_q = row.get(col_qty)
-                
-                if not file_sap or file_sap == "nan":
-                    continue
-                    
-                try:
-                    sold_qty = float(raw_q)
-                except:
-                    continue
-                    
-                if sold_qty <= 0:
-                    continue
-                    
-                # Ищем точное строковое совпадение
-                match = db_df[db_df["clean_sap"] == file_sap]
-                
-                if not match.empty:
-                    item_id = match.iloc[0]["id"]
-                    item_name = match.iloc[0]["name"]
-                    old_qty = float(match.iloc[0]["quantity"] or 0)
-                    new_qty = max(0.0, old_qty - sold_qty)
-                    
-                    preview_list.append({
-                        "id": item_id,
-                        "SAP": file_sap,
-                        "Name": item_name,
-                        "Bestand (Alt)": old_qty,
-                        "Verkauft": sold_qty,
-                        "Bestand (Neu)": new_qty
-                    })
-            
-            if preview_list:
-                preview_df = pd.DataFrame(preview_list)
-                st.success(f"✅ Übereinstimmung gefunden! **{len(preview_df)} Artikel** im Bericht passen zur Datenbank.")
-                st.dataframe(preview_df[["SAP", "Name", "Bestand (Alt)", "Verkauft", "Bestand (Neu)"]])
-                
-                if st.button("🚀 JETZT ÄNDERUNGEN IN SUPABASE SPEICHERN", type="primary", key="btn_commit_batch_pure"):
-                    with st.spinner("Aktualisiere Datenbank..."):
-                        for item in preview_list:
-                            supabase.table("inventory").update({
-                                "quantity": item["Bestand (Neu)"]
-                            }).eq("id", item["id"]).execute()
-                            
-                    st.success("🎉 Alle Bestände wurden erfolgreich aktualisiert!")
-                    st.balloons()
-                    st.rerun()
-            else:
-                st.warning("⚠ Keine Übereinstimmungen. Schauen Sie auf die sauberen Werte:")
-                st.write("🔍 **Datei SAPs:**", report_df["clean_file_sap"].head(3).tolist())
-                st.write("🔍 **Datenbank SAPs:**", db_df["clean_sap"].head(3).tolist())
-                
-    except Exception as e:
-        st.error(f"Fehler beim Verarbeiten der Datei: {e}")
+except Exception as e:
+    st.error(f"Ошибка чтения структуры: {e}")
         
 # 6. KATALOG AUS DATEI HOCHLADEN (ВКЛЮЧАЯ 0 ЗНАЧЕНИЯ)
 elif action == "📁 Katalog aus Datei hochladen":
