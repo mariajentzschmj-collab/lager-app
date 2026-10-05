@@ -656,72 +656,72 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten des Wareneingangs: {e}")
 
-# 🔍 ДИАГНОСТИКА: Проверка совпадения артикулов (без записи)
-st.subheader("🔍 Diagnose: Warum wird nicht abgezogen?")
-st.markdown("Laden Sie die Datei hier hoch, um zu sehen, ob die SAP-Nummern mit der Datenbank übereinstimmen.")
+# 5. AUTOMATISCHER ABVERKAUF (TEST DER SUPABASE-ANTWORT)
+st.subheader("🛒 Automatischer Abverkauf (Supabase-Test)")
+st.markdown("Laden Sie den Bericht hoch. Wir prüfen direkt, ob Supabase die Änderung annimmt.")
 
-diag_file = st.file_uploader(
-    "Test-Datei hochladen",
+report_file = st.file_uploader(
+    "Verkaufsbericht hochladen",
     type=["xlsx", "csv"],
-    key="diagnostic_upload_pure"
+    key="supabase_test_upload"
 )
 
-if diag_file is not None:
+if report_file is not None:
     import pandas as pd
     
     try:
-        if diag_file.name.endswith(".csv"):
-            d_df = pd.read_csv(diag_file)
+        if report_file.name.endswith(".csv"):
+            report_df = pd.read_csv(report_file)
         else:
-            d_df = pd.read_excel(diag_file)
+            report_df = pd.read_excel(report_file)
             
-        # Приводим колонки к нижнему регистру
-        d_df.columns = [str(c).strip().lower() for c in d_df.columns]
+        report_df.columns = [str(c).strip().lower() for c in report_df.columns]
+        st.success(f"✅ Datei geladen! Zeilen: {len(report_df)}")
         
-        # Авто-поиск колонок
-        col_s = next((c for c in d_df.columns if 'sap' in c or 'artikel' in c), d_df.columns[0])
-        col_q = next((c for c in d_df.columns if 'quan' in c or 'menge' in c or 'anzahl' in c), d_df.columns[1] if len(d_df.columns) > 1 else col_s)
-        
-        st.write(f"📌 **Автоматически определенные колонки:** SAP = `{col_s}`, Menge = `{col_q}`")
-        
-        # Загружаем базу из Supabase для сравнения
-        res = supabase.table("inventory").select("sap, quantity, name").execute()
-        db_data = res.data
-        
-        if not db_data:
-            st.error("❌ Таблица в Supabase пуста или не отвечает!")
-        else:
-            db_df = pd.DataFrame(db_data)
+        if st.button("🚀 TEST: NUR 1 ARTIKEL AKTUALISIEREN", type="primary", key="btn_test_single"):
+            # Берем самую первую строку из загруженного файла
+            first_row = report_df.iloc[0]
+            raw_sap = first_row.get("sap", first_row.get("artikel", first_row.iloc[0]))
+            raw_qty = first_row.get("quantity", first_row.get("menge", first_row.iloc[1] if len(first_row) > 1 else 1))
             
-            # Чистим артикулы для точного сравнения
-            d_df["clean_file_sap"] = d_df[col_s].astype(str).str.split('.').str[0].str.strip()
-            db_df["clean_db_sap"] = db_df["sap"].astype(str).str.split('.').str[0].str.strip()
+            test_sap = str(raw_sap).split('.')[0].strip()
+            test_sold = float(raw_qty)
             
-            file_set = set(d_df["clean_file_sap"])
-            db_set = set(db_df["clean_db_sap"])
+            st.write(f"🔍 Suche in Supabase nach SAP: `{test_sap}` (Verkauf: {test_sold})")
             
-            common = file_set.intersection(db_set)
+            # Ищем этот артикул в Supabase
+            res = supabase.table("inventory").select("*").eq("sap", test_sap).execute()
             
-            # Выводим отчет на экран
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Артикулов в файле", len(file_set))
-                st.write("Примеры из файла:", list(file_set)[:3])
-            with col2:
-                st.metric("Совпало с базой", len(common))
-                st.write("Примеры в базе:", list(db_set)[:3])
+            if not res.data:
+                # Попробуем найти без точного совпадения типа (если в базе число или строка с точкой)
+                res_all = supabase.table("inventory").select("*").execute()
+                all_db = pd.DataFrame(res_all.data)
+                all_db["clean"] = all_db["sap"].astype(str).str.split('.').str[0].str.strip()
+                matched_row = all_db[all_db["clean"] == test_sap]
                 
-            if len(common) > 0:
-                st.success(f"✅ Отлично! Найдено совпадений: {len(common)}. Артикулы совпадают, проблема была в логике обновления.")
+                if not matched_row.empty:
+                    real_sap = matched_row.iloc[0]["sap"]
+                    current_qty = float(matched_row.iloc[0]["quantity"] or 0)
+                    new_qty = max(0.0, current_qty - test_sold)
+                    
+                    st.write(f"📌 Gefunden über bereinigten SAP-Wert! Echter SAP in DB: `{real_sap}`, Alter Bestand: {current_qty}")
+                    
+                    # Делаем обновление и смотрим ответ
+                    update_res = supabase.table("inventory").update({"quantity": new_qty}).eq("sap", real_sap).execute()
+                    st.success(f"✅ Antwort von Supabase: {update_res}")
+                else:
+                    st.error(f"❌ Artikel mit SAP `{test_sap}` wurde in der Datenbank absolut nicht gefunden!")
             else:
-                st.error("❌ НИ ОДИН артикул не совпал! Это значит, что формат номеров в файле отличается от формата в базе (например, в базе текст, а в файле числа со знаком `.0` или наоборот).")
+                current_qty = float(res.data[0]["quantity"] or 0)
+                new_qty = max(0.0, current_qty - test_sold)
+                st.write(f"📌 Direkt gefunden! Alter Bestand: {current_qty}, Neuer Bestand: {new_qty}")
                 
-            # Показываем таблицу для наглядности
-            st.write("📋 **Первые строки сравнения:**")
-            st.dataframe(d_df[[col_s, col_q, "clean_file_sap"]].head(5))
-            
+                # Обновляем
+                update_res = supabase.table("inventory").update({"quantity": new_qty}).eq("sap", test_sap).execute()
+                st.success(f"✅ Antwort von Supabase: {update_res}")
+                
     except Exception as e:
-        st.error(f"Fehler bei der Diagnose: {e}")
+        st.error(f"Fehler beim Testen: {e}")
         
 # 6. KATALOG AUS DATEI HOCHLADEN (ВКЛЮЧАЯ 0 ЗНАЧЕНИЯ)
 elif action == "📁 Katalog aus Datei hochladen":
