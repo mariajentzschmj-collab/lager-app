@@ -656,14 +656,14 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten des Wareneingangs: {e}")
 
-# 5. AUTOMATISCHER ABVERKAUF (TEST DER SUPABASE-ANTWORT)
-st.subheader("🛒 Automatischer Abverkauf (Supabase-Test)")
-st.markdown("Laden Sie den Bericht hoch. Wir prüfen direkt, ob Supabase die Änderung annimmt.")
+# 5. AUTOMATISCHER ABVERKAUF MIT SICHERER SUPABASE-AKTUALISIERUNG
+st.subheader("🛒 Automatischer Abverkauf per Verkaufsbericht")
+st.markdown("Laden Sie einen Verkaufsbericht hoch. Die Bestände werden direkt in Supabase aktualisiert.")
 
 report_file = st.file_uploader(
-    "Verkaufsbericht hochladen",
+    "Verkaufsbericht hochladen (Excel/CSV)",
     type=["xlsx", "csv"],
-    key="supabase_test_upload"
+    key="final_sales_upload"
 )
 
 if report_file is not None:
@@ -676,52 +676,86 @@ if report_file is not None:
             report_df = pd.read_excel(report_file)
             
         report_df.columns = [str(c).strip().lower() for c in report_df.columns]
-        st.success(f"✅ Datei geladen! Zeilen: {len(report_df)}")
+        st.success(f"✅ Datei geladen! Zeilen im Bericht: {len(report_df)}")
         
-        if st.button("🚀 TEST: NUR 1 ARTIKEL AKTUALISIEREN", type="primary", key="btn_test_single"):
-            # Берем самую первую строку из загруженного файла
-            first_row = report_df.iloc[0]
-            raw_sap = first_row.get("sap", first_row.get("artikel", first_row.iloc[0]))
-            raw_qty = first_row.get("quantity", first_row.get("menge", first_row.iloc[1] if len(first_row) > 1 else 1))
-            
-            test_sap = str(raw_sap).split('.')[0].strip()
-            test_sold = float(raw_qty)
-            
-            st.write(f"🔍 Suche in Supabase nach SAP: `{test_sap}` (Verkauf: {test_sold})")
-            
-            # Ищем этот артикул в Supabase
-            res = supabase.table("inventory").select("*").eq("sap", test_sap).execute()
-            
-            if not res.data:
-                # Попробуем найти без точного совпадения типа (если в базе число или строка с точкой)
-                res_all = supabase.table("inventory").select("*").execute()
-                all_db = pd.DataFrame(res_all.data)
-                all_db["clean"] = all_db["sap"].astype(str).str.split('.').str[0].str.strip()
-                matched_row = all_db[all_db["clean"] == test_sap]
+        # Авто-определение колонок
+        col_sap = next((c for c in report_df.columns if 'sap' in c or 'artikel' in c), report_df.columns[0])
+        col_qty = next((c for c in report_df.columns if 'quan' in c or 'menge' in c or 'anzahl' in c), report_df.columns[1] if len(report_df.columns) > 1 else report_df.columns[0])
+        
+        st.write(f"🔍 Erkannte Spalten: SAP = **{col_sap}**, Menge = **{col_qty}**")
+        
+        if st.button("🚀 BESTÄNDE JETZT AKTUALISIEREN & IN SUPABASE SPEICHERN", type="primary", key="btn_execute_real_update"):
+            with st.spinner("Aktualisiere Datenbank..."):
+                # 1. Загружаем свежие данные из Supabase
+                res = supabase.table("inventory").select("sap, quantity, name").execute()
+                db_data = res.data
                 
-                if not matched_row.empty:
-                    real_sap = matched_row.iloc[0]["sap"]
-                    current_qty = float(matched_row.iloc[0]["quantity"] or 0)
-                    new_qty = max(0.0, current_qty - test_sold)
-                    
-                    st.write(f"📌 Gefunden über bereinigten SAP-Wert! Echter SAP in DB: `{real_sap}`, Alter Bestand: {current_qty}")
-                    
-                    # Делаем обновление и смотрим ответ
-                    update_res = supabase.table("inventory").update({"quantity": new_qty}).eq("sap", real_sap).execute()
-                    st.success(f"✅ Antwort von Supabase: {update_res}")
+                if not db_data:
+                    st.error("❌ Keine Daten in Supabase gefunden!")
                 else:
-                    st.error(f"❌ Artikel mit SAP `{test_sap}` wurde in der Datenbank absolut nicht gefunden!")
-            else:
-                current_qty = float(res.data[0]["quantity"] or 0)
-                new_qty = max(0.0, current_qty - test_sold)
-                st.write(f"📌 Direkt gefunden! Alter Bestand: {current_qty}, Neuer Bestand: {new_qty}")
-                
-                # Обновляем
-                update_res = supabase.table("inventory").update({"quantity": new_qty}).eq("sap", test_sap).execute()
-                st.success(f"✅ Antwort von Supabase: {update_res}")
-                
+                    db_df = pd.DataFrame(db_data)
+                    db_df["clean_sap"] = db_df["sap"].astype(str).str.split('.').str[0].str.strip()
+                    
+                    success_count = 0
+                    not_found_count = 0
+                    error_count = 0
+                    log_messages = []
+                    
+                    # 2. Проходим по каждой строчке отчета
+                    for idx, row in report_df.iterrows():
+                        try:
+                            raw_s = row[col_sap]
+                            raw_q = row[col_qty]
+                            
+                            if pd.isna(raw_s) or pd.isna(raw_q):
+                                continue
+                                
+                            file_sap = str(raw_s).split('.')[0].strip()
+                            sold_qty = float(raw_q)
+                            
+                            if sold_qty <= 0 or not file_sap or file_sap == "nan":
+                                continue
+                                
+                            # Ищем совпадение в базе
+                            matched = db_df[db_df["clean_sap"] == file_sap]
+                            
+                            if not matched.empty:
+                                db_real_sap = matched.iloc[0]["sap"]
+                                current_qty = float(matched.iloc[0]["quantity"] or 0)
+                                item_name = matched.iloc[0].get("name", "Unbekannt")
+                                
+                                new_qty = max(0.0, current_qty - sold_qty)
+                                3
+                                # Прямой апдейт в Supabase
+                                update_res = supabase.table("inventory").update({
+                                    "quantity": new_qty
+                                }).eq("sap", db_real_sap).execute()
+                                
+                                success_count += 1
+                                log_messages.append(f"✅ {file_sap} ({item_name}): Alt {current_qty} - Verkauft {sold_qty} = Neu **{new_qty}**")
+                            else:
+                                not_found_count += 1
+                                log_messages.append(f"❌ Nicht in DB: SAP '{file_sap}'")
+                                
+                        except Exception as row_ex:
+                            error_count += 1
+                            log_messages.append(f"⚠ Fehler in Zeile {idx}: {row_ex}")
+                            
+                    st.success(f"🎉 Vorgang abgeschlossen! Aktualisiert: {success_count} | Nicht gefunden: {not_found_count} | Fehler: {error_count}")
+                    
+                    # Показываем детальный лог
+                    with st.expander("📋 Ausführliches Protokoll", expanded=True):
+                        for msg in log_messages:
+                            st.markdown(msg)
+                            
+                    # Принудительно очищаем кэш и перезагружаем страницу, чтобы новые цифры сразу появились в таблице
+                    st.balloons()
+                    st.cache_data.clear()
+                    if st.button("🔄 Seite neu laden, um neue Bestände zu sehen", type="secondary"):
+                        st.rerun()
+                        
     except Exception as e:
-        st.error(f"Fehler beim Testen: {e}")
+        st.error(f"Fehler beim Verarbeiten der Datei: {e}")
         
 # 6. KATALOG AUS DATEI HOCHLADEN (ВКЛЮЧАЯ 0 ЗНАЧЕНИЯ)
 elif action == "📁 Katalog aus Datei hochladen":
