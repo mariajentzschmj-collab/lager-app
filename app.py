@@ -656,76 +656,98 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten des Wareneingangs: {e}")
 
-# 5. AUTOMATISCHER ABVERKAUF PER BERICHT (DIREKT)
-# ==========================================
+# 5. AUTOMATISCHER ABVERKAUF PER BERICHT (ROBUST)
 st.subheader("🛒 Automatischer Abverkauf per Verkaufsbericht")
 st.markdown("Laden Sie einen Verkaufsbericht (Excel/CSV) hoch, um die Bestände automatisch zu reduzieren.")
 
 report_file = st.file_uploader(
     "Verkaufsbericht hochladen",
     type=["xlsx", "csv"],
-    key="direct_sales_report_upload"
+    key="robust_sales_upload"
 )
 
 if report_file is not None:
     import pandas as pd
     
     try:
+        # Читаем файл без догадок о шапке, чтобы не терять заголовки
         if report_file.name.endswith(".csv"):
             report_df = pd.read_csv(report_file)
         else:
             report_df = pd.read_excel(report_file)
             
-        st.success(f"Datei geladen! Zeilen: {len(report_df)}")
-        st.write("Spalten im Bericht:", list(report_df.columns))
+        # Приводим названия колонок к строкам и нижнему регистру
+        report_df.columns = [str(c).strip().lower() for c in report_df.columns]
         
-        # Показываем первые строчки для контроля
+        st.success(f"✅ Datei geladen! Zeilen: {len(report_df)}")
+        
+        # Автоматически находим колонку с SAP и количеством
+        sap_col = next((c for c in report_df.columns if "sap" in c or "art" in c or "code" in c), report_df.columns[0])
+        qty_col = next((c for c in report_df.columns if "menge" in c or "qty" in c or "anzahl" in c or "кол" in c), report_df.columns[1] if len(report_df.columns) > 1 else None)
+        
+        st.info( gefundene Spalten -> SAP: **{sap_col}** | Menge: **{qty_col}** )
         st.dataframe(report_df.head(3))
         
         if st.button("🚀 JETZT BESTÄNDE ABZIEHEN", type="primary"):
-            st.write("🔄 Prozess gestartet...")
-            
-            # Берем первые две колонки как SAP и Количество (самый надежный способ)
-            sap_col = report_df.columns[0]
-            qty_col = report_df.columns[1]
-            
-            updated_count = 0
-            not_found_count = 0
-            
-            for index, row in report_df.iterrows():
-                try:
-                    sap_val = str(row[sap_col]).split('.')[0].strip()
-                    sold_qty = float(row[qty_col])
-                    
-                    if sold_qty <= 0 or not sap_val or sap_val == "nan":
-                        continue
+            if not qty_col:
+                st.error("⚠ Konnte die Mengenspalte nicht finden!")
+            else:
+                updated_count = 0
+                not_found_count = 0
+                
+                # Создаем чистую копию базы для сопоставления
+                df_clean = df.copy()
+                df_clean["sap_clean"] = df_clean["sap"].astype(str).str.split('.').str[0].str.strip()
+                
+                log_messages = []
+                
+                for index, row in report_df.iterrows():
+                    try:
+                        raw_sap = row[sap_col]
+                        raw_qty = row[qty_col]
                         
-                    # Ищем товар в основном датафрейме df
-                    # Приводим к строке без точек
-                    match = df[df["sap"].astype(str).str.split('.').str[0].str.strip() == sap_val]
-                    
-                    if not match.empty:
-                        current_qty = float(match.iloc[0].get("quantity", 0) or 0)
-                        new_qty = max(0.0, current_qty - sold_qty)
-                        original_sap = match.iloc[0]["sap"]
+                        if pd.isna(raw_sap) or pd.isna(raw_qty):
+                            continue
+                            
+                        sap_val = str(raw_sap).split('.')[0].strip()
+                        sold_qty = float(raw_qty)
                         
-                        # Обновляем в Supabase
-                        supabase.table("inventory").update({
-                            "quantity": new_qty
-                        }).eq("sap", original_sap).execute()
+                        if sold_qty <= 0 or not sap_val or sap_val == "nan":
+                            continue
+                            
+                        # Ищем товар в базе
+                        match = df_clean[df_clean["sap_clean"] == sap_val]
                         
-                        updated_count += 1
-                    else:
-                        not_found_count += 1
-                except Exception as row_err:
-                    print(f"Fehler in Zeile {index}: {row_err}")
-                    
-            st.success(f"✅ Fertig! Aktualisiert: {updated_count}, Nicht gefunden: {not_found_count}")
-            st.balloons()
-            st.rerun()
-            
+                        if not match.empty:
+                            current_qty = float(match.iloc[0].get("quantity", 0) or 0)
+                            new_qty = max(0.0, current_qty - sold_qty)
+                            original_sap = match.iloc[0]["sap"]
+                            item_name = match.iloc[0].get("name", "Unbekannt")
+                            
+                            # Обновляем в Supabase
+                            supabase.table("inventory").update({
+                                "quantity": new_qty
+                            }).eq("sap", original_sap).execute()
+                            
+                            updated_count += 1
+                            log_messages.append(f"✔ SAP {sap_val} ({item_name}): {current_qty} - {sold_qty} = {new_qty}")
+                        else:
+                            not_found_count += 1
+                    except Exception as row_err:
+                        print(f"Fehler in Zeile {index}: {row_err}")
+                        
+                st.success(f"🎉 Abgeschlossen! Aktualisiert: {updated_count} Artikel. Nicht gefunden: {not_found_count}")
+                
+                with st.expander("📋 Details zum Abverkauf anzeigen"):
+                    for msg in log_messages:
+                        st.write(msg)
+                        
+                st.balloons()
+                st.rerun()
+                
     except Exception as e:
         st.error(f"Fehler beim Lesen der Datei: {e}")
+        
 # 6. KATALOG AUS DATEI HOCHLADEN (ВКЛЮЧАЯ 0 ЗНАЧЕНИЯ)
 elif action == "📁 Katalog aus Datei hochladen":
   is_manager = st.session_state.get("role") == "manager"
