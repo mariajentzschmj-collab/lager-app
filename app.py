@@ -1004,11 +1004,14 @@ if st.sidebar.button("🚀 Automatische Neuberechnung starten"):
       if not sap_val or sap_val == "nan":
         continue
 
-      current_qty = float(row.get("quantity", 0))
+      current_qty = float(row.get("quantity", 0) or 0)
 
-      # Vorherigen Bestand abrufen (falls noch nicht in Supabase vorhanden, aktuellen als Startwert nutzen)
-      last_qty = float(row.get("last_quantity", current_qty))
-
+      # Безопасно получаем прошлый остаток (если там None или пусто, берем текущий)
+      raw_last_qty = row.get("last_quantity")
+      if raw_last_qty is None or str(raw_last_qty).lower() == "none" or str(raw_last_qty) == "nan":
+          last_qty = current_qty
+      else:
+          last_qty = float(raw_last_qty)
       # Verbrauch: Wenn der vorige Bestand größer als der aktuelle ist, wurde Ware verkauft
       sold_amount = last_qty - current_qty
 
