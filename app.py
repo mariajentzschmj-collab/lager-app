@@ -656,21 +656,97 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten des Wareneingangs: {e}")
 
-# 🔍 ДИАГНОСТИКА СТРУКТУРЫ ФАЙЛА
-st.subheader("🔍 Diagnose: Spaltennamen prüfen")
-debug_file = st.file_uploader("Datei für Spalten-Check hochladen", type=["xlsx", "csv"], key="debug_columns_upload")
+# 🛒 РУЧНОЙ ВЫБОР КОЛОНОК И ТОЧНОЕ СПИСАНИЕ
+st.subheader("🛒 Automatischer Abverkauf (Manuelle Spaltenwahl)")
+st.markdown("Laden Sie den Bericht hoch und wählen Sie die Spalten selbst aus.")
 
-if debug_file is not None:
+report_file = st.file_uploader(
+    "Verkaufsbericht hochladen",
+    type=["xlsx", "csv"],
+    key="manual_select_upload"
+)
+
+if report_file is not None:
     import pandas as pd
+    
     try:
-        if debug_file.name.endswith(".csv"):
-            dbg_df = pd.read_csv(debug_file)
+        if report_file.name.endswith(".csv"):
+            report_df = pd.read_csv(report_file)
         else:
-            dbg_df = pd.read_excel(debug_file)
+            report_df = pd.read_excel(report_file)
             
-        st.write("📋 **Найденные колонки в вашем файле:**", list(dbg_df.columns))
-        st.write("📋 **Первые 3 строки файла:**")
-        st.dataframe(dbg_df.head(3))
+        st.success("✅ Datei erfolgreich geladen!")
+        
+        # Даем вам самим выбрать нужные колонки из выпадающего списка
+        col_list = list(report_df.columns)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            selected_sap_col = st.selectbox("Wählen Sie die SAP / Artikel-Spalte:", col_list, key="sel_sap")
+        with col2:
+            selected_qty_col = st.selectbox("Wählen Sie die Menge / Stück-Spalte:", col_list, key="sel_qty")
+            
+        # Показываем превью того, что выбрали
+        st.write("📋 **Vorschau der ausgewählten Daten:**")
+        preview_df = report_df[[selected_sap_col, selected_qty_col]].head(3)
+        st.dataframe(preview_df)
+        
+        if st.button("🚀 JETZT VERKAUF EINBUREN & SPEICHERN", type="primary", key="btn_manual_commit"):
+            with st.spinner("Aktualisiere Datenbank..."):
+                res = supabase.table("inventory").select("id, sap, quantity, name").execute()
+                db_data = res.data
+                
+                if not db_data:
+                    st.error("❌ Keine Daten in Supabase gefunden!")
+                else:
+                    db_df = pd.DataFrame(db_data)
+                    db_df["clean_sap"] = db_df["sap"].astype(str).str.split('.').str[0].str.strip()
+                    
+                    updated_count = 0
+                    not_found = []
+                    
+                    for _, row in report_df.iterrows():
+                        raw_s = row[selected_sap_col]
+                        raw_q = row[selected_qty_col]
+                        
+                        if pd.isna(raw_s) or pd.isna(raw_q):
+                            continue
+                            
+                        file_sap = str(raw_s).split('.').str[0].strip()
+                        try:
+                            sold_qty = float(raw_q)
+                        except:
+                            continue
+                            
+                        if sold_qty <= 0 or not file_sap:
+                            continue
+                            
+                        # Ищем совпадение в базе
+                        match = db_df[db_df["clean_sap"] == file_sap]
+                        
+                        if not match.empty:
+                            db_id = match.iloc[0]["id"]
+                            current_qty = float(match.iloc[0]["quantity"] or 0)
+                            
+                            new_qty = max(0.0, current_qty - sold_qty)
+                            
+                            # Обновляем в Supabase
+                            supabase.table("inventory").update({
+                                "quantity": new_qty
+                            }).eq("id", db_id).execute()
+                            
+                            updated_count += 1
+                        else:
+                            not_found.append(file_sap)
+                            
+                    if updated_count > 0:
+                        st.success(f"🎉 Erfolg! **{updated_count} Artikel** wurden erfolgreich in Supabase aktualisiert!")
+                        st.balloons()
+                    else:
+                        st.error("❌ Es wurde kein Artikel aktualisiert. Die SAP-Nummern aus der gewählten Spalte stimmen nicht mit der Datenbank übereین.")
+                        if not_found:
+                            st.write("🔍 **Diese SAP-Nummern aus Ihrer Datei wurden in DB nicht gefunden:**", not_found[:5])
+                            
     except Exception as e:
         st.error(f"Fehler: {e}")
         
