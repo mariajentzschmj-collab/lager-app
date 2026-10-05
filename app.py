@@ -656,21 +656,21 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten des Wareneingangs: {e}")
 
-# 🛒 АВТОМАТИЧЕСКИЙ АБВЕРКАУФ С ПРЕДПРОСМОТРОМ
+# 🛒 АВТОМАТИЧЕСКИЙ АБВЕРКАУФ (ПОЛНЫЙ И ИСПРАВЛЕННЫЙ БЛОК)
 st.subheader("🛒 Automatischer Abverkauf per Verkaufsbericht")
-st.markdown("Laden Sie den Verkaufsbericht hoch. Das System zeigt Ihnen eine Vorschau der berechneten Änderungen, bevor sie gespeichert werden.")
+st.markdown("Laden Sie den Verkaufsbericht hoch. Das System gleicht die Artikel ab und zeigt Ihnen eine Vorschau.")
 
 uploaded_report = st.file_uploader(
     "Verkaufsbericht hochladen (Excel/CSV)",
     type=["xlsx", "csv"],
-    key="smart_sales_upload_v3"
+    key="smart_sales_upload_final"
 )
 
 if uploaded_report is not None:
     import pandas as pd
     
     try:
-        # Чтение файла
+        # 1. Читаем файл отчета в зависимости от расширения
         if uploaded_report.name.endswith(".csv"):
             report_df = pd.read_csv(uploaded_report)
         else:
@@ -679,7 +679,7 @@ if uploaded_report is not None:
         # Приводим названия колонок к нижнему регистру
         report_df.columns = [str(c).strip().lower() for c in report_df.columns]
         
-        # Автоматический поиск нужных колонок
+        # Авто-определение колонок с SAP и количеством
         sap_candidates = [c for c in report_df.columns if 'sap' in c or 'artikel' in c or 'nummer' in c]
         qty_candidates = [c for c in report_df.columns if 'quan' in c or 'menge' in c or 'anzahl' in c or 'stk' in c]
         
@@ -688,7 +688,7 @@ if uploaded_report is not None:
         
         st.info(f"📌 Erkannte Spalten -> SAP: **{col_sap}** | Menge: **{col_qty}**")
         
-        # Загружаем данные из Supabase для сверки
+        # 2. Загружаем данные из Supabase
         res = supabase.table("inventory").select("id, sap, name, quantity").execute()
         db_data = res.data
         
@@ -696,28 +696,30 @@ if uploaded_report is not None:
             st.error("❌ Keine Daten in Supabase gefunden!")
         else:
             db_df = pd.DataFrame(db_data)
-            db_df["clean_sap"] = db_df["sap"].astype(str).str.split('.').str[0].str.strip()
+            
+            # 3. Жесткая очистка и приведение SAP к единому текстовому формату без точек и лишних пробелов
+            db_df["clean_sap"] = db_df["sap"].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
+            report_df["clean_file_sap"] = report_df[col_sap].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
             
             preview_list = []
             
-            # Собираем данные для предварительного просмотра
+            # 4. Проходим по строкам отчета и ищем совпадения
             for _, row in report_df.iterrows():
-                raw_s = row.get(col_sap)
+                file_sap = row["clean_file_sap"]
                 raw_q = row.get(col_qty)
                 
-                if pd.isna(raw_s) or pd.isna(raw_q):
+                if pd.isna(file_sap) or pd.isna(raw_q) or file_sap == "nan" or file_sap == "":
                     continue
                     
-                file_sap = str(raw_s).split('.')[0].strip()
                 try:
                     sold_qty = float(raw_q)
                 except:
                     continue
                     
-                if sold_qty <= 0 or not file_sap:
+                if sold_qty <= 0:
                     continue
                     
-                # Ищем совпадение в базе
+                # Ищем точное совпадение очищенного SAP
                 match = db_df[db_df["clean_sap"] == file_sap]
                 
                 if not match.empty:
@@ -735,27 +737,27 @@ if uploaded_report is not None:
                         "Bestand (Neu)": new_qty
                     })
             
+            # 5. Выводим превью или диагностику
             if preview_list:
                 preview_df = pd.DataFrame(preview_list)
-                st.success(f"✅ Es wurden **{len(preview_df)} Artikel** im Bericht gefunden, die mit der Datenbank übereinstimmen!")
-                
-                # Показываем таблицу перед сохранением
+                st.success(f"✅ Übereinstimmung gefunden! **{len(preview_df)} Artikel** im Bericht passen zur Datenbank.")
                 st.dataframe(preview_df[["SAP", "Name", "Bestand (Alt)", "Verkauft", "Bestand (Neu)"]])
                 
-                if st.button("🚀 JETZT ÄNDERUNGEN IN SUPABASE SPEICHERN", type="primary", key="btn_commit_batch"):
+                # Кнопка подтверждения записи в базу
+                if st.button("🚀 JETZT ÄNDERUNGEN IN SUPABASE SPEICHERN", type="primary", key="btn_commit_batch_final"):
                     with st.spinner("Aktualisiere Datenbank..."):
                         for item in preview_list:
                             supabase.table("inventory").update({
                                 "quantity": item["Bestand (Neu)"]
                             }).eq("id", item["id"]).execute()
                             
-                    st.success("🎉 Alle Bestände wurden erfolgreich in Supabase aktualisiert!")
+                    st.success("🎉 Alle Bestände wurden erfolgreich aktualisiert!")
                     st.balloons()
                     st.rerun()
             else:
-                st.warning("⚠ Keine Übereinstimmungen gefunden. Die SAP-Nummern im Bericht stimmen nicht mit der Datenbank überein.")
-                st.write("🔍 **Beispiele aus Ihrem Bericht (SAP):**", report_df[col_sap].head(3).tolist())
-                st.write("🔍 **Beispiele aus der Datenbank (SAP):**", db_df["clean_sap"].head(3).tolist())
+                st.warning("⚠ Keine Übereinstimmungen gefunden. Hier ist die Kontrolle der Formate:")
+                st.write("🔍 **Bereinigte SAPs aus Ihrer Datei:**", report_df["clean_file_sap"].head(3).tolist())
+                st.write("🔍 **Bereinigte SAPs aus der Datenbank:**", db_df["clean_sap"].head(3).tolist())
                 
     except Exception as e:
         st.error(f"Fehler beim Verarbeiten der Datei: {e}")
