@@ -656,20 +656,21 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten des Wareneingangs: {e}")
 
-# 5. AUTOMATISCHER ABVERKAUF MIT SICHERER SUPABASE-AKTUALISIERUNG
+# 🛒 AUTOMATISCHER ABVERKAUF PER BERICHT (AUTONOMER BLOCK)
 st.subheader("🛒 Automatischer Abverkauf per Verkaufsbericht")
-st.markdown("Laden Sie einen Verkaufsbericht hoch. Die Bestände werden direkt in Supabase aktualisiert.")
+st.markdown("Laden Sie einen Verkaufsbericht (Excel/CSV) hoch. Die Bestände werden direkt in Supabase aktualisiert.")
 
 report_file = st.file_uploader(
-    "Verkaufsbericht hochladen (Excel/CSV)",
+    "Verkaufsbericht hochladen",
     type=["xlsx", "csv"],
-    key="final_sales_upload"
+    key="autonomous_sales_upload"
 )
 
 if report_file is not None:
     import pandas as pd
     
     try:
+        # Читаем файл отчета
         if report_file.name.endswith(".csv"):
             report_df = pd.read_csv(report_file)
         else:
@@ -678,82 +679,77 @@ if report_file is not None:
         report_df.columns = [str(c).strip().lower() for c in report_df.columns]
         st.success(f"✅ Datei geladen! Zeilen im Bericht: {len(report_df)}")
         
-        # Авто-определение колонок
-        col_sap = next((c for c in report_df.columns if 'sap' in c or 'artikel' in c), report_df.columns[0])
-        col_qty = next((c for c in report_df.columns if 'quan' in c or 'menge' in c or 'anzahl' in c), report_df.columns[1] if len(report_df.columns) > 1 else report_df.columns[0])
+        # Показываем первые строки для контроля
+        st.dataframe(report_df.head(3))
         
-        st.write(f"🔍 Erkannte Spalten: SAP = **{col_sap}**, Menge = **{col_qty}**")
-        
-        if st.button("🚀 BESTÄNDE JETZT AKTUALISIEREN & IN SUPABASE SPEICHERN", type="primary", key="btn_execute_real_update"):
-            with st.spinner("Aktualisiere Datenbank..."):
-                # 1. Загружаем свежие данные из Supabase
-                res = supabase.table("inventory").select("sap, quantity, name").execute()
+        if st.button("🚀 JETZT BESTÄNDE IN SUPABASE AKTUALISIEREN", type="primary", key="btn_auto_update"):
+            with st.spinner("Verbinde mit Supabase und aktualisiere Bestände..."):
+                # 1. Загружаем актуальные данные напрямую из Supabase
+                res = supabase.table("inventory").select("id, sap, quantity, name").execute()
                 db_data = res.data
                 
                 if not db_data:
-                    st.error("❌ Keine Daten in Supabase gefunden!")
+                    st.error("❌ Keine Daten in der Supabase-Tabelle 'inventory' gefunden!")
                 else:
                     db_df = pd.DataFrame(db_data)
-                    db_df["clean_sap"] = db_df["sap"].astype(str).str.split('.').str[0].str.strip()
+                    # Очищаем SAP в базе от лишних точек и пробелов
+                    db_df["sap_clean"] = db_df["sap"].astype(str).str.split('.').str[0].str.strip()
                     
-                    success_count = 0
+                    updated_count = 0
                     not_found_count = 0
-                    error_count = 0
-                    log_messages = []
+                    log_msgs = []
                     
-                    # 2. Проходим по каждой строчке отчета
+                    # 2. Перебираем строки загруженного файла продаж
                     for idx, row in report_df.iterrows():
                         try:
-                            raw_s = row[col_sap]
-                            raw_q = row[col_qty]
+                            # Пытаемся найти колонки с SAP и количеством автоматически
+                            raw_sap = row.get("sap", row.get("artikel", row.iloc[0] if len(row) > 0 else None))
+                            raw_qty = row.get("quantity", row.get("menge", row.get("anzahl", row.iloc[1] if len(row) > 1 else 1)))
                             
-                            if pd.isna(raw_s) or pd.isna(raw_q):
+                            if pd.isna(raw_sap) or pd.isna(raw_qty):
                                 continue
                                 
-                            file_sap = str(raw_s).split('.')[0].strip()
-                            sold_qty = float(raw_q)
+                            file_sap = str(raw_sap).split('.').str[0].strip()
+                            sold_qty = float(raw_qty)
                             
                             if sold_qty <= 0 or not file_sap or file_sap == "nan":
                                 continue
                                 
                             # Ищем совпадение в базе
-                            matched = db_df[db_df["clean_sap"] == file_sap]
+                            match = db_df[db_df["sap_clean"] == file_sap]
                             
-                            if not matched.empty:
-                                db_real_sap = matched.iloc[0]["sap"]
-                                current_qty = float(matched.iloc[0]["quantity"] or 0)
-                                item_name = matched.iloc[0].get("name", "Unbekannt")
+                            if not match.empty:
+                                db_id = match.iloc[0]["id"]
+                                db_real_sap = match.iloc[0]["sap"]
+                                current_qty = float(match.iloc[0]["quantity"] or 0)
+                                item_name = match.iloc[0].get("name", "Unbekannt")
                                 
+                                # Считаем новый остаток (не меньше 0)
                                 new_qty = max(0.0, current_qty - sold_qty)
-                                3
-                                # Прямой апдейт в Supabase
-                                update_res = supabase.table("inventory").update({
-                                    "quantity": new_qty
-                                }).eq("sap", db_real_sap).execute()
                                 
-                                success_count += 1
-                                log_messages.append(f"✅ {file_sap} ({item_name}): Alt {current_qty} - Verkauft {sold_qty} = Neu **{new_qty}**")
+                                # 3. Отправляем обновление в Supabase по ID строки (самый надежный способ)
+                                supabase.table("inventory").update({
+                                    "quantity": new_qty
+                                }).eq("id", db_id).execute()
+                                
+                                updated_count += 1
+                                log_msgs.append(f"✔ SAP {file_sap} ({item_name}): Alt {current_qty} - Verkauft {sold_qty} = Neu **{new_qty}**")
                             else:
                                 not_found_count += 1
-                                log_messages.append(f"❌ Nicht in DB: SAP '{file_sap}'")
+                                log_msgs.append(f"❌ Nicht gefunden in DB: SAP '{file_sap}'")
                                 
-                        except Exception as row_ex:
-                            error_count += 1
-                            log_messages.append(f"⚠ Fehler in Zeile {idx}: {row_ex}")
+                        except Exception as row_err:
+                            log_msgs.append(f"⚠ Fehler in Zeile {idx}: {row_err}")
                             
-                    st.success(f"🎉 Vorgang abgeschlossen! Aktualisiert: {success_count} | Nicht gefunden: {not_found_count} | Fehler: {error_count}")
+                    st.success(f"🎉 Fertig! Aktualisiert: {updated_count} Artikel | Nicht gefunden: {not_found_count}")
                     
-                    # Показываем детальный лог
-                    with st.expander("📋 Ausführliches Protokoll", expanded=True):
-                        for msg in log_messages:
-                            st.markdown(msg)
+                    # Выводим подробный отчет
+                    with st.expander("📋 Detail-Protokoll des Abverkaufs", expanded=True):
+                        for m in log_msgs:
+                            st.markdown(m)
                             
-                    # Принудительно очищаем кэш и перезагружаем страницу, чтобы новые цифры сразу появились в таблице
                     st.balloons()
-                    st.cache_data.clear()
-                    if st.button("🔄 Seite neu laden, um neue Bestände zu sehen", type="secondary"):
-                        st.rerun()
-                        
+                    
     except Exception as e:
         st.error(f"Fehler beim Verarbeiten der Datei: {e}")
         
