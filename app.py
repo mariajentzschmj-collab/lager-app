@@ -656,90 +656,72 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten des Wareneingangs: {e}")
 
-# 5. AUTOMATISCHER ABVERKAUF PER BERICHT (DIREKT AUS SUPABASE)
-st.subheader("🛒 Automatischer Abverkauf per Verkaufsbericht")
-st.markdown("Laden Sie einen Verkaufsbericht (Excel/CSV) hoch, um die Bestände automatisch zu reduzieren.")
+# 🔍 ДИАГНОСТИКА: Проверка совпадения артикулов (без записи)
+st.subheader("🔍 Diagnose: Warum wird nicht abgezogen?")
+st.markdown("Laden Sie die Datei hier hoch, um zu sehen, ob die SAP-Nummern mit der Datenbank übereinstimmen.")
 
-report_file = st.file_uploader(
-    "Verkaufsbericht hochladen",
+diag_file = st.file_uploader(
+    "Test-Datei hochladen",
     type=["xlsx", "csv"],
-    key="direct_sales_upload"
+    key="diagnostic_upload_pure"
 )
 
-if report_file is not None:
+if diag_file is not None:
     import pandas as pd
     
     try:
-        if report_file.name.endswith(".csv"):
-            report_df = pd.read_csv(report_file)
+        if diag_file.name.endswith(".csv"):
+            d_df = pd.read_csv(diag_file)
         else:
-            report_df = pd.read_excel(report_file)
+            d_df = pd.read_excel(diag_file)
             
-        report_df.columns = [str(c).strip().lower() for c in report_df.columns]
-        st.success(f"✅ Datei geladen! Zeilen: {len(report_df)}")
-        st.dataframe(report_df.head(3))
+        # Приводим колонки к нижнему регистру
+        d_df.columns = [str(c).strip().lower() for c in d_df.columns]
         
-        if st.button("🚀 JETZT BESTÄNDE ABZIEHEN", type="primary", key="btn_direct_exec"):
-            # Загружаем актуальные данные напрямую из Supabase прямо в момент нажатия
-            response = supabase.table("inventory").select("sap, quantity, name").execute()
-            db_data = response.data
+        # Авто-поиск колонок
+        col_s = next((c for c in d_df.columns if 'sap' in c or 'artikel' in c), d_df.columns[0])
+        col_q = next((c for c in d_df.columns if 'quan' in c or 'menge' in c or 'anzahl' in c), d_df.columns[1] if len(d_df.columns) > 1 else col_s)
+        
+        st.write(f"📌 **Автоматически определенные колонки:** SAP = `{col_s}`, Menge = `{col_q}`")
+        
+        # Загружаем базу из Supabase для сравнения
+        res = supabase.table("inventory").select("sap, quantity, name").execute()
+        db_data = res.data
+        
+        if not db_data:
+            st.error("❌ Таблица в Supabase пуста или не отвечает!")
+        else:
+            db_df = pd.DataFrame(db_data)
             
-            if not db_data:
-                st.error("❌ Fehler: Keine Daten in der Supabase-Tabelle 'inventory' gefunden!")
+            # Чистим артикулы для точного сравнения
+            d_df["clean_file_sap"] = d_df[col_s].astype(str).str.split('.').str[0].str.strip()
+            db_df["clean_db_sap"] = db_df["sap"].astype(str).str.split('.').str[0].str.strip()
+            
+            file_set = set(d_df["clean_file_sap"])
+            db_set = set(db_df["clean_db_sap"])
+            
+            common = file_set.intersection(db_set)
+            
+            # Выводим отчет на экран
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Артикулов в файле", len(file_set))
+                st.write("Примеры из файла:", list(file_set)[:3])
+            with col2:
+                st.metric("Совпало с базой", len(common))
+                st.write("Примеры в базе:", list(db_set)[:3])
+                
+            if len(common) > 0:
+                st.success(f"✅ Отлично! Найдено совпадений: {len(common)}. Артикулы совпадают, проблема была в логике обновления.")
             else:
-                db_df = pd.DataFrame(db_data)
-                db_df["sap_clean"] = db_df["sap"].astype(str).str.split('.').str[0].str.strip()
+                st.error("❌ НИ ОДИН артикул не совпал! Это значит, что формат номеров в файле отличается от формата в базе (например, в базе текст, а в файле числа со знаком `.0` или наоборот).")
                 
-                updated_count = 0
-                not_found_count = 0
-                log_messages = []
-                
-                for index, row in report_df.iterrows():
-                    try:
-                        raw_sap = row.get("sap", row.get("artikel", row.iloc[0] if len(row) > 0 else None))
-                        raw_qty = row.get("quantity", row.get("menge", row.get("anzahl", row.iloc[1] if len(row) > 1 else 1)))
-                        
-                        if pd.isna(raw_sap) or pd.isna(raw_qty):
-                            continue
-                            
-                        sap_val = str(raw_sap).split('.')[0].strip()
-                        sold_qty = float(raw_qty)
-                        
-                        if sold_qty <= 0 or not sap_val or sap_val == "nan":
-                            continue
-                            
-                        match = db_df[db_df["sap_clean"] == sap_val]
-                        
-                        if not match.empty:
-                            current_qty = float(match.iloc[0].get("quantity", 0) or 0)
-                            new_qty = max(0.0, current_qty - sold_qty)
-                            original_sap = match.iloc[0]["sap"]
-                            item_name = match.iloc[0].get("name", "Unbekannt")
-                            
-                            # Обновляем Supabase
-                            supabase.table("inventory").update({
-                                "quantity": new_qty
-                            }).eq("sap", original_sap).execute()
-                            
-                            updated_count += 1
-                            log_messages.append(f"✔ Aktualisiert: SAP {sap_val} ({item_name}) | Alt: {current_qty} - Verkauft: {sold_qty} = Neu: {new_qty}")
-                        else:
-                            not_found_count += 1
-                            log_messages.append(f"❌ Nicht in DB gefunden: SAP '{sap_val}'")
-                            
-                    except Exception as row_err:
-                        log_messages.append(f"⚠ Fehler in Zeile {index}: {row_err}")
-                        
-                st.success(f"🎉 Fertig! Aktualisiert: {updated_count} | Nicht gefunden: {not_found_count}")
-                st.session_state["last_sales_log"] = log_messages
-                
+            # Показываем таблицу для наглядности
+            st.write("📋 **Первые строки сравнения:**")
+            st.dataframe(d_df[[col_s, col_q, "clean_file_sap"]].head(5))
+            
     except Exception as e:
-        st.error(f"Fehler beim Lesen der Datei: {e}")
-
-if "last_sales_log" in st.session_state:
-    with st.expander("📋 Protokoll des letzten Abverkaufs", expanded=True):
-        for msg in st.session_state["last_sales_log"]:
-            st.write(msg)
+        st.error(f"Fehler bei der Diagnose: {e}")
         
 # 6. KATALOG AUS DATEI HOCHLADEN (ВКЛЮЧАЯ 0 ЗНАЧЕНИЯ)
 elif action == "📁 Katalog aus Datei hochladen":
