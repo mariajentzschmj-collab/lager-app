@@ -656,14 +656,14 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten des Wareneingangs: {e}")
 
-# 5. AUTOMATISCHER ABVERKAUF PER BERICHT (OHNE AUTO-RELOAD)
+# 5. AUTOMATISCHER ABVERKAUF PER BERICHT (DIREKT AUS SUPABASE)
 st.subheader("🛒 Automatischer Abverkauf per Verkaufsbericht")
 st.markdown("Laden Sie einen Verkaufsbericht (Excel/CSV) hoch, um die Bestände automatisch zu reduzieren.")
 
 report_file = st.file_uploader(
     "Verkaufsbericht hochladen",
     type=["xlsx", "csv"],
-    key="stable_sales_upload"
+    key="direct_sales_upload"
 )
 
 if report_file is not None:
@@ -679,58 +679,63 @@ if report_file is not None:
         st.success(f"✅ Datei geladen! Zeilen: {len(report_df)}")
         st.dataframe(report_df.head(3))
         
-        if st.button("🚀 JETZT BESTÄNDE ABZIEHEN", type="primary", key="btn_stable_exec"):
-            updated_count = 0
-            not_found_count = 0
-            log_messages = []
+        if st.button("🚀 JETZT BESTÄNDE ABZIEHEN", type="primary", key="btn_direct_exec"):
+            # Загружаем актуальные данные напрямую из Supabase прямо в момент нажатия
+            response = supabase.table("inventory").select("sap, quantity, name").execute()
+            db_data = response.data
             
-            df_clean = df.copy()
-            df_clean["sap_clean"] = df_clean["sap"].astype(str).str.split('.').str[0].str.strip()
-            
-            for index, row in report_df.iterrows():
-                try:
-                    raw_sap = row.get("sap", row.get("artikel", row.iloc[0] if len(row) > 0 else None))
-                    raw_qty = row.get("quantity", row.get("menge", row.get("anzahl", row.iloc[1] if len(row) > 1 else 1)))
-                    
-                    if pd.isna(raw_sap) or pd.isna(raw_qty):
-                        continue
+            if not db_data:
+                st.error("❌ Fehler: Keine Daten in der Supabase-Tabelle 'inventory' gefunden!")
+            else:
+                db_df = pd.DataFrame(db_data)
+                db_df["sap_clean"] = db_df["sap"].astype(str).str.split('.').str[0].str.strip()
+                
+                updated_count = 0
+                not_found_count = 0
+                log_messages = []
+                
+                for index, row in report_df.iterrows():
+                    try:
+                        raw_sap = row.get("sap", row.get("artikel", row.iloc[0] if len(row) > 0 else None))
+                        raw_qty = row.get("quantity", row.get("menge", row.get("anzahl", row.iloc[1] if len(row) > 1 else 1)))
                         
-                    sap_val = str(raw_sap).split('.')[0].strip()
-                    sold_qty = float(raw_qty)
-                    
-                    if sold_qty <= 0 or not sap_val or sap_val == "nan":
-                        continue
+                        if pd.isna(raw_sap) or pd.isna(raw_qty):
+                            continue
+                            
+                        sap_val = str(raw_sap).split('.')[0].strip()
+                        sold_qty = float(raw_qty)
                         
-                    match = df_clean[df_clean["sap_clean"] == sap_val]
-                    
-                    if not match.empty:
-                        current_qty = float(match.iloc[0].get("quantity", 0) or 0)
-                        new_qty = max(0.0, current_qty - sold_qty)
-                        original_sap = match.iloc[0]["sap"]
-                        item_name = match.iloc[0].get("name", "Unbekannt")
+                        if sold_qty <= 0 or not sap_val or sap_val == "nan":
+                            continue
+                            
+                        match = db_df[db_df["sap_clean"] == sap_val]
                         
-                        supabase.table("inventory").update({
-                            "quantity": new_qty
-                        }).eq("sap", original_sap).execute()
+                        if not match.empty:
+                            current_qty = float(match.iloc[0].get("quantity", 0) or 0)
+                            new_qty = max(0.0, current_qty - sold_qty)
+                            original_sap = match.iloc[0]["sap"]
+                            item_name = match.iloc[0].get("name", "Unbekannt")
+                            
+                            # Обновляем Supabase
+                            supabase.table("inventory").update({
+                                "quantity": new_qty
+                            }).eq("sap", original_sap).execute()
+                            
+                            updated_count += 1
+                            log_messages.append(f"✔ Aktualisiert: SAP {sap_val} ({item_name}) | Alt: {current_qty} - Verkauft: {sold_qty} = Neu: {new_qty}")
+                        else:
+                            not_found_count += 1
+                            log_messages.append(f"❌ Nicht in DB gefunden: SAP '{sap_val}'")
+                            
+                    except Exception as row_err:
+                        log_messages.append(f"⚠ Fehler in Zeile {index}: {row_err}")
                         
-                        updated_count += 1
-                        log_messages.append(f"✔ Aktualisiert: SAP {sap_val} ({item_name}) | Alt: {current_qty} - Verkauft: {sold_qty} = Neu: {new_qty}")
-                    else:
-                        not_found_count += 1
-                        log_messages.append(f"❌ Nicht in DB gefunden: SAP '{sap_val}'")
-                        
-                except Exception as row_err:
-                    log_messages.append(f"⚠ Fehler in Zeile {index}: {row_err}")
-                    
-            st.success(f"🎉 Fertig! Aktualisiert: {updated_count} | Nicht gefunden: {not_found_count}")
-            
-            # Сохраняем логи в session_state, чтобы они не пропадали при кликах
-            st.session_state["last_sales_log"] = log_messages
-            
+                st.success(f"🎉 Fertig! Aktualisiert: {updated_count} | Nicht gefunden: {not_found_count}")
+                st.session_state["last_sales_log"] = log_messages
+                
     except Exception as e:
         st.error(f"Fehler beim Lesen der Datei: {e}")
 
-# Всегда показываем последний лог, если он есть, чтобы вы могли его прочитать
 if "last_sales_log" in st.session_state:
     with st.expander("📋 Protokoll des letzten Abverkaufs", expanded=True):
         for msg in st.session_state["last_sales_log"]:
