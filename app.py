@@ -656,13 +656,13 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten des Wareneingangs: {e}")
 
-# 5. AUTO-ABVERKAUF PER BERICHT (МАССОВЫЙ ВЫЧЕТ ПО ОТЧЕТУ О ПРОДАЖАХ)
+# 5. AUTO-ABVERKAUF PER BERICHT (МАССОВЫЙ ВЫЧЕТ С ПРЕДПРОСМОТРОМ И ЗАЩИТОЙ ОТ ДВОЙНОГО СПИСАНИЯ)
 elif action == "📥 Auto-Abverkauf per Bericht":
     is_manager = st.session_state.get("role") == "manager"
     st.header("📥 Automatischer Abverkauf per Verkaufsbericht" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
-    st.markdown("Laden Sie einen Verkaufsbericht (Excel/CSV) hoch, der verkaufte Mengen enthält. Die verkauften Mengen werden **automatisch vom Bestand abgezogen**.")
+    st.markdown("Laden Sie einen Verkaufsbericht hoch. Das System zeigt eine Vorschau, damit Sie genau prüfen können, was abgezogen wird.")
 
-    sales_file = st.file_uploader("Verkaufsbericht auswählen", type=["xlsx", "csv"], key="sales_report_upload")
+    sales_file = st.file_uploader("Verkaufsbericht auswählen", type=["xlsx", "csv"], key="sales_report_upload_safe")
 
     if sales_file is not None:
         try:
@@ -671,10 +671,9 @@ elif action == "📥 Auto-Abverkauf per Bericht":
             else:
                 report_df = pd.read_excel(sales_file)
 
-            # Нормализуем названия колонок в файле (в нижний регистр без пробелов)
+            # Нормализуем названия колонок
             report_df.columns = [str(c).strip().lower() for c in report_df.columns]
 
-            # Автоматически ищем колонку с SAP и количеством
             sap_candidates = [c for c in report_df.columns if 'sap' in c or 'artikel' in c or 'nummer' in c]
             qty_candidates = [c for c in report_df.columns if 'quan' in c or 'menge' in c or 'anzahl' in c or 'stk' in c]
 
@@ -682,12 +681,20 @@ elif action == "📥 Auto-Abverkauf per Bericht":
             col_qty = qty_candidates[0] if qty_candidates else (report_df.columns[1] if len(report_df.columns) > 1 else report_df.columns[0])
 
             st.info(f"📌 Erkannte Spalten -> SAP: **{col_sap}** | Menge: **{col_qty}**")
-            st.write("📋 Vorschau des Verkaufsberichts:", report_df.head())
 
-            if st.button("🚀 Abverkauf buchen / Freigabe anfordern"):
-                items_sold = []
+            # Загружаем текущие данные из базы для сверки
+            res_db = supabase.table("inventory").select("id, sap, name, quantity").execute()
+            db_data = res_db.data
+            db_df = pd.DataFrame(db_data) if db_data else pd.DataFrame()
+
+            if db_df.empty:
+                st.warning("⚠ Die Datenbank ist leer. Bitte zuerst den Katalog hochladen.")
+            else:
+                # Готовим предпросмотр изменений
+                preview_list = []
+                
                 for _, row in report_df.iterrows():
-                    sap_val = str(row.get(col_sap, ""))
+                    sap_val = str(row.get(col_sap, "")).strip()
                     if not sap_val or sap_val == "nan":
                         continue
                     try:
@@ -696,32 +703,51 @@ elif action == "📥 Auto-Abverkauf per Bericht":
                         sold_val = 0
 
                     if sold_val > 0:
-                        items_sold.append({
-                            "sap": sap_val.strip(),
-                            "sold_qty": sold_val
-                        })
-
-                if is_manager:
-                    if supabase is not None:
-                        success_count = 0
-                        for item in items_sold:
-                            art = item["sap"]
-                            sold_qty = item["sold_qty"]
+                        # Ищем товар в базе
+                        match = db_df[db_df["sap"].astype(str).str.strip() == sap_val]
+                        if not match.empty:
+                            item_id = match.iloc[0]["id"]
+                            item_name = match.iloc[0]["name"]
+                            old_q = float(match.iloc[0]["quantity"] or 0)
+                            new_q = max(0.0, old_q - sold_val)
                             
-                            # Ищем товар в базе Supabase по колонке sap
-                            existing = supabase.table("inventory").select("*").eq("sap", art).execute()
-                            if existing.data:
-                                curr_q = int(float(existing.data[0].get("quantity", 0) or 0))
-                                new_q = max(0, curr_q - sold_qty)
-                                supabase.table("inventory").update({"quantity": new_q}).eq("sap", art).execute()
-                                success_count += 1
-                                
-                        st.success(f"✅ Verkaufsbericht erfolgreich verarbeitet! **{success_count} Artikel** aktualisiert.")
-                        st.balloons()
-                        st.rerun()
+                            preview_list.append({
+                                "id": item_id,
+                                "SAP": sap_val,
+                                "Name": item_name,
+                                "Bestand (Alt)": old_q,
+                                "Verkauft": sold_val,
+                                "Bestand (Neu)": new_q
+                            })
+
+                if preview_list:
+                    preview_df = pd.DataFrame(preview_list)
+                    st.write("🔍 **Vorschau der Lageränderungen (Kontrolle):**")
+                    st.dataframe(preview_df[["SAP", "Name", "Bestand (Alt)", "Verkauft", "Bestand (Neu)"]])
+
+                    # Чекбокс-подтверждение, чтобы случайно не нажать
+                    confirmed = st.checkbox("✅ Ich habe die Daten geprüft und bestätige das Abוח (Sписание)", key="confirm_sale_checkbox")
+
+                    if confirmed:
+                        if st.button("🚀 JETZT VERBINDLICH BUCHUNG ABSCHLIESSEN", type="primary", key="btn_commit_sales"):
+                            if is_manager:
+                                success_count = 0
+                                for item in preview_list:
+                                    supabase.table("inventory").update({
+                                        "quantity": item["Bestand (Neu)"]
+                                    }).eq("id", item["id"]).execute()
+                                    success_count += 1
+                                    
+                                st.success(f"🎉 Erfolgreich! **{success_count} Artikel** wurden vom Bestand abgezogen.")
+                                st.balloons()
+                                st.rerun()
+                            else:
+                                payload = {"items": [{"sap": i["SAP"], "sold_qty": i["Verkauft"]} for i in preview_list]}
+                                request_manager_approval("bulk_sales_report", payload)
+                    else:
+                        st.info("💡 Setzen Sie das Häkchen oben bei der Bestätigung, um den Buchungs-Button zu aktivieren.")
                 else:
-                    payload = {"items": items_sold}
-                    request_manager_approval("bulk_sales_report", payload)
+                    st.warning("⚠ Keine übereinstimmenden Artikel zwischen Datei und Datenbank gefunden.")
 
         except Exception as e:
             st.error(f"Fehler beim Verarbeiten des Berichts: {e}")
