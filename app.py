@@ -656,14 +656,14 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten des Wareneingangs: {e}")
 
-# 5. AUTOMATISCHER ABVERKAUF PER BERICHT (DIREKT & EINFACH)
+# 5. AUTOMATISCHER ABVERKAUF PER BERICHT (DIAGNOSE)
 st.subheader("🛒 Automatischer Abverkauf per Verkaufsbericht")
 st.markdown("Laden Sie einen Verkaufsbericht (Excel/CSV) hoch, um die Bestände automatisch zu reduzieren.")
 
 report_file = st.file_uploader(
     "Verkaufsbericht hochladen",
     type=["xlsx", "csv"],
-    key="simple_sales_upload"
+    key="diag_sales_upload"
 )
 
 if report_file is not None:
@@ -676,28 +676,29 @@ if report_file is not None:
             report_df = pd.read_excel(report_file)
             
         st.success(f"✅ Datei geladen! Zeilen: {len(report_df)}")
+        
+        # Выводим точные названия всех колонок на экран для проверки
+        st.write("🔍 **Spalten im DataFrame:**", list(report_df.columns))
         st.dataframe(report_df.head(3))
         
-        if st.button("🚀 JETZT BESTÄNDE ABZIEHEN", type="primary", key="btn_simple_exec"):
-            # Берем первые две колонки независимо от их названий
-            sap_col = report_df.columns[0]
-            qty_col = report_df.columns[1]
-            
-            st.write(f"📌 Verwende Spalte 0 (SAP): `{sap_col}` und Spalte 1 (Menge): `{qty_col}`")
-            
+        # Даем возможность вручную выбрать нужные колонки из выпадающих списков
+        col_names = list(report_df.columns)
+        selected_sap_col = st.selectbox("Wählen Sie die SAP-Spalte:", col_names, index=0)
+        selected_qty_col = st.selectbox("Wählen Sie die Mengen-Spalte:", col_names, index=min(1, len(col_names)-1))
+        
+        if st.button("🚀 JETZT BESTÄNDE ABZIEHEN (MANUELL)", type="primary", key="btn_diag_exec"):
             updated_count = 0
             not_found_count = 0
             log_messages = []
             
             for index, row in report_df.iterrows():
                 try:
-                    raw_sap = row[sap_col]
-                    raw_qty = row[qty_col]
+                    raw_sap = row[selected_sap_col]
+                    raw_qty = row[selected_qty_col]
                     
                     if pd.isna(raw_sap) or pd.isna(raw_qty):
                         continue
                         
-                    # Чистим артикул SAP
                     sap_val = str(raw_sap).split('.')[0].strip()
                     sold_qty = float(raw_qty)
                     
@@ -705,6 +706,7 @@ if report_file is not None:
                         continue
                         
                     # Ищем совпадение в текущем датафрейме df
+                    match_found = False
                     for idx, db_row in df.iterrows():
                         db_sap = str(db_row.get("sap", "")).split('.')[0].strip()
                         if db_sap == sap_val:
@@ -720,8 +722,10 @@ if report_file is not None:
                             
                             updated_count += 1
                             log_messages.append(f"✔ Aktualisiert: SAP {sap_val} ({item_name}) | Alt: {current_qty} - Verkauft: {sold_qty} = Neu: {new_qty}")
+                            match_found = True
                             break
-                    else:
+                            
+                    if not match_found:
                         not_found_count += 1
                         log_messages.append(f"❌ Nicht in DB gefunden: SAP '{sap_val}'")
                         
