@@ -656,24 +656,50 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten des Wareneingangs: {e}")
 
-# 🔍 ДИАГНОСТИКА ПОЛНОЙ СТРУКТУРЫ БАЗЫ ДАННЫХ
-st.subheader("🔍 Diagnose: Spalten in Supabase")
+# 5. AUTO-ABVERKAUF PER BERICHT (МАССОВЫЙ ВЫЧЕТ ПО ОТЧЕТУ О ПРОДАЖАХ)
+elif action == "📥 Auto-Abverkauf per Bericht":
+  is_manager = st.session_state.get("role") == "manager"
+  st.header("📥 Automatischer Abverkauf per Verkaufsbericht" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
+  st.markdown("Laden Sie einen Verkaufsbericht (Excel/CSV) hoch, der verkaufte Mengen enthält. Die verkauften Mengen werden **automatisch vom Bestand abgezogen**.")
 
-try:
-    res = supabase.table("inventory").select("*").limit(5).execute()
-    db_data = res.data
-    
-    if db_data:
-        import pandas as pd
-        db_sample_df = pd.DataFrame(db_data)
-        st.write("📋 **Доступные колонки в вашей таблице Supabase:**", list(db_sample_df.columns))
-        st.dataframe(db_sample_df.head(3))
-    else:
-        st.warning("Таблица inventory пуста.")
-        
-except Exception as e:
-    st.error(f"Ошибка чтения структуры: {e}")
-        
+  sales_file = st.file_uploader("Verkaufsbericht auswählen", type=["xlsx", "csv"], key="sales_report_upload")
+
+  if sales_file is not None:
+    try:
+      if sales_file.name.endswith(".csv"):
+        report_df = pd.read_csv(sales_file)
+      else:
+        report_df = pd.read_excel(sales_file)
+
+      st.write("📋 Vorschau des Verkaufsberichts:", report_df.head())
+
+      if st.button("🚀 Abverkauf buchen / Freigabe anfordern"):
+        items_sold = []
+        for _, row in report_df.iterrows():
+          items_sold.append({
+              "article": str(row.get("article", row.get("sap", ""))),
+              "sold_qty": int(row.get("quantity", row.get("sold_qty", 0)))
+          })
+
+        if is_manager:
+          if supabase is not None:
+            for item in items_sold:
+              art = item["article"]
+              sold_qty = item["sold_qty"]
+              existing = supabase.table("inventory").select("*").eq("article", art).execute()
+              if existing.data:
+                curr_q = int(existing.data[0].get("quantity", 0))
+                new_q = max(0, curr_q - sold_qty)
+                supabase.table("inventory").update({"quantity": new_q}).eq("article", art).execute()
+            st.success("✅ Verkaufsbericht erfolgreich verarbeitet und Bestände reduziert!")
+            st.rerun()
+        else:
+          payload = {"items": items_sold}
+          request_manager_approval("bulk_sales_report", payload)
+
+    except Exception as e:
+      st.error(f"Fehler beim Verarbeiten des Berichts: {e}")
+
 # 6. KATALOG AUS DATEI HOCHLADEN (ВКЛЮЧАЯ 0 ЗНАЧЕНИЯ)
 elif action == "📁 Katalog aus Datei hochladen":
   is_manager = st.session_state.get("role") == "manager"
