@@ -656,39 +656,41 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten des Wareneingangs: {e}")
 
-# 5. AUTOMATISCHER ABVERKAUF PER BERICHT (FIXED HEADER)
+# 5. AUTOMATISCHER ABVERKAUF PER BERICHT (OHNE AUTO-RELOAD)
 st.subheader("🛒 Automatischer Abverkauf per Verkaufsbericht")
 st.markdown("Laden Sie einen Verkaufsbericht (Excel/CSV) hoch, um die Bestände automatisch zu reduzieren.")
 
 report_file = st.file_uploader(
     "Verkaufsbericht hochladen",
     type=["xlsx", "csv"],
-    key="fixed_sales_upload"
+    key="stable_sales_upload"
 )
 
 if report_file is not None:
     import pandas as pd
     
     try:
-        # Читаем без заголовков (header=None), чтобы первая строка с артикулами не терялась
         if report_file.name.endswith(".csv"):
-            report_df = pd.read_csv(report_file, header=None)
+            report_df = pd.read_csv(report_file)
         else:
-            report_df = pd.read_excel(report_file, header=None)
+            report_df = pd.read_excel(report_file)
             
+        report_df.columns = [str(c).strip().lower() for c in report_df.columns]
         st.success(f"✅ Datei geladen! Zeilen: {len(report_df)}")
         st.dataframe(report_df.head(3))
         
-        if st.button("🚀 JETZT BESTÄNDE ABZIEHEN", type="primary", key="btn_fixed_exec"):
+        if st.button("🚀 JETZT BESTÄNDE ABZIEHEN", type="primary", key="btn_stable_exec"):
             updated_count = 0
             not_found_count = 0
             log_messages = []
             
-            # Колонка 0 — это SAP, Колонка 1 — это количество
+            df_clean = df.copy()
+            df_clean["sap_clean"] = df_clean["sap"].astype(str).str.split('.').str[0].str.strip()
+            
             for index, row in report_df.iterrows():
                 try:
-                    raw_sap = row.iloc[0]
-                    raw_qty = row.iloc[1]
+                    raw_sap = row.get("sap", row.get("artikel", row.iloc[0] if len(row) > 0 else None))
+                    raw_qty = row.get("quantity", row.get("menge", row.get("anzahl", row.iloc[1] if len(row) > 1 else 1)))
                     
                     if pd.isna(raw_sap) or pd.isna(raw_qty):
                         continue
@@ -699,26 +701,21 @@ if report_file is not None:
                     if sold_qty <= 0 or not sap_val or sap_val == "nan":
                         continue
                         
-                    match_found = False
-                    for idx, db_row in df.iterrows():
-                        db_sap = str(db_row.get("sap", "")).split('.')[0].strip()
-                        if db_sap == sap_val:
-                            current_qty = float(db_row.get("quantity", 0) or 0)
-                            new_qty = max(0.0, current_qty - sold_qty)
-                            original_sap = db_row["sap"]
-                            item_name = db_row.get("name", "Unbekannt")
-                            
-                            # Обновляем Supabase
-                            supabase.table("inventory").update({
-                                "quantity": new_qty
-                            }).eq("sap", original_sap).execute()
-                            
-                            updated_count += 1
-                            log_messages.append(f"✔ Aktualisiert: SAP {sap_val} ({item_name}) | Alt: {current_qty} - Verkauft: {sold_qty} = Neu: {new_qty}")
-                            match_found = True
-                            break
-                            
-                    if not match_found:
+                    match = df_clean[df_clean["sap_clean"] == sap_val]
+                    
+                    if not match.empty:
+                        current_qty = float(match.iloc[0].get("quantity", 0) or 0)
+                        new_qty = max(0.0, current_qty - sold_qty)
+                        original_sap = match.iloc[0]["sap"]
+                        item_name = match.iloc[0].get("name", "Unbekannt")
+                        
+                        supabase.table("inventory").update({
+                            "quantity": new_qty
+                        }).eq("sap", original_sap).execute()
+                        
+                        updated_count += 1
+                        log_messages.append(f"✔ Aktualisiert: SAP {sap_val} ({item_name}) | Alt: {current_qty} - Verkauft: {sold_qty} = Neu: {new_qty}")
+                    else:
                         not_found_count += 1
                         log_messages.append(f"❌ Nicht in DB gefunden: SAP '{sap_val}'")
                         
@@ -727,15 +724,17 @@ if report_file is not None:
                     
             st.success(f"🎉 Fertig! Aktualisiert: {updated_count} | Nicht gefunden: {not_found_count}")
             
-            with st.expander("📋 Protokoll anzeigen", expanded=True):
-                for msg in log_messages:
-                    st.write(msg)
-                    
-            st.balloons()
-            st.rerun()
+            # Сохраняем логи в session_state, чтобы они не пропадали при кликах
+            st.session_state["last_sales_log"] = log_messages
             
     except Exception as e:
         st.error(f"Fehler beim Lesen der Datei: {e}")
+
+# Всегда показываем последний лог, если он есть, чтобы вы могли его прочитать
+if "last_sales_log" in st.session_state:
+    with st.expander("📋 Protokoll des letzten Abverkaufs", expanded=True):
+        for msg in st.session_state["last_sales_log"]:
+            st.write(msg)
         
 # 6. KATALOG AUS DATEI HOCHLADEN (ВКЛЮЧАЯ 0 ЗНАЧЕНИЯ)
 elif action == "📁 Katalog aus Datei hochladen":
