@@ -670,22 +670,18 @@ if report_file is not None:
     import pandas as pd
     
     try:
-        # Читаем файл без догадок о шапке, чтобы не терять заголовки
         if report_file.name.endswith(".csv"):
             report_df = pd.read_csv(report_file)
         else:
             report_df = pd.read_excel(report_file)
             
-        # Приводим названия колонок к строкам и нижнему регистру
         report_df.columns = [str(c).strip().lower() for c in report_df.columns]
-        
         st.success(f"✅ Datei geladen! Zeilen: {len(report_df)}")
         
-        # Автоматически находим колонку с SAP и количеством
         sap_col = next((c for c in report_df.columns if "sap" in c or "art" in c or "code" in c), report_df.columns[0])
         qty_col = next((c for c in report_df.columns if "menge" in c or "qty" in c or "anzahl" in c or "кол" in c), report_df.columns[1] if len(report_df.columns) > 1 else None)
         
-        st.info( gefundene Spalten -> SAP: **{sap_col}** | Menge: **{qty_col}** )
+        st.info(f"Gefundene Spalten -> SAP: **{sap_col}** | Menge: **{qty_col}**")
         st.dataframe(report_df.head(3))
         
         if st.button("🚀 JETZT BESTÄNDE ABZIEHEN", type="primary"):
@@ -695,7 +691,6 @@ if report_file is not None:
                 updated_count = 0
                 not_found_count = 0
                 
-                # Создаем чистую копию базы для сопоставления
                 df_clean = df.copy()
                 df_clean["sap_clean"] = df_clean["sap"].astype(str).str.split('.').str[0].str.strip()
                 
@@ -715,7 +710,6 @@ if report_file is not None:
                         if sold_qty <= 0 or not sap_val or sap_val == "nan":
                             continue
                             
-                        # Ищем товар в базе
                         match = df_clean[df_clean["sap_clean"] == sap_val]
                         
                         if not match.empty:
@@ -724,7 +718,6 @@ if report_file is not None:
                             original_sap = match.iloc[0]["sap"]
                             item_name = match.iloc[0].get("name", "Unbekannt")
                             
-                            # Обновляем в Supabase
                             supabase.table("inventory").update({
                                 "quantity": new_qty
                             }).eq("sap", original_sap).execute()
@@ -733,6 +726,8 @@ if report_file is not None:
                             log_messages.append(f"✔ SAP {sap_val} ({item_name}): {current_qty} - {sold_qty} = {new_qty}")
                         else:
                             not_found_count += 1
+                            log_messages.append(f"❌ SAP {sap_val}: Nicht in der Datenbank gefunden")
+                            
                     except Exception as row_err:
                         print(f"Fehler in Zeile {index}: {row_err}")
                         
