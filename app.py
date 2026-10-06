@@ -1114,50 +1114,48 @@ st.sidebar.markdown(
 )
 
 # Загрузка файла с продажами через сайдбар
-sales_file = st.sidebar.file_uploader(
-    "Verkaufsbericht hochladen (Excel / CSV)", type=["xlsx", "csv"], key="sales_report_fix"
+sales_file_custom = st.sidebar.file_uploader(
+    "Verkaufsbericht hochladen (Excel / CSV)", type=["xlsx", "csv"], key="sales_report_custom_unique"
 )
 
-if sales_file is not None:
+if sales_file_custom is not None:
   try:
     import pandas as pd
 
-    if sales_file.name.endswith(".csv"):
-      sales_report_df = pd.read_csv(sales_file)
+    if sales_file_custom.name.endswith(".csv"):
+      df_custom = pd.read_csv(sales_file_custom)
     else:
-      sales_report_df = pd.read_excel(sales_file)
+      df_custom = pd.read_excel(sales_file_custom)
 
-    st.sidebar.success("✅ Verkaufsbericht erfolgreich geladen!")
+    st.sidebar.success("✅ Berichtsdatei erfolgreich gelesen!")
 
-    # Нормализуем названия колонок
-    sales_report_df.columns = [str(c).strip().lower() for c in sales_report_df.columns]
+    df_custom.columns = [str(c).strip().lower() for c in df_custom.columns]
 
-    qty_col = st.sidebar.selectbox(
-        "Spalte für verkaufte Menge", sales_report_df.columns, key="q_col_fix"
+    q_column = st.sidebar.selectbox(
+        "Spalte für verkaufte Menge", df_custom.columns, key="q_col_custom_unique"
     )
-    price_col = st.sidebar.selectbox(
+    p_column = st.sidebar.selectbox(
         "Spalte für tatsächlichen Verkaufspreis",
-        sales_report_df.columns,
-        key="p_col_fix",
+        df_custom.columns,
+        key="p_col_custom_unique",
     )
 
-    if st.sidebar.button("🧮 Nettoumsatz jetzt berechnen", key="btn_calc_fix"):
-      total_brutto = 0.0
-      row_count = 0
+    if st.sidebar.button("🧮 JETZT SUMME BERECHNEN", key="btn_calc_custom_unique"):
+      sum_brutto = 0.0
+      rows_checked = 0
 
-      for _, row in sales_report_df.iterrows():
+      for _, row_item in df_custom.iterrows():
         try:
-          # Получаем количество
-          q_val = row[qty_col]
-          qty_sold = float(str(q_val).replace(',', '.')) if pd.notna(q_val) else 0.0
+          # Количество
+          q_val = row_item[q_column]
+          q_num = float(str(q_val).replace(',', '.')) if pd.notna(q_val) else 0.0
 
-          # Получаем цену из файла
-          p_val = row[price_col]
+          # Цена из файла
+          p_val = row_item[p_column]
           if pd.isna(p_val):
-            actual_price = 0.0
+            p_num = 0.0
           else:
             p_str = str(p_val).strip().replace('€', '').replace(' ', '')
-            # Обработка точек и запятых для европейского формата
             if ',' in p_str and '.' in p_str:
               if p_str.find('.') < p_str.find(','):
                 p_str = p_str.replace('.', '').replace(',', '.')
@@ -1165,27 +1163,26 @@ if sales_file is not None:
                 p_str = p_str.replace(',', '')
             elif ',' in p_str:
               p_str = p_str.replace(',', '.')
-            
-            actual_price = float(p_str)
+            p_num = float(p_str)
 
-          total_brutto += qty_sold * actual_price
-          row_count += 1
-        except Exception:
+          sum_brutto += q_num * p_num
+          rows_checked += 1
+        except:
           continue
 
-      total_netto = total_brutto / 1.19
+      sum_netto = sum_brutto / 1.19
 
-      st.sidebar.info(f"📊 Обработано строк: {row_count}")
+      st.sidebar.info(f"✔ Zeilen berechnet: {rows_checked}")
       st.sidebar.markdown("---")
       st.sidebar.metric(
-          label="Bruttoumsatz (inkl. 19% MwSt.)", value=f"{total_brutto:,.2f} €"
+          label="Echter Bruttoumsatz (aus Datei)", value=f"{sum_brutto:,.2f} €"
       )
       st.sidebar.metric(
-          label="Nettoumsatz (exkl. 19% MwSt.)", value=f"{total_netto:,.2f} €"
+          label="Echter Nettoumsatz (aus Datei)", value=f"{sum_netto:,.2f} €"
       )
 
-  except Exception as e:
-    st.sidebar.error(f"⚠ Fehler beim Lesen der Datei: {e}")
+  except Exception as err:
+    st.sidebar.error(f"⚠ Fehler: {err}")
     # ==========================================
 # MONATLICHE UMSATZANFRAGE (MIT 19% MWST.-ABZUG)
 # ==========================================
