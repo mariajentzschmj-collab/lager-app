@@ -583,7 +583,9 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
           }
           request_manager_approval("reduce_stock", payload)
 
-# 4. MASSEN-WARENEINGANG (ZUWACHS) ПО SAP — МАССОВЫЙ ПРИХОД ПО SAP С АВТОМАТИЧЕСКИМ ПРИБАВЛЕНИЕМ
+# ==========================================
+# 4. MASSEN-WARENEINGANG (ZUWACHS) ПО SAP — МАССОВЫЙ ПРИХОД ПО SAP
+# ==========================================
 elif action == "📥 Massen-Wareneingang (Zuwachs)":
   is_manager = st.session_state.get("role") == "manager"
   st.header("📥 Massen-Wareneingang (Bestand erhöhen nach SAP)" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
@@ -611,32 +613,75 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
       else:
         inc_df = pd.read_excel(incoming_file)
 
+      # Нормализуем названия колонок (приводим к нижнему регистру и убираем пробелы)
+      inc_df.columns = [str(c).strip().lower() for c in inc_df.columns]
+
       st.write("📋 Vorschau des Wareneingangs:", inc_df.head())
 
       if st.button("🚀 Wareneingang buchen / Freigabe anfordern"):
         items_incoming = []
         for _, row in inc_df.iterrows():
+          # Безопасная очистка SAP и артикулов от плавающих точек (.0)
+          def clean_str(val):
+            if pd.isna(val):
+              return ""
+            s = str(val).strip()
+            if s.endswith(".0"):
+              s = s[:-2]
+            return s
+
+          sap_val = clean_str(row.get("sap", ""))
+          art_val = clean_str(row.get("article", ""))
+          bc_val = clean_str(row.get("barcode", ""))
+
+          # Безопасный парсинг количества
+          try:
+            qty_val = int(float(str(row.get("quantity", 0)).replace(',', '.')))
+          except:
+            qty_val = 0
+
+          # Безопасный парсинг цены
+          try:
+            p_raw = str(row.get("preis", 0)).replace('€', '').replace(' ', '').replace(',', '.')
+            preis_val = float(p_raw) if p_raw else 0.0
+          except:
+            preis_val = 0.0
+
           items_incoming.append({
-              "sap": str(row.get("sap", "")),
+              "sap": sap_val,
               "name": str(row.get("name", "Unbekannter Artikel")),
               "brand": str(row.get("brand", "Iittala")),
-              "incoming_qty": int(row.get("quantity", 0)),
-              "preis": float(row.get("preis", 0.0)),
-              "article": str(row.get("article", "")),
-              "barcode": str(row.get("barcode", ""))
+              "incoming_qty": qty_val,
+              "preis": preis_val,
+              "article": art_val,
+              "barcode": bc_val
           })
 
         if is_manager:
           if supabase is not None:
+            success_count = 0
             for item in items_incoming:
               sap_num = item["sap"]
               inc_qty = item["incoming_qty"]
+              
+              if not sap_num:
+                continue
+
+              # Ищем товар в базе строго по SAP
               existing = supabase.table("inventory").select("*").eq("sap", sap_num).execute()
+              
               if existing.data:
                 curr_q = int(existing.data[0].get("quantity", 0))
                 new_q = curr_q + inc_qty
-                supabase.table("inventory").update({"quantity": new_q}).eq("sap", sap_num).execute()
+                # Обновляем только количество (и цену/название, если они указаны в файле)
+                update_data = {"quantity": new_q}
+                if item["preis"] > 0:
+                  update_data["preis"] = item["preis"]
+                
+                supabase.table("inventory").update(update_data).eq("sap", sap_num).execute()
+                success_count += 1
               else:
+                # Если товара нет, создаем новый
                 new_item = {
                     "sap": sap_num,
                     "name": item["name"],
@@ -646,8 +691,10 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
                     "article": item["article"],
                     "barcode": item["barcode"]
                 }
-                supabase.table("inventory").upsert(new_item, on_conflict="article").execute()
-            st.success("✅ Wareneingang nach SAP erfolgreich gebucht und Bestände automatisch erhöht!")
+                supabase.table("inventory").insert(new_item).execute()
+                success_count += 1
+
+            st.success(f"✅ Wareneingang erfolgreich gebucht! {success_count} Position(en) aktualisiert/hinzugefügt.")
             st.rerun()
         else:
           payload = {"items": items_incoming}
@@ -655,7 +702,6 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
 
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten des Wareneingangs: {e}")
-
 # 5. AUTO-ABVERKAUF PER BERICHT (МАССОВЫЙ ВЫЧЕТ ПО ОТЧЕТУ О ПРОДАЖАХ)
 elif action == "📥 Auto-Abverkauf per Bericht":
     is_manager = st.session_state.get("role") == "manager"
