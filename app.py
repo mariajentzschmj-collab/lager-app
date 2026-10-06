@@ -1075,51 +1075,74 @@ if st.sidebar.button("🚀 Automatische Neuberechnung starten"):
     )
     st.rerun()
 
-   if st.sidebar.button("🧮 Nettoumsatz jetzt berechnen"):
+    # ==========================================
+# UMSATZBERECHNUNG AUS SEPARATEM VERKAUFSBERICHT
+# ==========================================
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("💶 Detaillierter Nettoumsatz (nach Verkaufspreis)")
+
+st.sidebar.markdown(
+    "Laden Sie eine Verkaufsliste hoch (mit verkaufter Menge und tatsächlichem"
+    " Verkaufspreis), um den Nettoumsatz zu berechnen."
+)
+
+# Загрузка файла с продажами через сайдбар
+sales_file = st.sidebar.file_uploader(
+    "Verkaufsbericht hochladen (Excel / CSV)", type=["xlsx", "csv"], key="sales_report"
+)
+
+if sales_file is not None:
+  try:
+    import pandas as pd
+
+    if sales_file.name.endswith(".csv"):
+      sales_report_df = pd.read_csv(sales_file)
+    else:
+      sales_report_df = pd.read_excel(sales_file)
+
+    st.sidebar.success("✅ Verkaufsbericht erfolgreich geladen!")
+
+    # Выбор колонок, если они называются иначе
+    # Ожидаем колонки с количеством (z.B. 'quantity' / 'Menge') и ценой (z.B. 'price' / 'Preis')
+    st.sidebar.write("Vorschau der Spalten:", list(sales_report_df.columns))
+
+    qty_col = st.sidebar.selectbox(
+        "Spalte für verkaufte Menge", sales_report_df.columns, key="q_col"
+    )
+    price_col = st.sidebar.selectbox(
+        "Spalte für tatsächlichen Verkaufspreis",
+        sales_report_df.columns,
+        key="p_col",
+    )
+
+    if st.sidebar.button("🧮 Nettoumsatz jetzt berechnen"):
       total_brutto = 0.0
-      valid_rows = 0
 
       for _, row in sales_report_df.iterrows():
         try:
-          # 1. Безопасный парсинг количества (заменяем запятую на точку на всякий случай)
-          q_raw = row[qty_col]
-          if pd.isna(q_raw):
-            qty_sold = 0.0
-          else:
-            q_str = str(q_raw).strip().replace(',', '.')
-            qty_sold = float(q_str)
-
-          # 2. Безопасный парсинг цены из файла (убираем '€', пробелы, обрабатываем запятые)
-          p_raw = row[price_col]
-          if pd.isna(p_raw):
-            actual_price = 0.0
-          else:
-            p_str = str(p_raw).strip().replace('€', '').replace(' ', '')
-            if ',' in p_str and '.' in p_str:
-              if p_str.find('.') < p_str.find(','):
-                p_str = p_str.replace('.', '').replace(',', '.')
-              else:
-                p_str = p_str.replace(',', '')
-            elif ',' in p_str:
-              p_str = p_str.replace(',', '.')
-            actual_price = float(p_str)
-
+          qty_sold = float(row[qty_col]) if pd.notna(row[qty_col]) else 0.0
+          actual_price = (
+              float(row[price_col]) if pd.notna(row[price_col]) else 0.0
+          )
           total_brutto += qty_sold * actual_price
-          valid_rows += 1
-        except Exception:
+        except:
           continue
 
       # Вычет 19% немецкого налога (MwSt.)
+      # Формула: Чистая выручка (Netto) = Брутто / 1.19
       total_netto = total_brutto / 1.19
 
       st.sidebar.markdown("---")
-      st.sidebar.markdown(f"📌 **Verarbeitete Zeilen:** {valid_rows}")
       st.sidebar.metric(
           label="Bruttoumsatz (inkl. 19% MwSt.)", value=f"{total_brutto:,.2f} €"
       )
       st.sidebar.metric(
           label="Nettoumsatz (exkl. 19% MwSt.)", value=f"{total_netto:,.2f} €"
       )
+
+  except Exception as e:
+    st.sidebar.error(f"⚠ Fehler beim Lesen der Datei: {e}")
     # ==========================================
 # MONATLICHE UMSATZANFRAGE (MIT 19% MWST.-ABZUG)
 # ==========================================
