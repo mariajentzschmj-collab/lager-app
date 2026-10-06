@@ -656,13 +656,13 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten des Wareneingangs: {e}")
 
-# 5. AUTO-ABVERKAUF PER BERICHT (МАССОВЫЙ ВЫЧЕТ С ПРЕДПРОСМОТРОМ И ЗАЩИТОЙ ОТ ДВОЙНОГО СПИСАНИЯ)
+# 5. AUTO-ABVERKAUF PER BERICHT (МАССОВЫЙ ВЫЧЕТ ПО ОТЧЕТУ О ПРОДАЖАХ)
 elif action == "📥 Auto-Abverkauf per Bericht":
     is_manager = st.session_state.get("role") == "manager"
     st.header("📥 Automatischer Abverkauf per Verkaufsbericht" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
-    st.markdown("Laden Sie einen Verkaufsbericht hoch. Das System zeigt eine Vorschau, damit Sie genau prüfen können, was abgezogen wird.")
+    st.markdown("Laden Sie einen Verkaufsbericht (Excel/CSV) hoch, der verkaufte Mengen enthält. Die verkauften Mengen werden **automatisch vom Bestand abgezogen**.")
 
-    sales_file = st.file_uploader("Verkaufsbericht auswählen", type=["xlsx", "csv"], key="sales_report_upload_safe")
+    sales_file = st.file_uploader("Verkaufsbericht auswählen", type=["xlsx", "csv"], key="sales_report_upload")
 
     if sales_file is not None:
         try:
@@ -671,9 +671,10 @@ elif action == "📥 Auto-Abverkauf per Bericht":
             else:
                 report_df = pd.read_excel(sales_file)
 
-            # Нормализуем названия колонок
+            # Нормализуем названия колонок в файле (в нижний регистр без пробелов)
             report_df.columns = [str(c).strip().lower() for c in report_df.columns]
 
+            # Автоматически ищем колонку с SAP и количеством
             sap_candidates = [c for c in report_df.columns if 'sap' in c or 'artikel' in c or 'nummer' in c]
             qty_candidates = [c for c in report_df.columns if 'quan' in c or 'menge' in c or 'anzahl' in c or 'stk' in c]
 
@@ -681,20 +682,12 @@ elif action == "📥 Auto-Abverkauf per Bericht":
             col_qty = qty_candidates[0] if qty_candidates else (report_df.columns[1] if len(report_df.columns) > 1 else report_df.columns[0])
 
             st.info(f"📌 Erkannte Spalten -> SAP: **{col_sap}** | Menge: **{col_qty}**")
+            st.write("📋 Vorschau des Verkaufsberichts:", report_df.head())
 
-            # Загружаем текущие данные из базы для сверки
-            res_db = supabase.table("inventory").select("id, sap, name, quantity").execute()
-            db_data = res_db.data
-            db_df = pd.DataFrame(db_data) if db_data else pd.DataFrame()
-
-            if db_df.empty:
-                st.warning("⚠ Die Datenbank ist leer. Bitte zuerst den Katalog hochladen.")
-            else:
-                # Готовим предпросмотр изменений
-                preview_list = []
-                
+            if st.button("🚀 Abverkauf buchen / Freigabe anfordern"):
+                items_sold = []
                 for _, row in report_df.iterrows():
-                    sap_val = str(row.get(col_sap, "")).strip()
+                    sap_val = str(row.get(col_sap, ""))
                     if not sap_val or sap_val == "nan":
                         continue
                     try:
@@ -703,51 +696,32 @@ elif action == "📥 Auto-Abverkauf per Bericht":
                         sold_val = 0
 
                     if sold_val > 0:
-                        # Ищем товар в базе
-                        match = db_df[db_df["sap"].astype(str).str.strip() == sap_val]
-                        if not match.empty:
-                            item_id = match.iloc[0]["id"]
-                            item_name = match.iloc[0]["name"]
-                            old_q = float(match.iloc[0]["quantity"] or 0)
-                            new_q = max(0.0, old_q - sold_val)
+                        items_sold.append({
+                            "sap": sap_val.strip(),
+                            "sold_qty": sold_val
+                        })
+
+                if is_manager:
+                    if supabase is not None:
+                        success_count = 0
+                        for item in items_sold:
+                            art = item["sap"]
+                            sold_qty = item["sold_qty"]
                             
-                            preview_list.append({
-                                "id": item_id,
-                                "SAP": sap_val,
-                                "Name": item_name,
-                                "Bestand (Alt)": old_q,
-                                "Verkauft": sold_val,
-                                "Bestand (Neu)": new_q
-                            })
-
-                if preview_list:
-                    preview_df = pd.DataFrame(preview_list)
-                    st.write("🔍 **Vorschau der Lageränderungen (Kontrolle):**")
-                    st.dataframe(preview_df[["SAP", "Name", "Bestand (Alt)", "Verkauft", "Bestand (Neu)"]])
-
-                    # Чекбокс-подтверждение, чтобы случайно не нажать
-                    confirmed = st.checkbox("✅ Ich habe die Daten geprüft und bestätige das Abוח (Sписание)", key="confirm_sale_checkbox")
-
-                    if confirmed:
-                        if st.button("🚀 JETZT VERBINDLICH BUCHUNG ABSCHLIESSEN", type="primary", key="btn_commit_sales"):
-                            if is_manager:
-                                success_count = 0
-                                for item in preview_list:
-                                    supabase.table("inventory").update({
-                                        "quantity": item["Bestand (Neu)"]
-                                    }).eq("id", item["id"]).execute()
-                                    success_count += 1
-                                    
-                                st.success(f"🎉 Erfolgreich! **{success_count} Artikel** wurden vom Bestand abgezogen.")
-                                st.balloons()
-                                st.rerun()
-                            else:
-                                payload = {"items": [{"sap": i["SAP"], "sold_qty": i["Verkauft"]} for i in preview_list]}
-                                request_manager_approval("bulk_sales_report", payload)
-                    else:
-                        st.info("💡 Setzen Sie das Häkchen oben bei der Bestätigung, um den Buchungs-Button zu aktivieren.")
+                            # Ищем товар в базе Supabase по колонке sap
+                            existing = supabase.table("inventory").select("*").eq("sap", art).execute()
+                            if existing.data:
+                                curr_q = int(float(existing.data[0].get("quantity", 0) or 0))
+                                new_q = max(0, curr_q - sold_qty)
+                                supabase.table("inventory").update({"quantity": new_q}).eq("sap", art).execute()
+                                success_count += 1
+                                
+                        st.success(f"✅ Verkaufsbericht erfolgreich verarbeitet! **{success_count} Artikel** aktualisiert.")
+                        st.balloons()
+                        st.rerun()
                 else:
-                    st.warning("⚠ Keine übereinstimmenden Artikel zwischen Datei und Datenbank gefunden.")
+                    payload = {"items": items_sold}
+                    request_manager_approval("bulk_sales_report", payload)
 
         except Exception as e:
             st.error(f"Fehler beim Verarbeiten des Berichts: {e}")
@@ -1101,7 +1075,7 @@ if st.sidebar.button("🚀 Automatische Neuberechnung starten"):
     )
     st.rerun()
 
-# ==========================================
+    # ==========================================
 # UMSATZBERECHNUNG AUS SEPARATEM VERKAUFSBERICHT
 # ==========================================
 
@@ -1114,75 +1088,61 @@ st.sidebar.markdown(
 )
 
 # Загрузка файла с продажами через сайдбар
-sales_file_custom = st.sidebar.file_uploader(
-    "Verkaufsbericht hochladen (Excel / CSV)", type=["xlsx", "csv"], key="sales_report_custom_unique"
+sales_file = st.sidebar.file_uploader(
+    "Verkaufsbericht hochladen (Excel / CSV)", type=["xlsx", "csv"], key="sales_report"
 )
 
-if sales_file_custom is not None:
+if sales_file is not None:
   try:
     import pandas as pd
 
-    if sales_file_custom.name.endswith(".csv"):
-      df_custom = pd.read_csv(sales_file_custom)
+    if sales_file.name.endswith(".csv"):
+      sales_report_df = pd.read_csv(sales_file)
     else:
-      df_custom = pd.read_excel(sales_file_custom)
+      sales_report_df = pd.read_excel(sales_file)
 
-    st.sidebar.success("✅ Berichtsdatei erfolgreich gelesen!")
+    st.sidebar.success("✅ Verkaufsbericht erfolgreich geladen!")
 
-    df_custom.columns = [str(c).strip().lower() for c in df_custom.columns]
+    # Выбор колонок, если они называются иначе
+    # Ожидаем колонки с количеством (z.B. 'quantity' / 'Menge') и ценой (z.B. 'price' / 'Preis')
+    st.sidebar.write("Vorschau der Spalten:", list(sales_report_df.columns))
 
-    q_column = st.sidebar.selectbox(
-        "Spalte für verkaufte Menge", df_custom.columns, key="q_col_custom_unique"
+    qty_col = st.sidebar.selectbox(
+        "Spalte für verkaufte Menge", sales_report_df.columns, key="q_col"
     )
-    p_column = st.sidebar.selectbox(
+    price_col = st.sidebar.selectbox(
         "Spalte für tatsächlichen Verkaufspreis",
-        df_custom.columns,
-        key="p_col_custom_unique",
+        sales_report_df.columns,
+        key="p_col",
     )
 
-    if st.sidebar.button("🧮 JETZT SUMME BERECHNEN", key="btn_calc_custom_unique"):
-      sum_brutto = 0.0
-      rows_checked = 0
+    if st.sidebar.button("🧮 Nettoumsatz jetzt berechnen"):
+      total_brutto = 0.0
 
-      for _, row_item in df_custom.iterrows():
+      for _, row in sales_report_df.iterrows():
         try:
-          # Количество
-          q_val = row_item[q_column]
-          q_num = float(str(q_val).replace(',', '.')) if pd.notna(q_val) else 0.0
-
-          # Цена из файла
-          p_val = row_item[p_column]
-          if pd.isna(p_val):
-            p_num = 0.0
-          else:
-            p_str = str(p_val).strip().replace('€', '').replace(' ', '')
-            if ',' in p_str and '.' in p_str:
-              if p_str.find('.') < p_str.find(','):
-                p_str = p_str.replace('.', '').replace(',', '.')
-              else:
-                p_str = p_str.replace(',', '')
-            elif ',' in p_str:
-              p_str = p_str.replace(',', '.')
-            p_num = float(p_str)
-
-          sum_brutto += q_num * p_num
-          rows_checked += 1
+          qty_sold = float(row[qty_col]) if pd.notna(row[qty_col]) else 0.0
+          actual_price = (
+              float(row[price_col]) if pd.notna(row[price_col]) else 0.0
+          )
+          total_brutto += qty_sold * actual_price
         except:
           continue
 
-      sum_netto = sum_brutto / 1.19
+      # Вычет 19% немецкого налога (MwSt.)
+      # Формула: Чистая выручка (Netto) = Брутто / 1.19
+      total_netto = total_brutto / 1.19
 
-      st.sidebar.info(f"✔ Zeilen berechnet: {rows_checked}")
       st.sidebar.markdown("---")
       st.sidebar.metric(
-          label="Echter Bruttoumsatz (aus Datei)", value=f"{sum_brutto:,.2f} €"
+          label="Bruttoumsatz (inkl. 19% MwSt.)", value=f"{total_brutto:,.2f} €"
       )
       st.sidebar.metric(
-          label="Echter Nettoumsatz (aus Datei)", value=f"{sum_netto:,.2f} €"
+          label="Nettoumsatz (exkl. 19% MwSt.)", value=f"{total_netto:,.2f} €"
       )
 
-  except Exception as err:
-    st.sidebar.error(f"⚠ Fehler: {err}")
+  except Exception as e:
+    st.sidebar.error(f"⚠ Fehler beim Lesen der Datei: {e}")
     # ==========================================
 # MONATLICHE UMSATZANFRAGE (MIT 19% MWST.-ABZUG)
 # ==========================================
