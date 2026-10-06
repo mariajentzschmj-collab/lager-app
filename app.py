@@ -1101,7 +1101,7 @@ if st.sidebar.button("🚀 Automatische Neuberechnung starten"):
     )
     st.rerun()
 
-    # ==========================================
+# ==========================================
 # UMSATZBERECHNUNG AUS SEPARATEM VERKAUFSBERICHT
 # ==========================================
 
@@ -1129,16 +1129,25 @@ if sales_file is not None:
 
     st.sidebar.success("✅ Verkaufsbericht erfolgreich geladen!")
 
-    # Выбор колонок, если они называются иначе
-    # Ожидаем колонки с количеством (z.B. 'quantity' / 'Menge') и ценой (z.B. 'price' / 'Preis')
+    # Приводим названия колонок к нижнему регистру для надежного поиска
+    sales_report_df.columns = [str(c).strip().lower() for c in sales_report_df.columns]
+
+    # Автоматически ищем подходящие колонки для количества и цены
+    qty_candidates = [c for c in sales_report_df.columns if 'quan' in c or 'menge' in c or 'anzahl' in c or 'stk' in c]
+    price_candidates = [c for c in sales_report_df.columns if 'price' in c or 'preis' in c or 'sum' in c or 'wert' in c]
+
+    default_qty_idx = sales_report_df.columns.get_loc(qty_candidates[0]) if qty_candidates else min(3, len(sales_report_df.columns) - 1)
+    default_price_idx = sales_report_df.columns.get_loc(price_candidates[0]) if price_candidates else min(2, len(sales_report_df.columns) - 1)
+
     st.sidebar.write("Vorschau der Spalten:", list(sales_report_df.columns))
 
     qty_col = st.sidebar.selectbox(
-        "Spalte für verkaufte Menge", sales_report_df.columns, key="q_col"
+        "Spalte für verkaufte Menge", sales_report_df.columns, index=default_qty_idx, key="q_col"
     )
     price_col = st.sidebar.selectbox(
         "Spalte für tatsächlichen Verkaufspreis",
         sales_report_df.columns,
+        index=default_price_idx,
         key="p_col",
     )
 
@@ -1147,16 +1156,29 @@ if sales_file is not None:
 
       for _, row in sales_report_df.iterrows():
         try:
-          qty_sold = float(row[qty_col]) if pd.notna(row[qty_col]) else 0.0
-          actual_price = (
-              float(row[price_col]) if pd.notna(row[price_col]) else 0.0
-          )
+          # Безопасное извлечение количества из файла
+          q_val = row[qty_col]
+          if pd.isna(q_val):
+            qty_sold = 0.0
+          else:
+            if isinstance(q_val, str):
+              q_val = q_val.replace(',', '.')
+            qty_sold = float(q_val)
+
+          # Безопасное извлечение фактической цены из файла (со всеми скидками)
+          p_val = row[price_col]
+          if pd.isna(p_val):
+            actual_price = 0.0
+          else:
+            if isinstance(p_val, str):
+              p_val = p_val.replace('.', '').replace(',', '.') if p_val.count('.') > 1 or (p_val.count(',') > 0 and p_val.count('.') == 0) else p_val.replace(',', '.')
+            actual_price = float(p_val)
+
           total_brutto += qty_sold * actual_price
-        except:
+        except Exception:
           continue
 
       # Вычет 19% немецкого налога (MwSt.)
-      # Формула: Чистая выручка (Netto) = Брутто / 1.19
       total_netto = total_brutto / 1.19
 
       st.sidebar.markdown("---")
