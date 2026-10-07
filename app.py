@@ -273,6 +273,7 @@ action = st.sidebar.radio(
         "📷 Live-Kamera-Scanner",
         "🖨 Etiketten drucken",
         "📱 QR-Code für Kollegen",
+        "📋 Inventur-Schnelleingabe",
     ],
 )
 
@@ -1187,7 +1188,7 @@ if sales_file_monthly is not None:
   except Exception as e:
     st.sidebar.error(f"⚠ Fehler bei der Auswertung: {e}")
 
-    # ==========================================
+# ==========================================
 # 📋 INVENTUR-SCHNELLEINGABE (FÜR MULTI-USER)
 # ==========================================
 elif action == "📋 Inventur-Schnelleingabe":
