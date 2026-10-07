@@ -1186,3 +1186,66 @@ if sales_file_monthly is not None:
 
   except Exception as e:
     st.sidebar.error(f"⚠ Fehler bei der Auswertung: {e}")
+
+    # ==========================================
+# 📋 INVENTUR-SCHNELLEINGABE (FÜR MULTI-USER)
+# ==========================================
+elif action == "📋 Inventur-Schnelleingabe":
+    is_manager = st.session_state.get("role") == "manager"
+    st.header("📋 Parallele Inventur (Mehrere Geräte / Personen)")
+    st.markdown("Geben Sie Ihren Namen und das Manager-Passwort ein, um Inventurdaten direkt in die Live-Datenbank einzutragen.")
+
+    col_auth1, col_auth2 = st.columns(2)
+    with col_auth1:
+        staff_name = st.text_input("Name des Mitarbeiters / Zählers", placeholder="z. B. Anna")
+    with col_auth2:
+        manager_pwd = st.text_input("Manager-Passwort", type="password", placeholder="Passwort eingeben")
+
+    # Здесь вы можете изменить пароль на любой удобный
+    if manager_pwd == "kadewe2026" and staff_name.strip():
+        st.success(f"✅ Angemeldet als Zähler: **{staff_name}**. Sie können jetzt Bestände erfassen.")
+
+        st.markdown("---")
+        st.subheader("Artikel scannen oder eingeben")
+
+        with st.form("inv_form", clear_on_submit=True):
+            c1, c2, c3 = st.columns([2, 2, 1])
+            with c1:
+                inv_code = st.text_input("SAP-Nummer oder Barcode")
+            with c2:
+                inv_counted_qty = st.number_input("Gezählte Menge (Stück)", min_value=0, step=1, value=1)
+            with c3:
+                st.markdown("<br>", unsafe_allow_html=True)
+                submit_inv = st.form_submit_button("💾 Speichern")
+
+            if submit_inv and inv_code.strip():
+                if supabase is not None:
+                    clean_code = str(inv_code).strip()
+                    if clean_code.endswith(".0"):
+                        clean_code = clean_code[:-2]
+
+                    existing = supabase.table("inventory").select("*").eq("sap", clean_code).execute()
+                    if not existing or not existing.data:
+                        existing = supabase.table("inventory").select("*").eq("barcode", clean_code).execute()
+
+                    if existing and existing.data:
+                        item_id = existing.data[0]["id"]
+                        item_name = existing.data[0].get("name", "Unbekannt")
+                        
+                        res = supabase.table("inventory").update({
+                            "quantity": inv_counted_qty
+                        }).eq("id", item_id).execute()
+
+                        if res.data:
+                            st.success(f"✔ **{item_name}** (SAP: {clean_code}): Bestand auf **{inv_counted_qty} Stk.** aktualisiert (von {staff_name} erfasst).")
+                        else:
+                            st.error("Fehler beim Speichern in der Datenbank.")
+                    else:
+                        st.warning(f"⚠ Artikel mit Code `{clean_code}` wurde in der Datenbank nicht gefunden!")
+                else:
+                    st.error("Keine Verbindung zur Datenbank.")
+    else:
+        if manager_pwd:
+            st.error("❌ Falsches Manager-Passwort.")
+        else:
+            st.info("ℹ Bitte geben Sie Ihren Namen und das Manager-Passwort ein, um fortzufahren.")
