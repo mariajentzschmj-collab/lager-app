@@ -18,26 +18,6 @@ st.set_page_config(
 
 SUPABASE_URL = "https://mtcbfvpjnxlkvvtuknyv.supabase.co"
 SUPABASE_KEY = "sb_publishable_wChGuVU2FeW23S2bqdYqOg_B9-oMoKs"
-import hashlib
-import io
-import json
-import random
-import time
-import urllib.parse
-import numpy as np
-import pandas as pd
-import requests
-import streamlit as st
-import streamlit.components.v1 as components
-from supabase import create_client
-
-# Seitanordnung
-st.set_page_config(
-    page_title="KaDeWe Lager — Iittala & Royal Copenhagen", layout="wide"
-)
-
-SUPABASE_URL = "https://mtcbfvpjnxlkvvtuknyv.supabase.co"
-SUPABASE_KEY = "sb_publishable_wChGuVU2FeW23S2bqdYqOg_B9-oMoKs"
 
 supabase = None
 try:
@@ -603,130 +583,122 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
           }
           request_manager_approval("reduce_stock", payload)
 
-if st.button("🚀 Wareneingang buchen / Freigabe anfordern"):
+# 4. MASSEN-WARENEINGANG (ZUWACHS) ПО SAP — МАССОВЫЙ ПРИХОД ПО SAP С АВТОМАТИЧЕСКИМ ПРИБАВЛЕНИЕМ
+elif action == "📥 Massen-Wareneingang (Zuwachs)":
+  is_manager = st.session_state.get("role") == "manager"
+  st.header("📥 Massen-Wareneingang (Bestand erhöhen nach SAP)" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
+  st.markdown("Laden Sie eine Excel- oder CSV-Datei mit den eintreffenden Waren hoch (Spalten: `sap`, `quantity`). Die angegebenen Mengen werden **nach SAP-Nummer automatisch zum bestehenden Bestand addiert**.")
+
+  template_df = pd.DataFrame(columns=["sap", "name", "brand", "quantity", "preis", "article", "barcode"])
+  template_df.loc[0] = ["SAP12345", "Mussedeltid Teller 27cm", "Royal Copenhagen", 12, 45.00, "101234", "5705140123456"]
+
+  out_tmpl = io.BytesIO()
+  with pd.ExcelWriter(out_tmpl, engine="openpyxl") as writer:
+    template_df.to_excel(writer, index=False, sheet_name="Wareneingang")
+  st.download_button(
+      label="📥 Excel-Vorlage für Wareneingang herunterladen",
+      data=out_tmpl.getvalue(),
+      file_name="KaDeWe_Wareneingang_Vorlage.xlsx",
+      mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  )
+
+  incoming_file = st.file_uploader("Wareneingangs-Datei auswählen", type=["xlsx", "csv"], key="incoming_upload")
+
+  if incoming_file is not None:
+    try:
+      if incoming_file.name.endswith(".csv"):
+        inc_df = pd.read_csv(incoming_file)
+      else:
+        inc_df = pd.read_excel(incoming_file)
+
+      st.write("📋 Vorschau des Wareneingangs:", inc_df.head())
+
+      if st.button("🚀 Wareneingang buchen / Freigabe anfordern"):
         items_incoming = []
         for _, row in inc_df.iterrows():
-          def clean_val(val):
-            if pd.isna(val):
-              return ""
-            s = str(val).strip()
-            if s.endswith(".0"):
-              s = s[:-2]
-            return s
-
-          sap_val = clean_val(row.get("sap", ""))
-          art_val = clean_val(row.get("article", ""))
-          bc_val = clean_val(row.get("barcode", ""))
-
-          # Безопасное количество (если пусто или NaN, то 0)
-          q_raw = row.get("quantity", 0)
-          try:
-            qty_val = int(float(str(q_raw).replace(',', '.'))) if not pd.isna(q_raw) else 0
-          except:
-            qty_val = 0
-
-          # Безопасная цена (если пусто или NaN, то 0.0)
-          p_raw = row.get("preis", 0)
-          if pd.isna(p_raw):
-            preis_val = 0.0
-          else:
-            p_str = str(p_raw).replace('€', '').replace(' ', '').replace(',', '.')
-            try:
-              preis_val = float(p_str) if p_str else 0.0
-            except:
-              preis_val = 0.0
-
-          # Безопасные текстовые поля (никаких NaN!)
-          name_val = row.get("name", "")
-          if pd.isna(name_val) or not str(name_val).strip():
-            name_val = "Unbekannter Artikel"
-          else:
-            name_val = str(name_val).strip()
-
-          brand_val = row.get("brand", "")
-          if pd.isna(brand_val) or not str(brand_val).strip():
-            brand_val = "Iittala"
-          else:
-            brand_val = str(brand_val).strip()
-
           items_incoming.append({
-              "sap": sap_val,
-              "name": name_val,
-              "brand": brand_val,
-              "incoming_qty": qty_val,
-              "preis": preis_val,
-              "article": art_val,
-              "barcode": bc_val
+              "sap": str(row.get("sap", "")),
+              "name": str(row.get("name", "Unbekannter Artikel")),
+              "brand": str(row.get("brand", "Iittala")),
+              "incoming_qty": int(row.get("quantity", 0)),
+              "preis": float(row.get("preis", 0.0)),
+              "article": str(row.get("article", "")),
+              "barcode": str(row.get("barcode", ""))
           })
+
+        if is_manager:
+          if supabase is not None:
+            for item in items_incoming:
+              sap_num = item["sap"]
+              inc_qty = item["incoming_qty"]
+              existing = supabase.table("inventory").select("*").eq("sap", sap_num).execute()
+              if existing.data:
+                curr_q = int(existing.data[0].get("quantity", 0))
+                new_q = curr_q + inc_qty
+                supabase.table("inventory").update({"quantity": new_q}).eq("sap", sap_num).execute()
+              else:
+                new_item = {
+                    "sap": sap_num,
+                    "name": item["name"],
+                    "brand": item["brand"],
+                    "quantity": inc_qty,
+                    "preis": item["preis"],
+                    "article": item["article"],
+                    "barcode": item["barcode"]
+                }
+                supabase.table("inventory").upsert(new_item, on_conflict="article").execute()
+            st.success("✅ Wareneingang nach SAP erfolgreich gebucht und Bestände automatisch erhöht!")
+            st.rerun()
+        else:
+          payload = {"items": items_incoming}
+          request_manager_approval("bulk_wareneingang", payload)
+
+    except Exception as e:
+      st.error(f"Fehler beim Verarbeiten des Wareneingangs: {e}")
+
 # 5. AUTO-ABVERKAUF PER BERICHT (МАССОВЫЙ ВЫЧЕТ ПО ОТЧЕТУ О ПРОДАЖАХ)
 elif action == "📥 Auto-Abverkauf per Bericht":
-    is_manager = st.session_state.get("role") == "manager"
-    st.header("📥 Automatischer Abverkauf per Verkaufsbericht" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
-    st.markdown("Laden Sie einen Verkaufsbericht (Excel/CSV) hoch, der verkaufte Mengen enthält. Die verkauften Mengen werden **automatisch vom Bestand abgezogen**.")
+  is_manager = st.session_state.get("role") == "manager"
+  st.header("📥 Automatischer Abverkauf per Verkaufsbericht" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
+  st.markdown("Laden Sie einen Verkaufsbericht (Excel/CSV) hoch, der verkaufte Mengen enthält. Die verkauften Mengen werden **automatisch vom Bestand abgezogen**.")
 
-    sales_file = st.file_uploader("Verkaufsbericht auswählen", type=["xlsx", "csv"], key="sales_report_upload")
+  sales_file = st.file_uploader("Verkaufsbericht auswählen", type=["xlsx", "csv"], key="sales_report_upload")
 
-    if sales_file is not None:
-        try:
-            if sales_file.name.endswith(".csv"):
-                report_df = pd.read_csv(sales_file)
-            else:
-                report_df = pd.read_excel(sales_file)
+  if sales_file is not None:
+    try:
+      if sales_file.name.endswith(".csv"):
+        report_df = pd.read_csv(sales_file)
+      else:
+        report_df = pd.read_excel(sales_file)
 
-            # Нормализуем названия колонок в файле (в нижний регистр без пробелов)
-            report_df.columns = [str(c).strip().lower() for c in report_df.columns]
+      st.write("📋 Vorschau des Verkaufsberichts:", report_df.head())
 
-            # Автоматически ищем колонку с SAP и количеством
-            sap_candidates = [c for c in report_df.columns if 'sap' in c or 'artikel' in c or 'nummer' in c]
-            qty_candidates = [c for c in report_df.columns if 'quan' in c or 'menge' in c or 'anzahl' in c or 'stk' in c]
+      if st.button("🚀 Abverkauf buchen / Freigabe anfordern"):
+        items_sold = []
+        for _, row in report_df.iterrows():
+          items_sold.append({
+              "article": str(row.get("article", row.get("sap", ""))),
+              "sold_qty": int(row.get("quantity", row.get("sold_qty", 0)))
+          })
 
-            col_sap = sap_candidates[0] if sap_candidates else report_df.columns[0]
-            col_qty = qty_candidates[0] if qty_candidates else (report_df.columns[1] if len(report_df.columns) > 1 else report_df.columns[0])
+        if is_manager:
+          if supabase is not None:
+            for item in items_sold:
+              art = item["article"]
+              sold_qty = item["sold_qty"]
+              existing = supabase.table("inventory").select("*").eq("article", art).execute()
+              if existing.data:
+                curr_q = int(existing.data[0].get("quantity", 0))
+                new_q = max(0, curr_q - sold_qty)
+                supabase.table("inventory").update({"quantity": new_q}).eq("article", art).execute()
+            st.success("✅ Verkaufsbericht erfolgreich verarbeitet und Bestände reduziert!")
+            st.rerun()
+        else:
+          payload = {"items": items_sold}
+          request_manager_approval("bulk_sales_report", payload)
 
-            st.info(f"📌 Erkannte Spalten -> SAP: **{col_sap}** | Menge: **{col_qty}**")
-            st.write("📋 Vorschau des Verkaufsberichts:", report_df.head())
-
-            if st.button("🚀 Abverkauf buchen / Freigabe anfordern"):
-                items_sold = []
-                for _, row in report_df.iterrows():
-                    sap_val = str(row.get(col_sap, ""))
-                    if not sap_val or sap_val == "nan":
-                        continue
-                    try:
-                        sold_val = int(float(row.get(col_qty, 0)))
-                    except:
-                        sold_val = 0
-
-                    if sold_val > 0:
-                        items_sold.append({
-                            "sap": sap_val.strip(),
-                            "sold_qty": sold_val
-                        })
-
-                if is_manager:
-                    if supabase is not None:
-                        success_count = 0
-                        for item in items_sold:
-                            art = item["sap"]
-                            sold_qty = item["sold_qty"]
-                            
-                            # Ищем товар в базе Supabase по колонке sap
-                            existing = supabase.table("inventory").select("*").eq("sap", art).execute()
-                            if existing.data:
-                                curr_q = int(float(existing.data[0].get("quantity", 0) or 0))
-                                new_q = max(0, curr_q - sold_qty)
-                                supabase.table("inventory").update({"quantity": new_q}).eq("sap", art).execute()
-                                success_count += 1
-                                
-                        st.success(f"✅ Verkaufsbericht erfolgreich verarbeitet! **{success_count} Artikel** aktualisiert.")
-                        st.balloons()
-                        st.rerun()
-                else:
-                    payload = {"items": items_sold}
-                    request_manager_approval("bulk_sales_report", payload)
-
-        except Exception as e:
-            st.error(f"Fehler beim Verarbeiten des Berichts: {e}")
+    except Exception as e:
+      st.error(f"Fehler beim Verarbeiten des Berichts: {e}")
 
 # 6. KATALOG AUS DATEI HOCHLADEN (ВКЛЮЧАЯ 0 ЗНАЧЕНИЯ)
 elif action == "📁 Katalog aus Datei hochladen":
@@ -1001,3 +973,216 @@ if st.sidebar.button("🚀 Nachbestellung prüfen"):
           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
       )
 
+# ==========================================
+# AUTOMATISCHE MIN/MAX-BERECHNUNG NACH LAGERABGANG
+# ==========================================
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("📈 Intelligente Min/Max-Berechnung")
+
+st.sidebar.markdown(
+    "Vergleicht den aktuellen Bestand mit dem vorherigen, berechnet die"
+    " Verkaufsgeschwindigkeit und aktualisiert die Limits."
+)
+
+# Einstellung der gewünschten Reichweite in Tagen direkt im Interface
+days_min = st.sidebar.slider("Reichweite in Tagen für MIN", 2, 14, 5)
+days_max = st.sidebar.slider("Reichweite in Tagen für MAX", 10, 45, 20)
+
+if st.sidebar.button("🚀 Automatische Neuberechnung starten"):
+  if df.empty:
+    st.sidebar.warning("⚠️️ Keine Daten zur Analyse gefunden.")
+  else:
+    calc_df = df.copy()
+    updated_count = 0
+    from datetime import datetime
+
+    today_str = datetime.now().strftime("%Y-%m-%d")
+
+    for _, row in calc_df.iterrows():
+      sap_val = str(row.get("sap", "")).strip()
+      if not sap_val or sap_val == "nan":
+        continue
+
+      current_qty = float(row.get("quantity", 0))
+
+      # Vorherigen Bestand abrufen (falls noch nicht in Supabase vorhanden, aktuellen als Startwert nutzen)
+      last_qty = float(row.get("last_quantity", current_qty))
+
+      # Verbrauch: Wenn der vorige Bestand größer als der aktuelle ist, wurde Ware verkauft
+      sold_amount = last_qty - current_qty
+
+      if sold_amount > 0:
+        # Angenommen, es sind ca. 7 Tage seit der letzten Prüfung vergangen
+        days_passed = 7
+        daily_speed = sold_amount / days_passed
+
+        # Neue Limits berechnen
+        new_min = max(2, int(daily_speed * days_min))
+        new_max = max(new_min + 5, int(daily_speed * days_max))
+
+        # In Supabase aktualisieren: Neue Limits speichern und aktuellen Bestand als "alt" für die nächste Messung merken
+        try:
+          supabase.table("inventory").update({
+              "min_stock": new_min,
+              "max_stock": new_max,
+              "last_quantity": current_qty,  # Aktuellen Bestand für die nächste Messung speichern
+          }).eq("sap", sap_val).execute()
+          updated_count += 1
+        except Exception as e:
+          pass
+      else:
+        # Auch wenn es keine Verkäufe gab, last_quantity aktualisieren, um die Basis für die kommenden Tage zu sichern
+        try:
+          supabase.table("inventory").update(
+              {"last_quantity": current_qty}
+          ).eq("sap", sap_val).execute()
+        except:
+          pass
+
+    st.sidebar.success(
+        f"✅ Erfolgreich aktualisierte Artikel nach Verkaufsgeschwindigkeit:"
+        f" {updated_count}"
+    )
+    st.rerun()
+
+    # ==========================================
+# UMSATZBERECHNUNG AUS SEPARATEM VERKAUFSBERICHT
+# ==========================================
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("💶 Detaillierter Nettoumsatz (nach Verkaufspreis)")
+
+st.sidebar.markdown(
+    "Laden Sie eine Verkaufsliste hoch (mit verkaufter Menge und tatsächlichem"
+    " Verkaufspreis), um den Nettoumsatz zu berechnen."
+)
+
+# Загрузка файла с продажами через сайдбар
+sales_file = st.sidebar.file_uploader(
+    "Verkaufsbericht hochladen (Excel / CSV)", type=["xlsx", "csv"], key="sales_report"
+)
+
+if sales_file is not None:
+  try:
+    import pandas as pd
+
+    if sales_file.name.endswith(".csv"):
+      sales_report_df = pd.read_csv(sales_file)
+    else:
+      sales_report_df = pd.read_excel(sales_file)
+
+    st.sidebar.success("✅ Verkaufsbericht erfolgreich geladen!")
+
+    # Выбор колонок, если они называются иначе
+    # Ожидаем колонки с количеством (z.B. 'quantity' / 'Menge') и ценой (z.B. 'price' / 'Preis')
+    st.sidebar.write("Vorschau der Spalten:", list(sales_report_df.columns))
+
+    qty_col = st.sidebar.selectbox(
+        "Spalte für verkaufte Menge", sales_report_df.columns, key="q_col"
+    )
+    price_col = st.sidebar.selectbox(
+        "Spalte für tatsächlichen Verkaufspreis",
+        sales_report_df.columns,
+        key="p_col",
+    )
+
+    if st.sidebar.button("🧮 Nettoumsatz jetzt berechnen"):
+      total_brutto = 0.0
+
+      for _, row in sales_report_df.iterrows():
+        try:
+          qty_sold = float(row[qty_col]) if pd.notna(row[qty_col]) else 0.0
+          actual_price = (
+              float(row[price_col]) if pd.notna(row[price_col]) else 0.0
+          )
+          total_brutto += qty_sold * actual_price
+        except:
+          continue
+
+      # Вычет 19% немецкого налога (MwSt.)
+      # Формула: Чистая выручка (Netto) = Брутто / 1.19
+      total_netto = total_brutto / 1.19
+
+      st.sidebar.markdown("---")
+      st.sidebar.metric(
+          label="Bruttoumsatz (inkl. 19% MwSt.)", value=f"{total_brutto:,.2f} €"
+      )
+      st.sidebar.metric(
+          label="Nettoumsatz (exkl. 19% MwSt.)", value=f"{total_netto:,.2f} €"
+      )
+
+  except Exception as e:
+    st.sidebar.error(f"⚠ Fehler beim Lesen der Datei: {e}")
+    # ==========================================
+# MONATLICHE UMSATZANFRAGE (MIT 19% MWST.-ABZUG)
+# ==========================================
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("💶 Detaillierter Umsatz nach Monaten")
+
+st.sidebar.markdown(
+    "Laden Sie den Verkaufsbericht hoch (ab 01.01.2026), um den Nettoumsatz"
+    " monatlich zu berechnen."
+)
+
+# Загрузка файла с продажами
+sales_file_monthly = st.sidebar.file_uploader(
+    "Verkaufsbericht (Jahresdatei) hochladen",
+    type=["xlsx", "csv"],
+    key="sales_report_monthly",
+)
+
+if sales_file_monthly is not None:
+  try:
+    import pandas as pd
+
+    if sales_file_monthly.name.endswith(".csv"):
+      sales_monthly_df = pd.read_csv(sales_file_monthly)
+    else:
+      sales_monthly_df = pd.read_excel(sales_file_monthly)
+
+    st.sidebar.success("✅ Jahresbericht erfolgreich geladen!")
+
+    # Выбор нужных колонок
+    columns_list = list(sales_monthly_df.columns)
+    
+    date_col = st.sidebar.selectbox("Spalte für das Datum", columns_list, key="d_col")
+    qty_col_m = st.sidebar.selectbox("Spalte für verkaufte Menge", columns_list, key="qm_col")
+    price_col_m = st.sidebar.selectbox("Spalte für tatsächlichen Verkaufspreis", columns_list, key="pm_col")
+
+    if st.sidebar.button("📊 Monatsumsatz berechnen"):
+      # Превращаем дату в формат datetime
+      sales_monthly_df[date_col] = pd.to_datetime(sales_monthly_df[date_col], errors='coerce')
+      
+      # Создаем колонку с месяцем (формат ГГГГ-ММ)
+      sales_monthly_df["Monat"] = sales_monthly_df[date_col].dt.to_period("M").astype(str)
+      
+      # Считаем сумму продаж для каждой строки (Количество * Цена)
+      sales_monthly_df["Brutto"] = (
+          pd.to_numeric(sales_monthly_df[qty_col_m], errors='coerce').fillna(0) * 
+          pd.to_numeric(sales_monthly_df[price_col_m], errors='coerce').fillna(0)
+      )
+
+      # Группируем по месяцам
+      grouped = sales_monthly_df.groupby("Monat")["Brutto"].sum().reset_index()
+      
+      # Вычитаем 19% налога (Netto = Brutto / 1.19)
+      grouped["Netto (exkl. 19% MwSt.)"] = grouped["Brutto"] / 1.19
+      grouped["Brutto (inkl. 19% MwSt.)"] = grouped["Brutto"]
+
+      # Сортируем по месяцам
+      grouped = grouped.sort_values("Monat")
+
+      st.sidebar.markdown("---")
+      st.sidebar.write("### 📈 Umsatz nach Monaten:")
+      
+      # Красиво выводим таблицу прямо в сайдбаре или на главном экране (выведем главные итоги)
+      for _, row in grouped.iterrows():
+        month_name = row["Monat"]
+        net_val = row["Netto (exkl. 19% MwSt.)"]
+        brutto_val = row["Brutto (inkl. 19% MwSt.)"]
+        st.sidebar.markdown(f"**{month_name}:** Netto: **{net_val:,.2f} €** *(Brutto: {brutto_val:,.2f} €)*")
+
+  except Exception as e:
+    st.sidebar.error(f"⚠ Fehler bei der Auswertung: {e}")
