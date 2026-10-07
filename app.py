@@ -603,79 +603,61 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
           }
           request_manager_approval("reduce_stock", payload)
 
-# 4. MASSEN-WARENEINGANG (ZUWACHS) ПО SAP — МАССОВЫЙ ПРИХОД ПО SAP С АВТОМАТИЧЕСКИМ ПРИБАВЛЕНИЕМ
-elif action == "📥 Massen-Wareneingang (Zuwachs)":
-  is_manager = st.session_state.get("role") == "manager"
-  st.header("📥 Massen-Wareneingang (Bestand erhöhen nach SAP)" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
-  st.markdown("Laden Sie eine Excel- oder CSV-Datei mit den eintreffenden Waren hoch (Spalten: `sap`, `quantity`). Die angegebenen Mengen werden **nach SAP-Nummer automatisch zum bestehenden Bestand addiert**.")
-
-  template_df = pd.DataFrame(columns=["sap", "name", "brand", "quantity", "preis", "article", "barcode"])
-  template_df.loc[0] = ["SAP12345", "Mussedeltid Teller 27cm", "Royal Copenhagen", 12, 45.00, "101234", "5705140123456"]
-
-  out_tmpl = io.BytesIO()
-  with pd.ExcelWriter(out_tmpl, engine="openpyxl") as writer:
-    template_df.to_excel(writer, index=False, sheet_name="Wareneingang")
-  st.download_button(
-      label="📥 Excel-Vorlage für Wareneingang herunterladen",
-      data=out_tmpl.getvalue(),
-      file_name="KaDeWe_Wareneingang_Vorlage.xlsx",
-      mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-  )
-
-  incoming_file = st.file_uploader("Wareneingangs-Datei auswählen", type=["xlsx", "csv"], key="incoming_upload")
-
-  if incoming_file is not None:
-    try:
-      if incoming_file.name.endswith(".csv"):
-        inc_df = pd.read_csv(incoming_file)
-      else:
-        inc_df = pd.read_excel(incoming_file)
-
-      st.write("📋 Vorschau des Wareneingangs:", inc_df.head())
-
-      if st.button("🚀 Wareneingang buchen / Freigabe anfordern"):
+if st.button("🚀 Wareneingang buchen / Freigabe anfordern"):
         items_incoming = []
         for _, row in inc_df.iterrows():
+          def clean_val(val):
+            if pd.isna(val):
+              return ""
+            s = str(val).strip()
+            if s.endswith(".0"):
+              s = s[:-2]
+            return s
+
+          sap_val = clean_val(row.get("sap", ""))
+          art_val = clean_val(row.get("article", ""))
+          bc_val = clean_val(row.get("barcode", ""))
+
+          # Безопасное количество (если пусто или NaN, то 0)
+          q_raw = row.get("quantity", 0)
+          try:
+            qty_val = int(float(str(q_raw).replace(',', '.'))) if not pd.isna(q_raw) else 0
+          except:
+            qty_val = 0
+
+          # Безопасная цена (если пусто или NaN, то 0.0)
+          p_raw = row.get("preis", 0)
+          if pd.isna(p_raw):
+            preis_val = 0.0
+          else:
+            p_str = str(p_raw).replace('€', '').replace(' ', '').replace(',', '.')
+            try:
+              preis_val = float(p_str) if p_str else 0.0
+            except:
+              preis_val = 0.0
+
+          # Безопасные текстовые поля (никаких NaN!)
+          name_val = row.get("name", "")
+          if pd.isna(name_val) or not str(name_val).strip():
+            name_val = "Unbekannter Artikel"
+          else:
+            name_val = str(name_val).strip()
+
+          brand_val = row.get("brand", "")
+          if pd.isna(brand_val) or not str(brand_val).strip():
+            brand_val = "Iittala"
+          else:
+            brand_val = str(brand_val).strip()
+
           items_incoming.append({
-              "sap": str(row.get("sap", "")),
-              "name": str(row.get("name", "Unbekannter Artikel")),
-              "brand": str(row.get("brand", "Iittala")),
-              "incoming_qty": int(row.get("quantity", 0)),
-              "preis": float(row.get("preis", 0.0)),
-              "article": str(row.get("article", "")),
-              "barcode": str(row.get("barcode", ""))
+              "sap": sap_val,
+              "name": name_val,
+              "brand": brand_val,
+              "incoming_qty": qty_val,
+              "preis": preis_val,
+              "article": art_val,
+              "barcode": bc_val
           })
-
-        if is_manager:
-          if supabase is not None:
-            for item in items_incoming:
-              sap_num = item["sap"]
-              inc_qty = item["incoming_qty"]
-              existing = supabase.table("inventory").select("*").eq("sap", sap_num).execute()
-              if existing.data:
-                curr_q = int(existing.data[0].get("quantity", 0))
-                new_q = curr_q + inc_qty
-                supabase.table("inventory").update({"quantity": new_q}).eq("sap", sap_num).execute()
-              else:
-                new_item = {
-                    "sap": sap_num,
-                    "name": item["name"],
-                    "brand": item["brand"],
-                    "quantity": inc_qty,
-                    "preis": item["preis"],
-                    "article": item["article"],
-                    "barcode": item["barcode"]
-                }
-                supabase.table("inventory").upsert(new_item, on_conflict="article").execute()
-            st.success("✅ Wareneingang nach SAP erfolgreich gebucht und Bestände automatisch erhöht!")
-            st.rerun()
-        else:
-          payload = {"items": items_incoming}
-          request_manager_approval("bulk_wareneingang", payload)
-
-    except Exception as e:
-      st.error(f"Fehler beim Verarbeiten des Wareneingangs: {e}")
-
 # 5. AUTO-ABVERKAUF PER BERICHT (МАССОВЫЙ ВЫЧЕТ ПО ОТЧЕТУ О ПРОДАЖАХ)
 elif action == "📥 Auto-Abverkauf per Bericht":
     is_manager = st.session_state.get("role") == "manager"
