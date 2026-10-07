@@ -1121,74 +1121,56 @@ if st.sidebar.button("🚀 Automatische Neuberechnung starten"):
     )
     st.rerun()
 
-    # ==========================================
-# UMSATZBERECHNUNG AUS SEPARATEM VERKAUFSBERICHT
-# ==========================================
+   # --- АВТОМАТИЧЕСКОЕ СПИСАНИЕ ОСТАТКОВ ИЗ БАЗЫ ПРИ ПРОДАЖЕ ---
+            inventory_updated_count = 0
+            if supabase is not None:
+                for _, row in df_sales_univ.iterrows():
+                    try:
+                        # Ищем SAP или артикул в строке отчета о продажах
+                        def clean_val(val):
+                            if pd.isna(val):
+                                return ""
+                            s = str(val).strip()
+                            if s.endswith(".0"):
+                                s = s[:-2]
+                            return s
 
-st.sidebar.markdown("---")
-st.sidebar.subheader("💶 Detaillierter Nettoumsatz (nach Verkaufspreis)")
+                        # Попробуем найти колонку с SAP или артикулом в файле продаж
+                        row_cols_lower = [c.lower() for c in df_sales_univ.columns]
+                        sap_val = ""
+                        art_val = ""
+                        
+                        for col_c in df_sales_univ.columns:
+                            c_low = col_c.lower()
+                            if 'sap' in c_low:
+                                sap_val = clean_val(row[col_c])
+                            elif 'article' in c_low or 'artikelnr' in c_low or 'sku' in c_low:
+                                art_val = clean_val(row[col_c])
 
-st.sidebar.markdown(
-    "Laden Sie eine Verkaufsliste hoch (mit verkaufter Menge und tatsächlichem"
-    " Verkaufspreis), um den Nettoumsatz zu berechnen."
-)
+                        # Количество проданного
+                        sold_qty = int(float(str(row[col_q]).replace(',', '.'))) if not pd.isna(row[col_q]) else 0
+                        
+                        if sold_qty > 0 and (sap_val or art_val):
+                            # Ищем товар в базе Supabase
+                            existing = None
+                            if sap_val:
+                                existing = supabase.table("inventory").select("*").eq("sap", sap_val).execute()
+                            if (not existing or not existing.data) and art_val:
+                                existing = supabase.table("inventory").select("*").eq("article", art_val).execute()
 
-# Загрузка файла с продажами через сайдбар
-sales_file = st.sidebar.file_uploader(
-    "Verkaufsbericht hochladen (Excel / CSV)", type=["xlsx", "csv"], key="sales_report"
-)
+                            if existing and existing.data:
+                                item_id = existing.data[0]["id"]
+                                curr_q = int(existing.data[0].get("quantity", 0))
+                                # Вычитаем проданное количество (но не уходим в минус)
+                                new_q = max(0, curr_q - sold_qty)
 
-if sales_file is not None:
-  try:
-    import pandas as pd
-
-    if sales_file.name.endswith(".csv"):
-      sales_report_df = pd.read_csv(sales_file)
-    else:
-      sales_report_df = pd.read_excel(sales_file)
-
-    st.sidebar.success("✅ Verkaufsbericht erfolgreich geladen!")
-
-    # Выбор колонок, если они называются иначе
-    # Ожидаем колонки с количеством (z.B. 'quantity' / 'Menge') и ценой (z.B. 'price' / 'Preis')
-    st.sidebar.write("Vorschau der Spalten:", list(sales_report_df.columns))
-
-    qty_col = st.sidebar.selectbox(
-        "Spalte für verkaufte Menge", sales_report_df.columns, key="q_col"
-    )
-    price_col = st.sidebar.selectbox(
-        "Spalte für tatsächlichen Verkaufspreis",
-        sales_report_df.columns,
-        key="p_col",
-    )
-
-    if st.sidebar.button("🧮 Nettoumsatz jetzt berechnen"):
-      total_brutto = 0.0
-
-      for _, row in sales_report_df.iterrows():
-        try:
-          qty_sold = float(row[qty_col]) if pd.notna(row[qty_col]) else 0.0
-          actual_price = (
-              float(row[price_col]) if pd.notna(row[price_col]) else 0.0
-          )
-          total_brutto += qty_sold * actual_price
-        except:
-          continue
-
-      # Вычет 19% немецкого налога (MwSt.)
-      # Формула: Чистая выручка (Netto) = Брутто / 1.19
-      total_netto = total_brutto / 1.19
-
-      st.sidebar.markdown("---")
-      st.sidebar.metric(
-          label="Bruttoumsatz (inkl. 19% MwSt.)", value=f"{total_brutto:,.2f} €"
-      )
-      st.sidebar.metric(
-          label="Nettoumsatz (exkl. 19% MwSt.)", value=f"{total_netto:,.2f} €"
-      )
-
-  except Exception as e:
-    st.sidebar.error(f"⚠ Fehler beim Lesen der Datei: {e}")
+                                supabase.table("inventory").update({"quantity": new_q}).eq("id", item_id).execute()
+                                inventory_updated_count += 1
+                    except:
+                        continue
+                
+                if inventory_updated_count > 0:
+                    st.sidebar.success(f"📉 Lagerbestand aktualisiert: {inventory_updated_count} Artikel automatisch reduziert.")
     # ==========================================
 # MONATLICHE UMSATZANFRAGE (MIT 19% MWST.-ABZUG)
 # ==========================================
