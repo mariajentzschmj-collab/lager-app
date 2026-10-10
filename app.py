@@ -2656,3 +2656,20 @@ if supabase is not None:
         # Если таблица еще не создана в Supabase, выводим подсказку для администратора
         st.sidebar.caption("💡 Tipp: Erstellen Sie in Supabase eine Tabelle `daily_sales` mit den Spalten `date`, `brutto` und `month`, um die Historie zu speichern.")
 # ==========================================
+
+# --- ИСТОРИЯ ЗАГРУЖЕННЫХ ДАТ В UMSATZ-TRACKING ---
+if supabase is not None:
+  try:
+    res_hist = supabase.table("daily_sales").select("date, nettototal, bruttototal").order("date", desc=True).execute()
+    if res_hist and res_hist.data:
+      hist_df = pd.DataFrame(res_hist.data)
+      with st.sidebar.expander("📅 Bereits geladene Tage anzeigen"):
+        if not hist_df.empty:
+          for _, h_row in hist_df.iterrows():
+            d_str = h_row.get("date", "-")
+            net_val = float(h_row.get("nettototal", 0) or 0)
+            st.markdown(f"• **{d_str}**: {net_val:,.2f} € Netto")
+        else:
+          st.info("Noch keine Tage erfasst.")
+  except Exception as e:
+    pass
