@@ -657,7 +657,7 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten des Wareneingangs: {e}")
 
-# 5. AUTO-ABVERKAUF PER BERICHT (МАССОВЫЙ ВЫЧЕТ ПО ОТЧЕТУ О ПРОДАЖАХ)
+# 5. AUTO-ABVERKAUF PER BERICHT (МАССОВЫЙ ВЫЧЕТ ПО ОТЧЕТУ О ПРОДАЖАХ — ИСПРАВЛЕННЫЙ)
 elif action == "📥 Auto-Abverkauf per Bericht":
   is_manager = st.session_state.get("role") == "manager"
   st.header("📥 Automatischer Abverkauf per Verkaufsbericht" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
@@ -672,35 +672,74 @@ elif action == "📥 Auto-Abverkauf per Bericht":
       else:
         report_df = pd.read_excel(sales_file)
 
+      # Нормализуем названия колонок (приводим к нижнему регистру)
+      report_df.columns = [str(c).strip().lower() for c in report_df.columns]
       st.write("📋 Vorschau des Verkaufsberichts:", report_df.head())
 
       if st.button("🚀 Abverkauf buchen / Freigabe anfordern"):
         items_sold = []
+        
+        def clean_val(val):
+          if pd.isna(val):
+            return ""
+          s = str(val).strip()
+          if s.endswith(".0"):
+            s = s[:-2]
+          return s
+
         for _, row in report_df.iterrows():
-          items_sold.append({
-              "article": str(row.get("article", row.get("sap", ""))),
-              "sold_qty": int(row.get("quantity", row.get("sold_qty", 0)))
-          })
+          # Ищем артикул или SAP в разных возможных вариациях названий колонок
+          art_val = clean_val(row.get("article", row.get("artikelnr", row.get("sku", ""))))
+          sap_val = clean_val(row.get("sap", ""))
+          
+          code_to_use = art_val if art_val else sap_val
+          if not code_to_use:
+            continue
+
+          # Безопасное извлечение проданного количества
+          q_raw = row.get("quantity", row.get("sold_qty", row.get("menge", 0)))
+          try:
+            sold_qty = int(float(str(q_raw).replace(',', '.'))) if not pd.isna(q_raw) else 0
+          except:
+            sold_qty = 0
+
+          if sold_qty > 0:
+            items_sold.append({
+                "code": code_to_use,
+                "sold_qty": sold_qty
+            })
 
         if is_manager:
           if supabase is not None:
+            success_count = 0
             for item in items_sold:
-              art = item["article"]
+              code = item["code"]
               sold_qty = item["sold_qty"]
-              existing = supabase.table("inventory").select("*").eq("article", art).execute()
-              if existing.data:
+              
+              # Ищем сначала по article, если не нашли — по sap
+              existing = supabase.table("inventory").select("*").eq("article", code).execute()
+              if not existing or not existing.data:
+                existing = supabase.table("inventory").select("*").eq("sap", code).execute()
+
+              if existing and existing.data:
+                item_id = existing.data[0]["id"]
                 curr_q = int(existing.data[0].get("quantity", 0))
                 new_q = max(0, curr_q - sold_qty)
-                supabase.table("inventory").update({"quantity": new_q}).eq("article", art).execute()
-            st.success("✅ Verkaufsbericht erfolgreich verarbeitet und Bestände reduziert!")
+                
+                res = supabase.table("inventory").update({"quantity": new_q}).eq("id", item_id).execute()
+                if res.data:
+                  success_count += 1
+
+            st.success(f"✅ Verkaufsbericht erfolgreich verarbeitet! Bestände für {success_count} Artikel reduziert.")
             st.rerun()
+          else:
+            st.error("Keine Verbindung zu Supabase.")
         else:
           payload = {"items": items_sold}
           request_manager_approval("bulk_sales_report", payload)
 
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten des Berichts: {e}")
-
 # 6. KATALOG AUS DATEI HOCHLADEN (ВКЛЮЧАЯ 0 ЗНАЧЕНИЯ)
 elif action == "📁 Katalog aus Datei hochladen":
   is_manager = st.session_state.get("role") == "manager"
