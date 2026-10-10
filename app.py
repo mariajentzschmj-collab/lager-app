@@ -1,18 +1,4 @@
-# ==========================================
-# MONATLICHE UMSATZANFRAGE (MIT 19% MWST.-ABZUG)
-# ==========================================
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("💶 Detaillierter Umsatz nach Monaten")
-
-st.sidebar.markdown(
-    "Laden Sie den Verkaufsbericht hoch (ab 01.01.2026), um den Nettoumsatz monatlich zu berechnen."
-)
-
-sales_file_monthly = st.sidebar.file_uploader(
-    "Verkaufsbericht (Jahresdatei) hochladen",
-    type=["xlsx", "csv"],
-    key="sales_report_monthly",import hashlib
+import hashlib
 import io
 import json
 import random
@@ -1188,15 +1174,15 @@ if st.sidebar.button("🚀 Automatische Neuberechnung starten"):
     st.rerun()
 
     # ==========================================
+# ==========================================
 # UMSATZBERECHNUNG AUS SEPARATEM VERKAUFSBERICHT
 # ==========================================
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("💶 Detaillierter Nettoumsatz (nach Verkaufspreis)")
+st.sidebar.subheader("💶 Detaillierter Nettoumsatz (nach Gesamtpreis)")
 
 st.sidebar.markdown(
-    "Laden Sie eine Verkaufsliste hoch (mit verkaufter Menge und tatsächlichem"
-    " Verkaufspreis), um den Nettoumsatz zu berechnen."
+    "Laden Sie eine Verkaufsliste hoch, um den Nettoumsatz aus der Gesamtpreis-Spalte zu berechnen."
 )
 
 # Загрузка файла с продажами через сайдбар
@@ -1205,57 +1191,51 @@ sales_file = st.sidebar.file_uploader(
 )
 
 if sales_file is not None:
-  try:
-    import pandas as pd
+    try:
+        import pandas as pd
 
-    if sales_file.name.endswith(".csv"):
-      sales_report_df = pd.read_csv(sales_file)
-    else:
-      sales_report_df = pd.read_excel(sales_file)
+        if sales_file.name.endswith(".csv"):
+            sales_report_df = pd.read_csv(sales_file)
+        else:
+            sales_report_df = pd.read_excel(sales_file)
 
-    st.sidebar.success("✅ Verkaufsbericht erfolgreich geladen!")
+        st.sidebar.success("✅ Verkaufsbericht erfolgreich geladen!")
 
-    # Выбор колонок, если они называются иначе
-    # Ожидаем колонки с количеством (z.B. 'quantity' / 'Menge') и ценой (z.B. 'price' / 'Preis')
-    st.sidebar.write("Vorschau der Spalten:", list(sales_report_df.columns))
+        st.sidebar.write("Vorschau der Spalten:", list(sales_report_df.columns))
 
-    qty_col = st.sidebar.selectbox(
-        "Spalte für verkaufte Menge", sales_report_df.columns, key="q_col"
-    )
-    price_col = st.sidebar.selectbox(
-        "Spalte für tatsächlichen Verkaufspreis",
-        sales_report_df.columns,
-        key="p_col",
-    )
+        # Выбираем колонку, где записана общая сумма по строке (Gesamtpreis)
+        price_col = st.sidebar.selectbox(
+            "Spalte für Gesamtpreis / Umsatz (z.B. Spalte C)",
+            sales_report_df.columns,
+            key="p_col",
+        )
 
-    if st.sidebar.button("🧮 Nettoumsatz jetzt berechnen"):
-      total_brutto = 0.0
+        if st.sidebar.button("🧮 Nettoumsatz jetzt berechnen"):
+            # Очищаем данные от запятых и превращаем в числа, пустые строки станут 0
+            cleaned_prices = (
+                sales_report_df[price_col]
+                .astype(str)
+                .str.replace('€', '', regex=False)
+                .str.replace(' ', '', regex=False)
+                .str.replace(',', '.', regex=False)
+            )
+            
+            total_brutto = pd.to_numeric(cleaned_prices, errors='coerce').sum()
 
-      for _, row in sales_report_df.iterrows():
-        try:
-          qty_sold = float(row[qty_col]) if pd.notna(row[qty_col]) else 0.0
-          actual_price = (
-              float(row[price_col]) if pd.notna(row[price_col]) else 0.0
-          )
-          total_brutto += qty_sold * actual_price
-        except:
-          continue
+            # Вычет 19% немецкого налога (MwSt.)
+            # Формула: Чистая выручка (Netto) = Брутто / 1.19
+            total_netto = total_brutto / 1.19
 
-      # Вычет 19% немецкого налога (MwSt.)
-      # Формула: Чистая выручка (Netto) = Брутто / 1.19
-      total_netto = total_brutto / 1.19
+            st.sidebar.markdown("---")
+            st.sidebar.metric(
+                label="Bruttoumsatz (inkl. 19% MwSt.)", value=f"{total_brutto:,.2f} €"
+            )
+            st.sidebar.metric(
+                label="Nettoumsatz (exkl. 19% MwSt.)", value=f"{total_netto:,.2f} €"
+            )
 
-      st.sidebar.markdown("---")
-      st.sidebar.metric(
-          label="Bruttoumsatz (inkl. 19% MwSt.)", value=f"{total_brutto:,.2f} €"
-      )
-      st.sidebar.metric(
-          label="Nettoumsatz (exkl. 19% MwSt.)", value=f"{total_netto:,.2f} €"
-      )
-
-  except Exception as e:
-    st.sidebar.error(f"⚠ Fehler beim Lesen der Datei: {e}")
-    # ==========================================
+    except Exception as e:
+        st.sidebar.error(f"⚠ Fehler beim Lesen der Datei: {e}")
 # ==========================================
 # MONATLICHE UMSATZANFRAGE (MIT 19% MWST.-ABZUG)
 # ==========================================
@@ -1423,50 +1403,3 @@ elif action == "📋 Inventur-Schnelleingabe":
             st.error("❌ Falsches Manager-Passwort.")
         else:
             st.info("ℹ Bitte geben Sie Ihren Namen und das Manager-Passwort ein, um fortzufahren.")
-)
-
-if sales_file_monthly is not None:
-    try:
-        import pandas as pd
-
-        if sales_file_monthly.name.endswith(".csv"):
-            sales_monthly_df = pd.read_csv(sales_file_monthly)
-        else:
-            sales_monthly_df = pd.read_excel(sales_file_monthly)
-
-        st.sidebar.success("✅ Jahresbericht erfolgreich geladen!")
-
-        columns_list = list(sales_monthly_df.columns)
-        
-        date_col = st.sidebar.selectbox("Spalte für das Datum", columns_list, key="d_col")
-        qty_col_m = st.sidebar.selectbox("Spalte für verkaufte Menge", columns_list, key="qm_col")
-        price_col_m = st.sidebar.selectbox("Spalte für tatsächlichen Verkaufspreis", columns_list, key="pm_col")
-
-        if st.sidebar.button("📊 Monatsumsatz berechnen"):
-            sales_monthly_df[date_col] = pd.to_datetime(sales_monthly_df[date_col], errors='coerce')
-            
-            sales_monthly_df["Monat"] = sales_monthly_df[date_col].dt.to_period("M").astype(str)
-            
-            sales_monthly_df["Brutto"] = (
-                pd.to_numeric(sales_monthly_df[qty_col_m], errors='coerce').fillna(0) * 
-                pd.to_numeric(sales_monthly_df[price_col_m], errors='coerce').fillna(0)
-            )
-
-            grouped = sales_monthly_df.groupby("Monat")["Brutto"].sum().reset_index()
-            
-            grouped["Netto (exkl. 19% MwSt.)"] = grouped["Brutto"] / 1.19
-            grouped["Brutto (inkl. 19% MwSt.)"] = grouped["Brutto"]
-
-            grouped = grouped.sort_values("Monat")
-
-            st.sidebar.markdown("---")
-            st.sidebar.write("### 📈 Umsatz nach Monaten:")
-            
-            for _, row in grouped.iterrows():
-                month_name = row["Monat"]
-                net_val = row["Netto (exkl. 19% MwSt.)"]
-                brutto_val = row["Brutto (inkl. 19% MwSt.)"]
-                st.sidebar.markdown(f"**{month_name}:** Netto: **{net_val:,.2f} €** *(Brutto: {brutto_val:,.2f} €)*")
-
-    except Exception as e:
-        st.sidebar.error(f"⚠ Fehler bei der Auswertung: {e}")
