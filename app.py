@@ -1471,7 +1471,7 @@ if st.session_state.get("role") == "manager" and supabase is not None:
 if pending_count > 0:
   st.sidebar.error(f"🔔 **Wartet auf Freigabe:** {pending_count} Anfrage(n)")
 
-if st.sidebar.button("🚪 Abmelden"key="logout_btn_1"):
+if st.sidebar.button("🚪 Abmelden", key="logout_btn_1"):
   st.session_state["logged_in"] = False
   st.session_state["role"] = None
   st.session_state["user_name"] = None
