@@ -1643,7 +1643,7 @@ action = st.sidebar.radio(
         "QR-Code für Kollegen", 
         "📋 Inventur-Schnelleingabe"
     ],
-    key="main_navigation_radio"  # <-- Обязательно добавьте этот уникальный ключ!
+    key="sidebar_menu_selection",
 )
 
 def search_items(dataframe, query):
