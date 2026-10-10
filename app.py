@@ -2355,7 +2355,7 @@ st.sidebar.markdown("**1. Min/Max-Werte per Excel aktualisieren**")
 uploaded_minmax = st.sidebar.file_uploader(
     "Excel-Datei (sap, min_stock, max_stock) hochladen", 
     type=["xlsx", "xls"],
-    key="minmax_uploader_combined"
+    key="minmax_uploader_fixed_2026"
 )
 
 if uploaded_minmax is not None:
