@@ -2416,7 +2416,7 @@ st.sidebar.markdown("---")
 
 # 2. Sektion: Nachbestellung prüfen und generieren
 st.sidebar.markdown("**2. Nachbestellung ausführen**")
-if st.sidebar.button("🚀 Nachbestellung prüfen"):
+if st.sidebar.button("📦 Nachbestellung prüfen", key="nachbestellung_sidebar_btn"):
   if df.empty:
     st.sidebar.warning("⚠️ Keine Daten im Bestand gefunden.")
   else:
