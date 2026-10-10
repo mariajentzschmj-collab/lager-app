@@ -657,13 +657,29 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten des Wareneingangs: {e}")
 
-# 5. AUTO-ABVERKAUF PER BERICHT (МАССОВЫЙ ВЫЧЕТ ПО ОТЧЕТУ О ПРОДАЖАХ — ИСПРАВЛЕННЫЙ)
+# 5. AUTO-ABVERKAUF PER BERICHT (МАССОВЫЙ ВЫЧЕТ ПО ОТЧЕТУ О ПРОДАЖАХ — С ШАБЛОНОМ И ОТЧЕТОМ)
 elif action == "📥 Auto-Abverkauf per Bericht":
   is_manager = st.session_state.get("role") == "manager"
   st.header("📥 Automatischer Abverkauf per Verkaufsbericht" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
   st.markdown("Laden Sie einen Verkaufsbericht (Excel/CSV) hoch, der verkaufte Mengen enthält. Die verkauften Mengen werden **automatisch vom Bestand abgezogen**.")
 
-  sales_file = st.file_uploader("Verkaufsbericht auswählen", type=["xlsx", "csv"], key="sales_report_upload")
+  # 1. Кнопка скачивания шаблона Excel для продаж
+  template_sales_df = pd.DataFrame(columns=["article", "sap", "quantity"])
+  template_sales_df.loc[0] = ["4149", "1070438", 2]
+
+  out_sales_tmpl = io.BytesIO()
+  with pd.ExcelWriter(out_sales_tmpl, engine="openpyxl") as writer:
+    template_sales_df.to_excel(writer, index=False, sheet_name="Verkäufe")
+  
+  st.download_button(
+      label="📥 Excel-Vorlage für Verkaufsbericht herunterladen",
+      data=out_sales_tmpl.getvalue(),
+      file_name="KaDeWe_Verkaufsbericht_Vorlage.xlsx",
+      mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  )
+
+  st.markdown("---")
+  sales_file = st.file_uploader("Verkaufsbericht auswählen", type=["xlsx", "csv"], key="sales_report_upload_v2")
 
   if sales_file is not None:
     try:
@@ -672,11 +688,11 @@ elif action == "📥 Auto-Abverkauf per Bericht":
       else:
         report_df = pd.read_excel(sales_file)
 
-      # Нормализуем названия колонок (приводим к нижнему регистру)
+      # Нормализуем названия колонок
       report_df.columns = [str(c).strip().lower() for c in report_df.columns]
       st.write("📋 Vorschau des Verkaufsberichts:", report_df.head())
 
-      if st.button("🚀 Abverkauf buchen / Freigabe anfordern"):
+      if st.button("🚀 Abverkauf buchen & Bestände reduzieren"):
         items_sold = []
         
         def clean_val(val):
@@ -688,7 +704,6 @@ elif action == "📥 Auto-Abverkauf per Bericht":
           return s
 
         for _, row in report_df.iterrows():
-          # Ищем артикул или SAP в разных возможных вариациях названий колонок
           art_val = clean_val(row.get("article", row.get("artikelnr", row.get("sku", ""))))
           sap_val = clean_val(row.get("sap", ""))
           
@@ -696,7 +711,6 @@ elif action == "📥 Auto-Abverkauf per Bericht":
           if not code_to_use:
             continue
 
-          # Безопасное извлечение проданного количества
           q_raw = row.get("quantity", row.get("sold_qty", row.get("menge", 0)))
           try:
             sold_qty = int(float(str(q_raw).replace(',', '.'))) if not pd.isna(q_raw) else 0
@@ -712,26 +726,47 @@ elif action == "📥 Auto-Abverkauf per Bericht":
         if is_manager:
           if supabase is not None:
             success_count = 0
+            updated_details = []
+            not_found_count = 0
+
             for item in items_sold:
               code = item["code"]
               sold_qty = item["sold_qty"]
               
-              # Ищем сначала по article, если не нашли — по sap
+              # Ищем сначала по article, затем по sap
               existing = supabase.table("inventory").select("*").eq("article", code).execute()
               if not existing or not existing.data:
                 existing = supabase.table("inventory").select("*").eq("sap", code).execute()
 
               if existing and existing.data:
-                item_id = existing.data[0]["id"]
-                curr_q = int(existing.data[0].get("quantity", 0))
+                item_db = existing.data[0]
+                item_id = item_db["id"]
+                item_name = item_db.get("name", "Unbekannt")
+                curr_q = int(item_db.get("quantity", 0))
                 new_q = max(0, curr_q - sold_qty)
                 
                 res = supabase.table("inventory").update({"quantity": new_q}).eq("id", item_id).execute()
                 if res.data:
                   success_count += 1
+                  updated_details.append({
+                      "Artikel": item_name,
+                      "Code": code,
+                      "Verkauft": sold_qty,
+                      "Alter Bestand": curr_q,
+                      "Neuer Bestand": new_q
+                  })
+              else:
+                not_found_count += 1
 
-            st.success(f"✅ Verkaufsbericht erfolgreich verarbeitet! Bestände für {success_count} Artikel reduziert.")
-            st.rerun()
+            # Красивый блок подтверждения
+            st.success(f"✅ Verkaufsbericht erfolgreich verarbeitet! Bestände für **{success_count}** Artikel aktualisiert.")
+            
+            if updated_details:
+              st.markdown("### 📊 Details zur Bestandsreduzierung:")
+              st.dataframe(pd.DataFrame(updated_details), use_container_width=True)
+
+            if not_found_count > 0:
+              st.warning(f"⚠ {not_found_count} Positionen aus dem Bericht wurden in der Datenbank nicht gefunden und übersprunken.")
           else:
             st.error("Keine Verbindung zu Supabase.")
         else:
