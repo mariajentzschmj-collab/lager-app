@@ -287,6 +287,7 @@ action = st.sidebar.radio(
         "📱 QR-Code für Kollegen",
         "📋 Inventur-Schnelleingabe",
     ],
+    key="main_navigation_radio",
 )
 
 
@@ -1631,19 +1632,19 @@ st.sidebar.header("⚙️ Lagersteuerung")
 action = st.sidebar.radio(
     "Aktion auswählen:",
     [
-        "📊 Bestände anzeigen",
-        "➕ Artikel hinzufügen",
-        "📉 Artikel reduzieren (Verkauf)",
-        "📥 Massen-Wareneingang (Zuwachs)",
-        "📥 Auto-Abverkauf per Bericht",
-        "📁 Katalog aus Datei hochladen",
-        "📷 Live-Kamera-Scanner",
-        "🖨 Etiketten drucken",
-        "📱 QR-Code für Kollegen",
-        "📋 Inventur-Schnelleingabe",
+        "Bestände anzeigen", 
+        "Artikel hinzufügen", 
+        "Artikel reduzieren (Verkauf)", 
+        "Massen-Wareneingang (Zuwachs)", 
+        "Auto-Abverkauf per Bericht", 
+        "Katalog aus Datei hochladen", 
+        "Live-Kamera-Scanner", 
+        "Etiketten drucken", 
+        "QR-Code für Kollegen", 
+        "📋 Inventur-Schnelleingabe"
     ],
+    key="main_navigation_radio"  # <-- Обязательно добавьте этот уникальный ключ!
 )
-
 
 def search_items(dataframe, query):
   if dataframe.empty or not query:
