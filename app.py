@@ -584,7 +584,7 @@ elif action == "📉 Artikel reduzieren (Verkauf)":
           }
           request_manager_approval("reduce_stock", payload)
 
-# 4. MASSEN-WARENEINGANG (ZUWACHS) ПО SAP — МАССОВЫЙ ПРИХОД ПО SAP С АВТОМАТИЧЕСКИМ ПРИБАВЛЕНИЕМ
+# 4. MASSEN-WARENEINGANG (ZUWACHS) ПО SAP — С ЗАЩИТОЙ ОТ NAN И ДЕТАЛЬНЫМ ОТЧЕТОМ
 elif action == "📥 Massen-Wareneingang (Zuwachs)":
   is_manager = st.session_state.get("role") == "manager"
   st.header("📥 Massen-Wareneingang (Bestand erhöhen nach SAP)" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
@@ -596,6 +596,7 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
   out_tmpl = io.BytesIO()
   with pd.ExcelWriter(out_tmpl, engine="openpyxl") as writer:
     template_df.to_excel(writer, index=False, sheet_name="Wareneingang")
+  
   st.download_button(
       label="📥 Excel-Vorlage für Wareneingang herunterladen",
       data=out_tmpl.getvalue(),
@@ -603,7 +604,8 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
   )
 
-  incoming_file = st.file_uploader("Wareneingangs-Datei auswählen", type=["xlsx", "csv"], key="incoming_upload")
+  st.markdown("---")
+  incoming_file = st.file_uploader("Wareneingangs-Datei auswählen", type=["xlsx", "csv"], key="incoming_upload_v2")
 
   if incoming_file is not None:
     try:
@@ -612,44 +614,135 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
       else:
         inc_df = pd.read_excel(incoming_file)
 
+      # Нормализуем названия колонок к нижнему регистру
+      inc_df.columns = [str(c).strip().lower() for c in inc_df.columns]
       st.write("📋 Vorschau des Wareneingangs:", inc_df.head())
 
-      if st.button("🚀 Wareneingang buchen / Freigabe anfordern"):
+      if st.button("🚀 Wareneingang buchen & Bestände erhöhen"):
         items_incoming = []
+        
+        def clean_val(val):
+          if pd.isna(val):
+            return ""
+          s = str(val).strip()
+          if s.endswith(".0"):
+            s = s[:-2]
+          return s
+
         for _, row in inc_df.iterrows():
+          sap_num = clean_val(row.get("sap", ""))
+          art_num = clean_val(row.get("article", ""))
+          bc_num = clean_val(row.get("barcode", ""))
+
+          if not sap_num and not art_num:
+            continue
+
+          # Безопасное количество (защита от NaN и точек)
+          q_raw = row.get("quantity", 0)
+          try:
+            inc_qty = int(float(str(q_raw).replace(',', '.'))) if not pd.isna(q_raw) else 0
+          except:
+            inc_qty = 0
+
+          # Безопасная цена
+          p_raw = row.get("preis", 0)
+          if pd.isna(p_raw):
+            preis_val = 0.0
+          else:
+            p_str = str(p_raw).replace('€', '').replace(' ', '').replace(',', '.')
+            try:
+              preis_val = float(p_str) if p_str else 0.0
+            except:
+              preis_val = 0.0
+
+          # Безопасный текст (никаких NaN в JSON)
+          name_val = row.get("name", "")
+          name_val = "Unbekannter Artikel" if pd.isna(name_val) or not str(name_val).strip() else str(name_val).strip()
+
+          brand_val = row.get("brand", "")
+          brand_val = "Iittala" if pd.isna(brand_val) or not str(brand_val).strip() else str(brand_val).strip()
+
           items_incoming.append({
-              "sap": str(row.get("sap", "")),
-              "name": str(row.get("name", "Unbekannter Artikel")),
-              "brand": str(row.get("brand", "Iittala")),
-              "incoming_qty": int(row.get("quantity", 0)),
-              "preis": float(row.get("preis", 0.0)),
-              "article": str(row.get("article", "")),
-              "barcode": str(row.get("barcode", ""))
+              "sap": sap_num,
+              "name": name_val,
+              "brand": brand_val,
+              "incoming_qty": inc_qty,
+              "preis": preis_val,
+              "article": art_num,
+              "barcode": bc_num
           })
 
         if is_manager:
           if supabase is not None:
+            success_count = 0
+            updated_details = []
+
             for item in items_incoming:
               sap_num = item["sap"]
+              art_num = item["article"]
               inc_qty = item["incoming_qty"]
-              existing = supabase.table("inventory").select("*").eq("sap", sap_num).execute()
-              if existing.data:
-                curr_q = int(existing.data[0].get("quantity", 0))
+              
+              # Ищем существующий товар в базе по SAP или Article
+              existing = None
+              if sap_num:
+                existing = supabase.table("inventory").select("*").eq("sap", sap_num).execute()
+              if (not existing or not existing.data) and art_num:
+                existing = supabase.table("inventory").select("*").eq("article", art_num).execute()
+
+              if existing and existing.data:
+                # Товар найден — прибавляем количество
+                item_db = existing.data[0]
+                item_id = item_db["id"]
+                item_name = item_db.get("name", item["name"])
+                curr_q = int(item_db.get("quantity", 0))
                 new_q = curr_q + inc_qty
-                supabase.table("inventory").update({"quantity": new_q}).eq("sap", sap_num).execute()
+
+                update_data = {"quantity": new_q}
+                if item["preis"] > 0:
+                  update_data["preis"] = item["preis"]
+
+                res = supabase.table("inventory").update(update_data).eq("id", item_id).execute()
+                if res.data:
+                  success_count += 1
+                  updated_details.append({
+                      "Artikel": item_name,
+                      "SAP": sap_num if sap_num else "-",
+                      "Hinzugefügt": inc_qty,
+                      "Alter Bestand": curr_q,
+                      "Neuer Bestand": new_q
+                  })
               else:
+                # Товар не найден — создаем новый
                 new_item = {
-                    "sap": sap_num,
+                    "sap": sap_num if sap_num else "UNKNOWN",
                     "name": item["name"],
                     "brand": item["brand"],
                     "quantity": inc_qty,
                     "preis": item["preis"],
-                    "article": item["article"],
+                    "article": art_num,
                     "barcode": item["barcode"]
                 }
-                supabase.table("inventory").upsert(new_item, on_conflict="article").execute()
-            st.success("✅ Wareneingang nach SAP erfolgreich gebucht und Bestände automatisch erhöht!")
+                res = supabase.table("inventory").insert(new_item).execute()
+                if res.data:
+                  success_count += 1
+                  updated_details.append({
+                      "Artikel": item["name"],
+                      "SAP": sap_num if sap_num else "-",
+                      "Hinzugefügt (Neu)": inc_qty,
+                      "Alter Bestand": 0,
+                      "Neuer Bestand": inc_qty
+                  })
+
+            # Красивое подтверждение и таблица результатов
+            st.success(f"✅ Wareneingang erfolgreich gebucht! Insgesamt verarbeitet: **{success_count}** Positionen.")
+            
+            if updated_details:
+              st.markdown("### 📊 Details zum Wareneingang:")
+              st.dataframe(pd.DataFrame(updated_details), use_container_width=True)
+
             st.rerun()
+          else:
+            st.error("Keine Verbindung zu Supabase.")
         else:
           payload = {"items": items_incoming}
           request_manager_approval("bulk_wareneingang", payload)
