@@ -15,6 +15,57 @@ from supabase import create_client
 st.set_page_config(
     page_title="KaDeWe Lager — Iittala & Royal Copenhagen", layout="wide"
 )
+# ==========================================
+# СТИЛИЗАЦИЯ ПОД СТИЛЬ FISKARS / IITTALA / ROYAL COPENHAGEN
+# ==========================================
+st.markdown("""
+<style>
+    /* Общий фон приложения (светлый, чистый скандинавский стиль) */
+    .stApp {
+        background-color: #F8F9FA;
+        color: #1A1A1A;
+    }
+    
+    /* Стилизация заголовков под премиальный бренд */
+    h1, h2, h3 {
+        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        color: #0F2537; /* Глубокий темно-синий в стиле Royal Copenhagen */
+        font-weight: 500;
+    }
+    
+    /* Оформление блоков с информацией (st.info) */
+    div.stInfo {
+        background-color: #E8F1F5;
+        border-left: 4px solid #1B4965;
+        color: #1A1A1A;
+    }
+    
+    /* Кнопки в фирменном сдержанном стиле */
+    .stButton>button {
+        background-color: #1B4965;
+        color: white;
+        border-radius: 4px;
+        border: none;
+        font-weight: 500;
+        padding: 0.5rem 1rem;
+        transition: background-color 0.2s ease;
+    }
+    
+    .stButton>button:hover {
+        background-color: #112F41;
+        color: white;
+    }
+    
+    /* Карточки/формы */
+    div[data-testid="stForm"] {
+        background-color: #FFFFFF;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        border: 1px solid #E2E8F0;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 SUPABASE_URL = "https://mtcbfvpjnxlkvvtuknyv.supabase.co"
 SUPABASE_KEY = "sb_publishable_wChGuVU2FeW23S2bqdYqOg_B9-oMoKs"
