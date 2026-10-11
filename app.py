@@ -1310,26 +1310,7 @@ if action == "📋 Inventur-Schnelleingabe":
     st.header("📋 Inventur-Schnelleingabe (Multi-User)" + ("" if is_manager else f" (Agent: {agent_name})"))
     st.markdown("Geben Sie einen Suchbegriff oder SAP-Code ein, um den Artikel zu finden und den Ist-Bestand zu erfassen.")
 
-    with st.form("quick_inventory_form"):
-        col_q1, col_q2 = st.columns([2, 1])
-        with col_q1:
-            inv_search = st.text_input(
-                "🔍 Artikel suchen (Name, SAP, Artikelnummer oder Barcode):",
-                placeholder="Suchbegriff eingeben...",
-                key="quick_inv_search_input"
-            )
-        with col_q2:
-            inv_counted_qty = st.number_input(
-                "Gezählte Ist-Menge:",
-                min_value=0,
-                value=0,
-                step=1,
-                key="quick_inv_counted_qty_input"
-            )
-            
-        inv_submitted = st.form_submit_button("📥 Zählung erfassen / absenden")
-
-    # Получаем актуальные данные напрямую из таблицы inventory в Supabase
+    # Загружаем актуальные данные из Supabase в реальном времени
     live_df = pd.DataFrame()
     if supabase is not None:
         try:
@@ -1339,12 +1320,16 @@ if action == "📋 Inventur-Schnelleingabe":
         except Exception as e:
             st.error(f"Fehler beim Laden der Bestandsdaten aus Supabase: {e}")
 
-    # Если в inventory пусто, падаем обратно на общую df
     if live_df.empty and not df.empty:
         live_df = df
 
+    inv_search = st.text_input(
+        "🔍 Artikel suchen (Name, SAP, Artikelnummer oder Barcode):",
+        placeholder="Suchbegriff eingeben...",
+        key="quick_inv_search_input"
+    )
+
     if inv_search and not live_df.empty:
-        # Ищем по live_df, где гарантированно есть колонка quantity из inventory
         matched_items = search_items(live_df, inv_search)
         if not matched_items.empty:
             st.markdown("### 📦 Gefundene Artikel im System:")
@@ -1354,26 +1339,56 @@ if action == "📋 Inventur-Schnelleingabe":
             
             sel_item = matched_items.iloc[0]
             item_id = sel_item.get("id")
+            item_article = str(sel_item.get("article", ""))
+            item_name = str(sel_item.get("name", ""))
+            item_brand = str(sel_item.get("brand", "Iittala"))
             item_sap = str(sel_item.get("sap", ""))
-            item_name = str(sel_item.get("name"))
+            item_barcode = str(sel_item.get("barcode", ""))
+            item_preis = float(sel_item.get("preis", 0.0) or 0.0)
+            item_location = str(sel_item.get("location", "Etage 5 Lager"))
             
-            # Читаем реальный quantity из найденной записи базы
             raw_qty = sel_item.get("quantity")
-            old_qty = int(raw_qty) if raw_qty is not None and pd.notna(raw_qty) else 0
+            current_db_qty = int(raw_qty) if raw_qty is not None and pd.notna(raw_qty) else 0
             
             st.info(
                 f"👉 **Ausgewählter Artikel:** {item_name} | "
                 f"**SAP:** {item_sap} | "
-                f"**System-Bestand (aktuell in DB):** {old_qty} Stk."
+                f"**System-Bestand (aktuell in DB):** {current_db_qty} Stk."
             )
             
-            if inv_submitted:
-                new_counted = int(inv_counted_qty)
-                
+            # Используем обычные элементы вне формы, чтобы значения сохранялись в session_state и не сбрасывались в 0
+            col_q1, col_q2 = st.columns([2, 1])
+            with col_q1:
+                new_counted = st.number_input(
+                    "Gezählte Ist-Menge:",
+                    min_value=0,
+                    value=current_db_qty,  # Подставляем актуальное значение из базы
+                    step=1,
+                    key=f"counted_qty_{item_id}_{item_sap}"
+                )
+            with col_q2:
+                st.write("") # Отступ для выравнивания кнопки
+                st.write("")
+                submit_clicked = st.button("📥 Zählung speichern", type="primary")
+
+            if submit_clicked:
                 if is_manager:
                     if supabase is not None:
                         try:
-                            # Обновляем quantity в базе данных
+                            row_data = {
+                                "quantity": int(new_counted)
+                            }
+                            # Если есть ID, передаем его, чтобы обновить конкретную строку в базе
+                            if item_id is not None and pd.notna(item_id):
+                                row_data["id"] = int(item_id)
+                            if item_sap:
+                                row_data["sap"] = item_sap
+                            if item_article:
+                                row_data["article"] = item_article
+                            if item_name:
+                                row_data["name"] = item_name
+
+                            # Выполняем обновление строки по ID
                             query = supabase.table("inventory").update({
                                 "quantity": int(new_counted)
                             })
@@ -1383,29 +1398,28 @@ if action == "📋 Inventur-Schnelleingabe":
                             elif item_sap:
                                 query = query.eq("sap", item_sap)
                             else:
-                                query = query.eq("name", item_name)
+                                query = query.eq("article", item_article)
                                 
                             query.execute()
                             
                             if hasattr(st, "cache_data"):
                                 st.cache_data.clear()
                             
-                            st.success(f"✅ Bestand für '{item_name}' direkt aktualisiert: Alt: {old_qty} Stk. ➔ Neu (Ist): {new_counted} Stk.")
+                            st.success(f"✅ Bestand für '{item_name}' erfolgreich gespeichert: Neu (Ist): {new_counted} Stk.")
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Fehler beim Aktualisieren: {e}")
+                            st.error(f"Fehler beim Speichern: {e}")
                 else:
                     payload = {
                         "id": item_id,
                         "sap": item_sap,
-                        "article": str(sel_item.get("article", "")),
+                        "article": item_article,
                         "name": item_name,
-                        "old_quantity": old_qty,
-                        "new_quantity": new_counted,
+                        "old_quantity": current_db_qty,
+                        "new_quantity": int(new_counted),
                         "counted_by": agent_name
                     }
                     request_manager_approval("inventory_count", payload)
                     st.success("📤 Zählung wurde zur Freigabe an den Manager gesendet!")
         else:
-            if inv_submitted:
-                st.warning("⚠️ Kein Artikel zu diesem Suchbegriff gefunden.")
+            st.warning("⚠️ Kein Artikel zu diesem Suchbegriff gefunden.")
