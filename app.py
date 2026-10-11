@@ -1308,7 +1308,7 @@ if action == "📋 Inventur-Schnelleingabe":
     agent_name = st.session_state.get("user_name", "Mitarbeiter")
     
     st.header("📋 Inventur-Schnelleingabe (Multi-User)" + ("" if is_manager else f" (Agent: {agent_name})"))
-    st.markdown("Hier können Mitarbeiter schnell den tatsächlichen Bestand vor Ort erfassen. Die Zählung wird zur Kontrolle an den Manager gesendet oder direkt verbucht.")
+    st.markdown("Geben Sie einen Suchbegriff oder SAP-Code ein, um den Artikel zu finden und den Ist-Bestand zu erfassen.")
 
     with st.form("quick_inventory_form"):
         col_q1, col_q2 = st.columns([2, 1])
@@ -1329,37 +1329,75 @@ if action == "📋 Inventur-Schnelleingabe":
             
         inv_submitted = st.form_submit_button("📥 Zählung erfassen / absenden")
 
-    if inv_search and not df.empty:
-        matched_items = search_items(df, inv_search)
+    # Получаем актуальные данные напрямую из таблицы inventory в Supabase
+    live_df = pd.DataFrame()
+    if supabase is not None:
+        try:
+            res = supabase.table("inventory").select("*").execute()
+            if res.data:
+                live_df = pd.DataFrame(res.data)
+        except Exception as e:
+            st.error(f"Fehler beim Laden der Bestandsdaten aus Supabase: {e}")
+
+    # Если в inventory пусто, падаем обратно на общую df
+    if live_df.empty and not df.empty:
+        live_df = df
+
+    if inv_search and not live_df.empty:
+        # Ищем по live_df, где гарантированно есть колонка quantity из inventory
+        matched_items = search_items(live_df, inv_search)
         if not matched_items.empty:
-            st.markdown("### 📦 Ausgewählter Artikel:")
+            st.markdown("### 📦 Gefundene Artikel im System:")
+            
+            display_cols = [c for c in ["article", "name", "brand", "quantity", "sap", "preis"] if c in matched_items.columns]
+            st.dataframe(matched_items[display_cols], use_container_width=True)
+            
             sel_item = matched_items.iloc[0]
+            item_id = sel_item.get("id")
+            item_sap = str(sel_item.get("sap", ""))
+            item_name = str(sel_item.get("name"))
+            
+            # Читаем реальный quantity из найденной записи базы
+            raw_qty = sel_item.get("quantity")
+            old_qty = int(raw_qty) if raw_qty is not None and pd.notna(raw_qty) else 0
             
             st.info(
-                f"**Name:** {sel_item.get('name')} | "
-                f"**Art-Nr:** {sel_item.get('article')} | "
-                f"**SAP:** {sel_item.get('sap')} | "
-                f"**System-Bestand:** {int(sel_item.get('quantity', 0))} Stk."
+                f"👉 **Ausgewählter Artikel:** {item_name} | "
+                f"**SAP:** {item_sap} | "
+                f"**System-Bestand (aktuell in DB):** {old_qty} Stk."
             )
             
             if inv_submitted:
                 new_counted = int(inv_counted_qty)
-                item_id = int(sel_item.get("id")) if "id" in sel_item else None
-                item_name = str(sel_item.get("name"))
-                old_qty = int(sel_item.get("quantity", 0))
                 
                 if is_manager:
-                    if supabase is not None and item_id:
+                    if supabase is not None:
                         try:
-                            supabase.table("inventory").update({"quantity": new_counted}).eq("id", item_id).execute()
-                            st.success(f"✅ Bestand für '{item_name}' direkt aktualisiert: Alt: {old_qty} ➔ Neu: {new_counted}")
+                            # Обновляем quantity в базе данных
+                            query = supabase.table("inventory").update({
+                                "quantity": int(new_counted)
+                            })
+                            
+                            if item_id is not None and pd.notna(item_id):
+                                query = query.eq("id", int(item_id))
+                            elif item_sap:
+                                query = query.eq("sap", item_sap)
+                            else:
+                                query = query.eq("name", item_name)
+                                
+                            query.execute()
+                            
+                            if hasattr(st, "cache_data"):
+                                st.cache_data.clear()
+                            
+                            st.success(f"✅ Bestand für '{item_name}' direkt aktualisiert: Alt: {old_qty} Stk. ➔ Neu (Ist): {new_counted} Stk.")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Fehler beim Aktualisieren: {e}")
                 else:
-                    # Отправляем запрос на подтверждение менеджеру от конкретного сотрудника
                     payload = {
                         "id": item_id,
+                        "sap": item_sap,
                         "article": str(sel_item.get("article", "")),
                         "name": item_name,
                         "old_quantity": old_qty,
@@ -1367,7 +1405,7 @@ if action == "📋 Inventur-Schnelleingabe":
                         "counted_by": agent_name
                     }
                     request_manager_approval("inventory_count", payload)
+                    st.success("📤 Zählung wurde zur Freigabe an den Manager gesendet!")
         else:
             if inv_submitted:
-                st.warning("⚠️ Kein Artikel zu diesem Suchbegriff gefunden. Bitte prüfen Sie die Eingabe.")
-
+                st.warning("⚠️ Kein Artikel zu diesem Suchbegriff gefunden.")
