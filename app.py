@@ -877,6 +877,7 @@ elif action == "📥 Auto-Abverkauf per Bericht":
 
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten des Berichts: {e}")
+
 # 6. KATALOG AUS DATEI HOCHLADEN (ВКЛЮЧАЯ 0 ЗНАЧЕНИЯ)
 elif action == "📁 Katalog aus Datei hochladen":
   is_manager = st.session_state.get("role") == "manager"
@@ -1023,6 +1024,8 @@ elif action == "📱 QR-Code für Kollegen":
   st.markdown(f"Direktlink: [{app_url}]({app_url})")
 
         # ==========================================
+
+# ==========================================
 # KOMPLETT-BLOCK: MIN/MAX UPLOAD & AUTOMATISCHE BESTELLUNG
 # ==========================================
 
@@ -1032,9 +1035,9 @@ st.sidebar.subheader("📦 Automatische Bestellung & Min/Max")
 # 1. Sektion: Min/Max-Werte per Excel aktualisieren
 st.sidebar.markdown("**1. Min/Max-Werte per Excel aktualisieren**")
 uploaded_minmax = st.sidebar.file_uploader(
-    "Excel-Datei (sap, min_stock, max_stock) hochladen", 
+    "Excel-Datei (article/sap, min_stock, max_stock) hochladen", 
     type=["xlsx", "xls"],
-    key="minmax_uploader_combined_v2"
+    key="minmax_uploader_pagination_fix"
 )
 
 if uploaded_minmax is not None:
@@ -1045,37 +1048,92 @@ if uploaded_minmax is not None:
     
     st.sidebar.success(f"Datei geladen! Zeilen: {len(update_df)}")
     
-    if st.sidebar.button("💾 In Datenbank speichern", key="btn_save_minmax_db"):
+    if st.sidebar.button("💾 In Datenbank speichern", key="btn_save_minmax_db_pagination_fix"):
       success_count = 0
       error_count = 0
       not_found_count = 0
       
+      # Загружаем ВСЮ базу данных с помощью постраничной пагинации (обход лимитов Supabase)
+      all_db_rows = []
+      page_size = 1000
+      start = 0
+      
+      try:
+          while True:
+              response = supabase.table("inventory").select("id, sap, article").range(start, start + page_size - 1).execute()
+              if not response.data:
+                  break
+              all_db_rows.extend(response.data)
+              if len(response.data) < page_size:
+                  break
+              start += page_size
+      except Exception as e:
+          st.sidebar.error(f"Fehler beim Laden der DB: {e}")
+
+      sap_to_id = {}
+      article_to_id = {}
+      for item in all_db_rows:
+          db_sap = str(item.get("sap", "")).strip()
+          if "." in db_sap:
+              db_sap = db_sap.split(".")[0]
+          db_art = str(item.get("article", "")).strip()
+          if "." in db_art:
+              db_art = db_art.split(".")[0]
+              
+          item_id = item.get("id")
+          
+          if db_sap and db_sap != "None":
+              sap_to_id[db_sap] = item_id
+              try:
+                  sap_to_id[str(int(db_sap))] = item_id
+              except:
+                  pass
+                  
+          if db_art and db_art != "None":
+              article_to_id[db_art] = item_id
+              try:
+                  article_to_id[str(int(db_art))] = item_id
+              except:
+                  pass
+
+      # Zeilen aus Excel durchgehen und abgleichen
       for _, row in update_df.iterrows():
         try:
-          # SAP-Nummer auslesen und .0-Endung von Excel entfernen
-          sap_val = str(row.get("sap", "")).strip()
-          if sap_val.endswith(".0"):
-            sap_val = sap_val[:-2]
-
-          min_val = int(row.get("min_stock", 2))
-          max_val = int(row.get("max_stock", 10))
+          raw_code = row.get("sap", row.get("article", ""))
+          if pd.isna(raw_code):
+              continue
           
-          if sap_val and sap_val != "nan":
-            # Prüfen, ob der Artikel in Supabase existiert
-            existing = supabase.table("inventory").select("id, sap").eq("sap", sap_val).execute()
-            
-            if existing.data and len(existing.data) > 0:
-              # Werte in der Datenbank aktualisieren
+          code_val = str(raw_code).strip()
+          if "." in code_val:
+              code_val = code_val.split(".")[0]
+          code_val = code_val.strip()
+
+          min_val = int(row.get("min_stock", 0))
+          max_val = int(row.get("max_stock", 0))
+          
+          if code_val and code_val != "nan":
+            row_id = None
+            try:
+                int_code = str(int(float(code_val)))
+                row_id = sap_to_id.get(int_code) or article_to_id.get(int_code)
+            except:
+                pass
+                
+            if not row_id:
+                row_id = sap_to_id.get(code_val) or article_to_id.get(code_val)
+
+            if row_id:
               supabase.table("inventory").update({
                   "min_stock": min_val,
                   "max_stock": max_val
-              }).eq("sap", sap_val).execute()
+              }).eq("id", row_id).execute()
+              
               success_count += 1
             else:
               not_found_count += 1
           else:
             error_count += 1
-        except Exception:
+        except Exception as e:
           error_count += 1
           
       st.sidebar.success(f"Aktualisiert: {success_count}")
@@ -1084,9 +1142,9 @@ if uploaded_minmax is not None:
       if error_count > 0:
         st.sidebar.error(f"Fehlerhafte Zeilen: {error_count}")
         
-      # WICHTIG: Automatischer Neustart des Skripts, ohne F5 zu drücken!
-      st.success("Änderungen gespeichert! Aktualisiere Ansicht...")
-      st.rerun()
+      if success_count > 0:
+        st.success("Änderungen gespeichert! Aktualisiere Ansicht...")
+        st.rerun()
       
   except Exception as e:
     st.sidebar.error(f"Fehler beim Verlesen der Datei: {e}")
@@ -1095,14 +1153,13 @@ st.sidebar.markdown("---")
 
 # 2. Sektion: Nachbestellung prüfen und generieren
 st.sidebar.markdown("**2. Nachbestellung ausführen**")
-if st.sidebar.button("🚀 Nachbestellung prüfen", key="btn_nachbestellung_pruefen"):
+if st.sidebar.button("🚀 Nachbestellung prüfen", key="btn_nachbestellung_pruefen_pagination_fix"):
   if df.empty:
     st.sidebar.warning("⚠️ Keine Daten im Bestand gefunden.")
   else:
     check_df = df.copy()
     check_df["quantity"] = pd.to_numeric(check_df["quantity"], errors="coerce").fillna(0)
     
-    # Standardwerte falls Spalten fehlen
     if "min_stock" not in check_df.columns:
       check_df["min_stock"] = 2
     if "max_stock" not in check_df.columns:
@@ -1111,30 +1168,24 @@ if st.sidebar.button("🚀 Nachbestellung prüfen", key="btn_nachbestellung_prue
     check_df["min_stock"] = pd.to_numeric(check_df["min_stock"], errors="coerce").fillna(2)
     check_df["max_stock"] = pd.to_numeric(check_df["max_stock"], errors="coerce").fillna(10)
 
-    # WICHTIG: Nur Artikel berücksichtigen, deren Mindestbestand größer als 0 ist (min_stock > 0)
     active_check_df = check_df[check_df["min_stock"] > 0]
-
-    # Filtern nach individuellem Mindestbestand (Bestand <= min_stock)
     reorder_df = active_check_df[active_check_df["quantity"] <= active_check_df["min_stock"]].copy()
 
     if reorder_df.empty:
       st.sidebar.success("✅ Alle aktiven Artikel über ihrem Mindestbestand!")
     else:
-      # Bestellmenge bis zum individuellen Max-Bestand berechnen
       reorder_df["order_qty"] = reorder_df["max_stock"] - reorder_df["quantity"]
       reorder_df["order_qty"] = reorder_df["order_qty"].apply(lambda x: max(1, x))
       
       st.sidebar.error(f"🚨 {len(reorder_df)} Artikel unter Minimum!")
       
-      # Anzeige im Hauptbereich
       st.markdown("---")
       st.header("🚨 Automatische Bestellliste (nach Min/Max-Werten)")
-      st.markdown("Folgende Artikel haben ihren **individuellen Mindestbestand** unterschritten (Artikel mit Mindestbestand = 0 wurden ausgeschlossen):")
+      st.markdown("Folgende Artikel haben ihren **individuellen Mindestbestand** unterschritten:")
       
       display_cols = [c for c in ["article", "name", "brand", "quantity", "min_stock", "max_stock", "order_qty", "sap", "preis"] if c in reorder_df.columns]
       st.dataframe(reorder_df[display_cols], use_container_width=True)
 
-      # Excel-Download vorbereiten
       out_excel = io.BytesIO()
       with pd.ExcelWriter(out_excel, engine="openpyxl") as writer:
         reorder_df[display_cols].to_excel(writer, index=False, sheet_name="Bestellung")
@@ -1144,9 +1195,9 @@ if st.sidebar.button("🚀 Nachbestellung prüfen", key="btn_nachbestellung_prue
           data=out_excel.getvalue(),
           file_name="KaDeWe_Individuelle_Bestellung.xlsx",
           mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          key="download_reorder_excel_btn"
+          key="download_reorder_excel_btn_pagination_fix"
       )
-
+# ==========================================
 # ==========================================
 # AUTOMATISCHE MIN/MAX-BERECHNUNG NACH LAGERABGANG
 # ==========================================
@@ -1219,7 +1270,8 @@ if st.sidebar.button("🚀 Automatische Neuberechnung starten", key="btn_neubere
         f" {updated_count}"
     )
     st.rerun()
-    # ==========================================
+
+
 # ==========================================
 # UMSATZBERECHNUNG & AKKUMULATION (TAG & MONAT)
 # ==========================================
