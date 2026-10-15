@@ -1403,126 +1403,175 @@ if supabase is not None:
         pass
 
 # ==========================================
-# БЛОК: ИНВЕНТУР-СКННЕЛЬВЕИС (ИНВЕНТАРИЗАЦИЯ ДЛЯ НЕСКОЛЬКИХ СОТРУДНИКОВ)
+# INVENTUR-SCHNELLEINGABE (VOLLSTÄNDIGER BLOCK)
 # ==========================================
 
-if action == "📋 Inventur-Schnelleingabe":
-    is_manager = st.session_state.get("role") == "manager"
-    agent_name = st.session_state.get("user_name", "Mitarbeiter")
-    
-    st.header("📋 Inventur-Schnelleingabe (Multi-User)" + ("" if is_manager else f" (Agent: {agent_name})"))
-    st.markdown("Geben Sie einen Suchbegriff oder SAP-Code ein, um den Artikel zu finden und den Ist-Bestand zu erfassen.")
+st.subheader("📋 Inventur-Schnelleingabe (Multi-User)")
 
-    # Загружаем актуальные данные из Supabase в реальном времени
-    live_df = pd.DataFrame()
-    if supabase is not None:
-        try:
-            res = supabase.table("inventory").select("*").execute()
-            if res.data:
-                live_df = pd.DataFrame(res.data)
-        except Exception as e:
-            st.error(f"Fehler beim Laden der Bestandsdaten aus Supabase: {e}")
+st.markdown(
+    "Geben Sie einen Suchbegriff oder SAP-Code ein, um den Artikel zu finden"
+    " und den Ist-Bestand zu erfassen."
+)
 
-    if live_df.empty and not df.empty:
-        live_df = df
+search_query = st.text_input(
+    "🔍 Artikel suchen (Name, SAP, Artikelnummer oder Barcode):",
+    key="inventur_search_input_fixed",
+)
 
-    inv_search = st.text_input(
-        "🔍 Artikel suchen (Name, SAP, Artikelnummer oder Barcode):",
-        placeholder="Suchbegriff eingeben...",
-        key="quick_inv_search_input"
+found_item = None
+if search_query:
+  if df is not None and not df.empty:
+    q = str(search_query).strip().lower()
+    if "." in q:
+      q = q.split(".")[0]
+
+    # Suche über den vollständigen lokalen DataFrame (alle Spalten)
+    mask = (
+        df["sap"].astype(str).str.lower().str.contains(q, na=False)
+        | df["article"].astype(str).str.lower().str.contains(q, na=False)
+        | df["barcode"].astype(str).str.lower().str.contains(q, na=False)
+        | df["name"].astype(str).str.lower().str.contains(q, na=False)
     )
+    matched_rows = df[mask]
 
-    if inv_search and not live_df.empty:
-        matched_items = search_items(live_df, inv_search)
-        if not matched_items.empty:
-            st.markdown("### 📦 Gefundene Artikel im System:")
-            
-            display_cols = [c for c in ["article", "name", "brand", "quantity", "sap", "preis"] if c in matched_items.columns]
-            st.dataframe(matched_items[display_cols], use_container_width=True)
-            
-            sel_item = matched_items.iloc[0]
-            item_id = sel_item.get("id")
-            item_article = str(sel_item.get("article", ""))
-            item_name = str(sel_item.get("name", ""))
-            item_brand = str(sel_item.get("brand", "Iittala"))
-            item_sap = str(sel_item.get("sap", ""))
-            item_barcode = str(sel_item.get("barcode", ""))
-            item_preis = float(sel_item.get("preis", 0.0) or 0.0)
-            item_location = str(sel_item.get("location", "Etage 5 Lager"))
-            
-            raw_qty = sel_item.get("quantity")
-            current_db_qty = int(raw_qty) if raw_qty is not None and pd.notna(raw_qty) else 0
-            
-            st.info(
-                f"👉 **Ausgewählter Artikel:** {item_name} | "
-                f"**SAP:** {item_sap} | "
-                f"**System-Bestand (aktuell in DB):** {current_db_qty} Stk."
-            )
-            
-            # Используем обычные элементы вне формы, чтобы значения сохранялись в session_state и не сбрасывались в 0
-            col_q1, col_q2 = st.columns([2, 1])
-            with col_q1:
-                new_counted = st.number_input(
-                    "Gezählte Ist-Menge:",
-                    min_value=0,
-                    value=current_db_qty,  # Подставляем актуальное значение из базы
-                    step=1,
-                    key=f"counted_qty_{item_id}_{item_sap}"
-                )
-            with col_q2:
-                st.write("") # Отступ для выравнивания кнопки
-                st.write("")
-                submit_clicked = st.button("📥 Zählung speichern", type="primary")
+    if not matched_rows.empty:
+      found_item = matched_rows.iloc[0].to_dict()
+    else:
+      st.warning("⚠️ Kein Artikel zu diesem Suchbegriff gefunden.")
+  else:
+    st.warning("⚠️ Keine Bestandsdaten im System geladen.")
 
-            if submit_clicked:
-                if is_manager:
-                    if supabase is not None:
+# Wenn ein Artikel gefunden wurde, Eingabeformular für den Bestand anzeigen
+if found_item:
+  art_name = found_item.get("name", "Unbekannt")
+  art_sap = found_item.get("sap", "")
+  art_qty = found_item.get("quantity", 0)
+  art_id = found_item.get("id")
+
+  st.info(
+      f"👉 **Ausgewählter Artikel:** {art_name} | **SAP:** {art_sap} |"
+      f" **System-Bestand (aktuell in DB):** {int(float(art_qty))} Stk."
+  )
+
+  # Zählung erfassen
+  try:
+    default_val = int(float(art_qty))
+  except:
+    default_val = 0
+
+  gezählte_menge = st.number_input(
+      "Gezählte Ist-Menge:",
+      min_value=0,
+      value=default_val,
+      step=1,
+      key=f"counted_qty_{art_id}",
+  )
+
+  if st.button("📥 Zählung speichern", key=f"btn_save_count_{art_id}"):
+    try:
+      # Обязательно приводим к обычному int для предотвращения ошибки JSON (int64)
+      clean_qty = int(gezählte_menge)
+      clean_id = int(float(art_id))
+
+      # Обновление в Supabase
+      response = (
+          supabase.table("inventory")
+          .update({"quantity": clean_qty})
+          .eq("id", clean_id)
+          .execute()
+      )
+
+      st.success("✅ Zählung wurde erfolgreich gespeichert und aktualisiert!")
+      st.rerun()
+    except Exception as e:
+      st.error(f"Fehler beim Senden der Anfrage: {e}")
+
+# ==========================================
+# ==========================================
+# SEKTION: WAREN IM ZULAUF / LIEFERUNG UPLOAD
+# ==========================================
+st.sidebar.markdown("---")
+st.sidebar.subheader("🚚 Lieferung / Ware im Zulauf")
+
+uploaded_incoming = st.sidebar.file_uploader(
+    "Excel (sap, quantity/lieferung) hochladen", 
+    type=["xlsx", "xls"],
+    key="incoming_uploader_lieferung_v1"
+)
+
+if uploaded_incoming is not None:
+    try:
+        inc_df = pd.read_excel(uploaded_incoming)
+        inc_df.columns = [str(c).strip().lower() for c in inc_df.columns]
+        
+        st.sidebar.success(f"Datei geladen! Zeilen: {len(inc_df)}")
+        
+        if st.sidebar.button("💾 Zulauf in DB speichern", key="btn_save_incoming_lieferung_db"):
+            success_count = 0
+            
+            # Vollständiges Laden der DB über Pagination (Sicherheit gegen 1000er-Limit)
+            all_db_rows = []
+            page_size = 1000
+            start = 0
+            while True:
+                resp = supabase.table("inventory").select("id, sap, article").range(start, start + page_size - 1).execute()
+                if not resp.data:
+                    break
+                all_db_rows.extend(resp.data)
+                if len(resp.data) < page_size:
+                    break
+                start += page_size
+
+            sap_to_id = {}
+            art_to_id = {}
+            for item in all_db_rows:
+                db_sap = str(item.get("sap", "")).strip().split(".")[0]
+                db_art = str(item.get("article", "")).strip().split(".")[0]
+                item_id = item.get("id")
+                
+                if db_sap and db_sap != "None":
+                    sap_to_id[db_sap] = item_id
+                if db_art and db_art != "None":
+                    art_to_id[db_art] = item_id
+
+            # Zeilen durchgehen und incoming_quantity aktualisieren
+            for _, row in inc_df.iterrows():
+                raw_sap = row.get("sap", "")
+                if pd.isna(raw_sap):
+                    continue
+                
+                sap_val = str(raw_sap).strip()
+                if "." in sap_val:
+                    sap_val = sap_val.split(".")[0]
+                
+                # Sichert die Entnahme aus quantity oder lieferung
+                raw_qty = row.get("lieferung", row.get("quantity", 0))
+                if pd.isna(raw_qty):
+                    raw_qty = 0
+                
+                try:
+                    qty_val = int(float(raw_qty))
+                except:
+                    qty_val = 0
+                
+                if sap_val and sap_val != "nan":
+                    row_id = sap_to_id.get(sap_val)
+                    if not row_id:
+                        # Fallback auf integer-Umwandlung
                         try:
-                            row_data = {
-                                "quantity": int(new_counted)
-                            }
-                            # Если есть ID, передаем его, чтобы обновить конкретную строку в базе
-                            if item_id is not None and pd.notna(item_id):
-                                row_data["id"] = int(item_id)
-                            if item_sap:
-                                row_data["sap"] = item_sap
-                            if item_article:
-                                row_data["article"] = item_article
-                            if item_name:
-                                row_data["name"] = item_name
-
-                            # Выполняем обновление строки по ID
-                            query = supabase.table("inventory").update({
-                                "quantity": int(new_counted)
-                            })
+                            int_sap = str(int(float(sap_val)))
+                            row_id = sap_to_id.get(int_sap)
+                        except:
+                            pass
                             
-                            if item_id is not None and pd.notna(item_id):
-                                query = query.eq("id", int(item_id))
-                            elif item_sap:
-                                query = query.eq("sap", item_sap)
-                            else:
-                                query = query.eq("article", item_article)
-                                
-                            query.execute()
-                            
-                            if hasattr(st, "cache_data"):
-                                st.cache_data.clear()
-                            
-                            st.success(f"✅ Bestand für '{item_name}' erfolgreich gespeichert: Neu (Ist): {new_counted} Stk.")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Fehler beim Speichern: {e}")
-                else:
-                    payload = {
-                        "id": item_id,
-                        "sap": item_sap,
-                        "article": item_article,
-                        "name": item_name,
-                        "old_quantity": current_db_qty,
-                        "new_quantity": int(new_counted),
-                        "counted_by": agent_name
-                    }
-                    request_manager_approval("inventory_count", payload)
-                    st.success("📤 Zählung wurde zur Freigabe an den Manager gesendet!")
-        else:
-            st.warning("⚠️ Kein Artikel zu diesem Suchbegriff gefunden.")
+                    if row_id:
+                        supabase.table("inventory").update({
+                            "incoming_quantity": qty_val
+                        }).eq("id", row_id).execute()
+                        success_count += 1
+                        
+            st.sidebar.success(f"Aktualisiert (Zulauf): {success_count} Artikel")
+            st.rerun()
+            
+    except Exception as e:
+        st.sidebar.error(f"Fehler beim Verlesen der Excel-Datei: {e}")
