@@ -1205,72 +1205,76 @@ if st.sidebar.button("🚀 Nachbestellung prüfen", key="btn_nachbestellung_prue
 st.sidebar.markdown("---")
 st.sidebar.subheader("📈 Intelligente Min/Max-Berechnung")
 
-st.sidebar.markdown(
-    "Vergleicht den aktuellen Bestand mit dem vorherigen, berechnet die"
-    " Verkaufsgeschwindigkeit und aktualisiert die Limits."
-)
+days_min = st.sidebar.slider("Reichweite in Tagen für MIN", 2, 14, 5, key="slider_days_min_v3")
+days_max = st.sidebar.slider("Reichweite in Tagen für MAX", 10, 45, 20, key="slider_days_max_v3")
 
-# Einstellung der gewünschten Reichweite in Tagen direkt im Interface
-days_min = st.sidebar.slider("Reichweite in Tagen für MIN", 2, 14, 5, key="slider_days_min_v2")
-days_max = st.sidebar.slider("Reichweite in Tagen für MAX", 10, 45, 20, key="slider_days_max_v2")
+if st.sidebar.button("🚀 Automatische Neuberechnung starten", key="btn_neuberechnung_starten_v3"):
+    if df.empty:
+        st.sidebar.warning("⚠ Keine Daten zur Analyse gefunden.")
+    else:
+        calc_df = df.copy()
+        updated_count = 0
+        from datetime import datetime
+        today_str = datetime.now().strftime("%Y-%m-%d")
 
-if st.sidebar.button("🚀 Automatische Neuberechnung starten", key="btn_neuberechnung_starten"):
-  if df.empty:
-    st.sidebar.warning("⚠ Keine Daten zur Analyse gefunden.")
-  else:
-    calc_df = df.copy()
-    updated_count = 0
-    from datetime import datetime
+        for _, row in calc_df.iterrows():
+            sap_val = str(row.get("sap", "")).strip()
+            if not sap_val or sap_val == "nan":
+                continue
 
-    today_str = datetime.now().strftime("%Y-%m-%d")
+            try:
+                current_qty = int(float(row.get("quantity", 0) or 0))
+            except:
+                current_qty = 0
 
-    for _, row in calc_df.iterrows():
-      sap_val = str(row.get("sap", "")).strip()
-      if not sap_val or sap_val == "nan":
-        continue
+            raw_last = row.get("last_quantity")
+            
+            # Если last_quantity пустой, сохраняем как целое число int
+            if raw_last is None or pd.isna(raw_last) or str(raw_last).lower() == "none":
+                try:
+                    supabase.table("inventory").update({
+                        "last_quantity": int(current_qty),
+                        "last_check_date": today_str
+                    }).eq("sap", sap_val).execute()
+                    updated_count += 1
+                except Exception as ex:
+                    print(f"Fehler bei SAP {sap_val}: {ex}")
+                continue
 
-      current_qty = float(row.get("quantity", 0))
+            try:
+                last_qty = int(float(raw_last))
+            except:
+                last_qty = current_qty
 
-      # Vorherigen Bestand abrufen (falls noch nicht in Supabase vorhanden, aktuellen als Startwert nutzen)
-      last_qty = float(row.get("last_quantity", current_qty))
+            sold_amount = last_qty - current_qty
 
-      # Verbrauch: Wenn der vorige Bestand größer als der aktuelle ist, wurde Ware verkauft
-      sold_amount = last_qty - current_qty
+            if sold_amount > 0:
+                daily_speed = sold_amount / 7
+                new_min = max(2, int(daily_speed * days_min))
+                new_max = max(new_min + 5, int(daily_speed * days_max))
 
-      if sold_amount > 0:
-        # Angenommen, es sind ca. 7 Tage seit der letzten Prüfung vergangen
-        days_passed = 7
-        daily_speed = sold_amount / days_passed
+                try:
+                    supabase.table("inventory").update({
+                        "min_stock": int(new_min),
+                        "max_stock": int(new_max),
+                        "last_quantity": int(current_qty), 
+                        "last_check_date": today_str
+                    }).eq("sap", sap_val).execute()
+                    updated_count += 1
+                except:
+                    pass
+            else:
+                try:
+                    supabase.table("inventory").update({
+                        "last_quantity": int(current_qty),
+                        "last_check_date": today_str
+                    }).eq("sap", sap_val).execute()
+                except:
+                    pass
 
-        # Neue Limits berechnen
-        new_min = max(2, int(daily_speed * days_min))
-        new_max = max(new_min + 5, int(daily_speed * days_max))
-
-        # In Supabase aktualisieren: Neue Limits speichern und aktuellen Bestand als "alt" für die nächste Messung merken
-        try:
-          supabase.table("inventory").update({
-              "min_stock": new_min,
-              "max_stock": new_max,
-              "last_quantity": current_qty, 
-          }).eq("sap", sap_val).execute()
-          updated_count += 1
-        except Exception as e:
-          pass
-      else:
-        # Auch wenn es keine Verkäufe gab, last_quantity aktualisieren, um die Basis für die kommenden Tage zu sichern
-        try:
-          supabase.table("inventory").update(
-              {"last_quantity": current_qty}
-          ).eq("sap", sap_val).execute()
-        except:
-          pass
-
-    st.sidebar.success(
-        f"✅ Erfolgreich aktualisierte Artikel nach Verkaufsgeschwindigkeit:"
-        f" {updated_count}"
-    )
-    st.rerun()
-
+        st.sidebar.success(f"✅ Fertig! Aktualisiert/Initialisiert: {updated_count} Artikel")
+        st.cache_data.clear()
+        st.rerun()
 
 # ==========================================
 # UMSATZBERECHNUNG & AKKUMULATION (TAG & MONAT)
@@ -1403,90 +1407,101 @@ if supabase is not None:
         pass
 
 # ==========================================
-# INVENTUR-SCHNELLEINGABE (VOLLSTÄNDIGER BLOCK)
+# INVENTUR-SCHNELLEINGABE (MULTI-USER) MIT MEHRFACH-STANDORTEN
 # ==========================================
 
-st.subheader("📋 Inventur-Schnelleingabe (Multi-User)")
+st.markdown("---")
+st.subheader("📦 Inventur-Schnelleingabe (Multi-User)")
+st.markdown("Geben Sie einen Suchbegriff oder SAP-Code ein, um den Bestand und **alle Fundorte** zu erfassen.")
 
-st.markdown(
-    "Geben Sie einen Suchbegriff oder SAP-Code ein, um den Artikel zu finden"
-    " und den Ist-Bestand zu erfassen."
-)
+search_query = st.text_input("🔍 Artikel suchen (Name, SAP, Artikelnummer oder Barcode):", key="quick_search_input_multi")
 
-search_query = st.text_input(
-    "🔍 Artikel suchen (Name, SAP, Artikelnummer oder Barcode):",
-    key="inventur_search_input_fixed",
-)
+standard_locations = [
+    "shop.iittala",
+    "lager.iittala",
+    "shop.rc",
+    "lager.rc"
+]
 
-found_item = None
 if search_query:
-  if df is not None and not df.empty:
-    q = str(search_query).strip().lower()
-    if "." in q:
-      q = q.split(".")[0]
-
-    # Suche über den vollständigen lokalen DataFrame (alle Spalten)
+    q = search_query.lower()
+    # Исправлено с calc_df на df
     mask = (
-        df["sap"].astype(str).str.lower().str.contains(q, na=False)
-        | df["article"].astype(str).str.lower().str.contains(q, na=False)
-        | df["barcode"].astype(str).str.lower().str.contains(q, na=False)
-        | df["name"].astype(str).str.lower().str.contains(q, na=False)
+        df['name'].astype(str).str.lower().str.contains(q, na=False) |
+        df['sap'].astype(str).str.lower().str.contains(q, na=False) |
+        df['article'].astype(str).str.lower().str.contains(q, na=False) |
+        df['barcode'].astype(str).str.lower().str.contains(q, na=False)
     )
-    matched_rows = df[mask]
+    result_df = df[mask]
 
-    if not matched_rows.empty:
-      found_item = matched_rows.iloc[0].to_dict()
+    if result_df.empty:
+        st.info("Keine Artikel gefunden.")
     else:
-      st.warning("⚠️ Kein Artikel zu diesem Suchbegriff gefunden.")
-  else:
-    st.warning("⚠️ Keine Bestandsdaten im System geladen.")
+        st.write(f"Gefundene Artikel: {len(result_df)}")
+        
+        for idx, row in result_df.iterrows():
+            sap_val = str(row.get("sap", "")).strip()
+            name_val = row.get("name", "")
+            current_qty = int(float(row.get("quantity", 0) or 0))
+            
+            raw_loc = str(row.get("location", "") if pd.notna(row.get("location")) else "").strip()
+            
+            selected_defaults = []
+            extra_detail = raw_loc
+            for zone in standard_locations:
+                if zone in raw_loc:
+                    selected_defaults.append(zone)
+                    extra_detail = extra_detail.replace(zone, "").strip(" -,/")
 
-# Wenn ein Artikel gefunden wurde, Eingabeformular für den Bestand anzeigen
-if found_item:
-  art_name = found_item.get("name", "Unbekannt")
-  art_sap = found_item.get("sap", "")
-  art_qty = found_item.get("quantity", 0)
-  art_id = found_item.get("id")
+            with st.container():
+                cols = st.columns([2.2, 1.2, 1.8, 1.5, 1])
+                with cols[0]:
+                    st.markdown(f"**{name_val}**<br><span style='color:gray;'>SAP: {sap_val}</span>", unsafe_allow_html=True)
+                
+                with cols[1]:
+                    new_qty = st.number_input(
+                        "Bestand", 
+                        min_value=0, 
+                        value=current_qty, 
+                        key=f"qty_m_{sap_val}_{idx}"
+                    )
+                
+                with cols[2]:
+                    selected_zones = st.multiselect(
+                        "Bereiche",
+                        options=standard_locations,
+                        default=selected_defaults,
+                        key=f"zones_m_{sap_val}_{idx}"
+                    )
+                
+                with cols[3]:
+                    regal_input = st.text_input(
+                        "Detail (z.B. regal 3)",
+                        value=extra_detail,
+                        key=f"regal_m_{sap_val}_{idx}"
+                    )
+                
+                with cols[4]:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    if st.button("💾 Speichern", key=f"save_m_{sap_val}_{idx}"):
+                        try:
+                            zones_str = ", ".join(selected_zones)
+                            final_loc = zones_str
+                            if regal_input.strip():
+                                final_loc = f"{zones_str} - {regal_input.strip()}" if zones_str else regal_input.strip()
 
-  st.info(
-      f"👉 **Ausgewählter Artikel:** {art_name} | **SAP:** {art_sap} |"
-      f" **System-Bestand (aktuell in DB):** {int(float(art_qty))} Stk."
-  )
-
-  # Zählung erfassen
-  try:
-    default_val = int(float(art_qty))
-  except:
-    default_val = 0
-
-  gezählte_menge = st.number_input(
-      "Gezählte Ist-Menge:",
-      min_value=0,
-      value=default_val,
-      step=1,
-      key=f"counted_qty_{art_id}",
-  )
-
-  if st.button("📥 Zählung speichern", key=f"btn_save_count_{art_id}"):
-    try:
-      # Обязательно приводим к обычному int для предотвращения ошибки JSON (int64)
-      clean_qty = int(gezählte_menge)
-      clean_id = int(float(art_id))
-
-      # Обновление в Supabase
-      response = (
-          supabase.table("inventory")
-          .update({"quantity": clean_qty})
-          .eq("id", clean_id)
-          .execute()
-      )
-
-      st.success("✅ Zählung wurde erfolgreich gespeichert und aktualisiert!")
-      st.rerun()
-    except Exception as e:
-      st.error(f"Fehler beim Senden der Anfrage: {e}")
-
-# ==========================================
+                            supabase.table("inventory").update({
+                                "quantity": int(new_qty),
+                                "location": final_loc
+                            }).eq("sap", sap_val).execute()
+                            
+                            st.success("Gespeichert!")
+                            st.cache_data.clear()
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Fehler: {e}")
+                
+                st.markdown("---")
 # ==========================================
 # SEKTION: WAREN IM ZULAUF / LIEFERUNG UPLOAD
 # ==========================================
@@ -1575,3 +1590,94 @@ if uploaded_incoming is not None:
             
     except Exception as e:
         st.sidebar.error(f"Fehler beim Verlesen der Excel-Datei: {e}")
+
+# ==========================================
+# SEKTION: WARENEINGANG BUCHEN (LIEFERUNG ANGEKOMMEN)
+# ==========================================
+st.sidebar.markdown("---")
+st.sidebar.subheader("✅ Wareneingang buchen")
+
+uploaded_received = st.sidebar.file_uploader(
+    "Excel (angekommene Ware: sap, quantity/lieferung)", 
+    type=["xlsx", "xls"],
+    key="incoming_received_uploader_v1"
+)
+
+if uploaded_received is not None:
+    try:
+        rec_df = pd.read_excel(uploaded_received)
+        rec_df.columns = [str(c).strip().lower() for c in rec_df.columns]
+        
+        st.sidebar.success(f"Eingang-Datei geladen! Zeilen: {len(rec_df)}")
+        
+        if st.sidebar.button("📦 Wareneingang in DB verbuchen", key="btn_save_wareneingang_db"):
+            success_count = 0
+            
+            # Vollständiges Laden der DB über Pagination
+            all_db_rows = []
+            page_size = 1000
+            start = 0
+            while True:
+                resp = supabase.table("inventory").select("id, sap, article, quantity, incoming_quantity").range(start, start + page_size - 1).execute()
+                if not resp.data:
+                    break
+                all_db_rows.extend(resp.data)
+                if len(resp.data) < page_size:
+                    break
+                start += page_size
+
+            sap_to_item = {}
+            for item in all_db_rows:
+                db_sap = str(item.get("sap", "")).strip().split(".")[0]
+                if db_sap and db_sap != "None":
+                    sap_to_item[db_sap] = item
+
+            for _, row in rec_df.iterrows():
+                raw_sap = row.get("sap", "")
+                if pd.isna(raw_sap):
+                    continue
+                
+                sap_val = str(raw_sap).strip().split(".")[0]
+                
+                raw_qty = row.get("lieferung", row.get("quantity", 0))
+                if pd.isna(raw_qty):
+                    raw_qty = 0
+                
+                try:
+                    delivered_qty = int(float(raw_qty))
+                except:
+                    delivered_qty = 0
+                
+                if sap_val and sap_val != "nan":
+                    db_item = sap_to_item.get(sap_val)
+                    if not db_item:
+                        try:
+                            int_sap = str(int(float(sap_val)))
+                            db_item = sap_to_item.get(int_sap)
+                        except:
+                            pass
+                            
+                    if db_item:
+                        item_id = db_item.get("id")
+                        current_qty = int(db_item.get("quantity", 0) or 0)
+                        current_incoming = int(db_item.get("incoming_quantity", 0) or 0)
+                        
+                        # Новый остаток = старый остаток + прибывший товар
+                        new_qty = current_qty + delivered_qty
+                        
+                        # Убираем доставленное из пути (если пришло всё или часть)
+                        new_incoming = max(0, current_incoming - delivered_qty)
+                        
+                        supabase.table("inventory").update({
+                            "quantity": new_qty,
+                            "incoming_quantity": new_incoming
+                        }).eq("id", item_id).execute()
+                        
+                        success_count += 1
+                        
+            st.sidebar.success(f"Wareneingang gebucht: {success_count} Artikel aktualisiert!")
+            st.rerun()
+            
+    except Exception as e:
+        st.sidebar.error(f"Fehler beim Verarbeiten des Wareneingangs: {e}")
+
