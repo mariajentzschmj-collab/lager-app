@@ -1406,102 +1406,109 @@ if supabase is not None:
     except Exception as e:
         pass
 
+import streamlit as st
+
 # ==========================================
-# INVENTUR-SCHNELLEINGABE (MULTI-USER) MIT MEHRFACH-STANDORTEN
+# INVENTUR-SCHNELLEINGABE (MULTI-USER)
 # ==========================================
 
 st.markdown("---")
 st.subheader("📦 Inventur-Schnelleingabe (Multi-User)")
-st.markdown("Geben Sie einen Suchbegriff oder SAP-Code ein, um den Bestand und **alle Fundorte** zu erfassen.")
+st.caption("Geben Sie einen Suchbegriff oder SAP-Code ein, um den Bestand und alle Fundorte zu erfassen.")
 
-search_query = st.text_input("🔍 Artikel suchen (Name, SAP, Artikelnummer oder Barcode):", key="quick_search_input_multi")
+# 1. Поиск товара по SAP или названию
+search_query = st.text_input(
+    "🔍 Artikel suchen (Name, SAP, Artikelnummer oder Barcode):",
+    key="inventur_quick_search"
+)
 
-standard_locations = [
-    "shop.iittala",
-    "lager.iittala",
-    "shop.rc",
-    "lager.rc"
-]
-
-if search_query:
-    q = search_query.lower()
-    # Исправлено с calc_df на df
+if search_query.strip():
+    search_term = search_query.strip().lower()
+    
+    # Фильтрация датафрейма df (который загружен из Supabase)
     mask = (
-        df['name'].astype(str).str.lower().str.contains(q, na=False) |
-        df['sap'].astype(str).str.lower().str.contains(q, na=False) |
-        df['article'].astype(str).str.lower().str.contains(q, na=False) |
-        df['barcode'].astype(str).str.lower().str.contains(q, na=False)
+        df['sap'].astype(str).str.lower().str.contains(search_term, na=False) |
+        df['name'].astype(str).str.lower().str.contains(search_term, na=False) |
+        df['barcode'].astype(str).str.lower().str.contains(search_term, na=False)
     )
-    result_df = df[mask]
-
-    if result_df.empty:
-        st.info("Keine Artikel gefunden.")
-    else:
-        st.write(f"Gefundene Artikel: {len(result_df)}")
+    results = df[mask]
+    
+    st.write(f"Gefundene Artikel: {len(results)}")
+    
+    if not results.empty:
+        # Берем первый найденный товар
+        item = results.iloc[0]
+        sap_val = str(item['sap'])
+        current_qty = int(item['quantity']) if 'quantity' in item and not pd.isna(item['quantity']) else 0
+        current_loc = str(item['location']) if 'location' in item and not pd.isna(item['location']) else "RC"
         
-        for idx, row in result_df.iterrows():
-            sap_val = str(row.get("sap", "")).strip()
-            name_val = row.get("name", "")
-            current_qty = int(float(row.get("quantity", 0) or 0))
-            
-            raw_loc = str(row.get("location", "") if pd.notna(row.get("location")) else "").strip()
-            
-            selected_defaults = []
-            extra_detail = raw_loc
-            for zone in standard_locations:
-                if zone in raw_loc:
-                    selected_defaults.append(zone)
-                    extra_detail = extra_detail.replace(zone, "").strip(" -,/")
+        # Разбираем текущую локацию на область и детали, если они записаны через пробел
+        default_bereich = "Lager"
+        default_detail = current_loc
+        if " " in current_loc:
+            parts = current_loc.split(" ", 1)
+            default_bereich = parts[0]
+            default_detail = parts[1]
 
-            with st.container():
-                cols = st.columns([2.2, 1.2, 1.8, 1.5, 1])
-                with cols[0]:
-                    st.markdown(f"**{name_val}**<br><span style='color:gray;'>SAP: {sap_val}</span>", unsafe_allow_html=True)
+        # Отображаем название и SAP
+        col_info, col_qty, col_bereich, col_detail, col_btn = st.columns([3, 1.5, 2, 2, 1.5])
+        
+        with col_info:
+            st.markdown(f"**{item['name']}**")
+            st.caption(f"SAP: {sap_val}")
+            
+        with col_qty:
+            # Управление количеством (Bestand)
+            new_qty = st.number_input(
+                "Bestand",
+                min_value=0,
+                value=current_qty,
+                step=1,
+                key=f"qty_{sap_val}"
+            )
+            
+        with col_bereich:
+            # Выбор области (Bereiche)
+            bereich_options = ["Lager", "Shop", "Ex Sale", "Showroom", "Etage 5"]
+            
+            # Проверяем индекс по умолчанию
+            default_index = 0
+            if default_bereich in bereich_options:
+                default_index = bereich_options.index(default_bereich)
                 
-                with cols[1]:
-                    new_qty = st.number_input(
-                        "Bestand", 
-                        min_value=0, 
-                        value=current_qty, 
-                        key=f"qty_m_{sap_val}_{idx}"
-                    )
+            selected_bereich = st.selectbox(
+                "Bereiche",
+                options=bereich_options,
+                index=default_index,
+                key=f"bereich_{sap_val}"
+            )
+            
+        with col_detail:
+            # Детализация локации (Detail)
+            selected_detail = st.text_input(
+                "Detail (z.B. regal 3)",
+                value=default_detail,
+                key=f"detail_{sap_val}"
+            )
+            
+        with col_btn:
+            st.write("") # Смещение кнопки вниз
+            st.write("")
+            if st.button("💾 Speichern", key=f"save_btn_{sap_val}"):
+                # Формируем итоговую строку местоположения
+                final_location = f"{selected_bereich} {selected_detail}".strip()
                 
-                with cols[2]:
-                    selected_zones = st.multiselect(
-                        "Bereiche",
-                        options=standard_locations,
-                        default=selected_defaults,
-                        key=f"zones_m_{sap_val}_{idx}"
-                    )
-                
-                with cols[3]:
-                    regal_input = st.text_input(
-                        "Detail (z.B. regal 3)",
-                        value=extra_detail,
-                        key=f"regal_m_{sap_val}_{idx}"
-                    )
-                
-                with cols[4]:
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    if st.button("💾 Speichern", key=f"save_m_{sap_val}_{idx}"):
-                        try:
-                            zones_str = ", ".join(selected_zones)
-                            final_loc = zones_str
-                            if regal_input.strip():
-                                final_loc = f"{zones_str} - {regal_input.strip()}" if zones_str else regal_input.strip()
-
-                            supabase.table("inventory").update({
-                                "quantity": int(new_qty),
-                                "location": final_loc
-                            }).eq("sap", sap_val).execute()
-                            
-                            st.success("Gespeichert!")
-                            st.cache_data.clear()
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Fehler: {e}")
-                
-                st.markdown("---")
+                try:
+                    # Обновляем запись в Supabase
+                    supabase.table("inventory").update({
+                        "quantity": new_qty,
+                        "location": final_location
+                    }).eq("sap", sap_val).execute()
+                    
+                    st.success(f"Gespeichert! ({final_location}, Qty: {new_qty})")
+                    st.rerun() # Мгновенно перезагружаем данные
+                except Exception as e:
+                    st.error(f"Fehler beim Speichern: {e}")
 # ==========================================
 # SEKTION: WAREN IM ZULAUF / LIEFERUNG UPLOAD
 # ==========================================
