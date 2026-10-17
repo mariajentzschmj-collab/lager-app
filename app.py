@@ -1681,3 +1681,53 @@ if uploaded_received is not None:
     except Exception as e:
         st.sidebar.error(f"Fehler beim Verarbeiten des Wareneingangs: {e}")
 
+# ==========================================
+# AKTIONSPREISE PER EXCEL HOCHLADEN (GEBUNDEN AN SAP)
+# ==========================================
+
+st.markdown("---")
+st.subheader("🏷️ Aktionspreise nach SAP-Nummer hochladen")
+st.markdown("Laden Sie eine Excel-Datei hoch, die die Spalten **sap**, **promo_price**, **promo_start** und **promo_end** enthält.")
+
+uploaded_promo_file = st.file_uploader("Excel-Datei mit Aktionspreisen (.xlsx)", type=["xlsx", "xls"], key="uploader_promo_sap")
+
+if uploaded_promo_file:
+    try:
+        promo_df = pd.read_excel(uploaded_promo_file)
+        
+        # Приводим названия колонок к нижнему регистру
+        promo_df.columns = [str(c).strip().lower() for c in promo_df.columns]
+        
+        required_cols = ["sap", "promo_price", "promo_start", "promo_end"]
+        if all(col in promo_df.columns for col in required_cols):
+            updated_promos = 0
+            for _, p_row in promo_df.iterrows():
+                # Привязка strictly по SAP-номеру
+                sap_val = str(p_row.get("sap", "")).strip()
+                if not sap_val or sap_val.lower() == "nan":
+                    continue
+                
+                try:
+                    p_price = float(p_row.get("promo_price"))
+                    p_start = str(p_row.get("promo_start")).split()[0]  # Формат YYYY-MM-DD
+                    p_end = str(p_row.get("promo_end")).split()[0]      # Формат YYYY-MM-DD
+                    
+                    # Обновляем акционные данные по SAP
+                    supabase.table("inventory").update({
+                        "promo_price": p_price,
+                        "promo_start": p_start,
+                        "promo_end": p_end
+                    }).eq("sap", sap_val).execute()
+                    
+                    updated_promos += 1
+                except Exception as ex:
+                    print(f"Fehler bei SAP {sap_val}: {ex}")
+            
+            st.success(f"✅ Aktionspreise für {updated_promos} SAP-Nummern erfolgreich gespeichert!")
+            st.cache_data.clear()
+            st.rerun()
+        else:
+            st.error("⚠ Die Excel-Datei muss unbedingt folgende Spalten enthalten: sap, promo_price, promo_start, promo_end")
+    except Exception as e:
+        st.error(f"Fehler beim Verarbeiten der Datei: {e}")
+
