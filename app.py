@@ -2024,39 +2024,59 @@ if order_file_new is not None:
         st.error(f"Fehler bei der Dateiverarbeitung: {e}")
 
 # =========================================================
-# БЛОК 3: ПАНЕЛЬ АДМИНИСТРАТОРА (ОДОБРЕНИЕ ЗАПРОСОВ)
+# БЛОК: ПАНЕЛЬ МОДЕРАЦИИ ДЛЯ МЕНЕДЖЕРА / АДМИНИСТРАТОРА
 # =========================================================
 if "Agent" not in current_role:
     st.markdown("---")
-    st.subheader("🛡️ Admin-Freigaben (Ausstehende Anfragen von Agenten)")
     
     try:
-        pending_requests = supabase.table("pending_approvals").select("*").eq("status", "pending").execute().data
+        # Загружаем все записи из pending_approvals
+        res_all = supabase.table("pending_approvals").select("*").execute()
+        all_data = res_all.data if res_all and res_all.data else []
         
-        if not pending_requests:
-            st.info("ℹ️ Keine ausstehenden Anfragen von Agenten vorhanden.")
-        else:
-            for req in pending_requests:
-                with st.expander(f"Anfrage von: {req['agent_name']} | Typ: {req['action_type']} | ID: {req['id']}"):
-                    st.json(req['payload'])
+        # Фильтруем только статусы 'pending' без учета регистра и пробелов
+        pending_requests = [
+            req for req in all_data 
+            if str(req.get("status", "")).strip().lower() == "pending"
+        ]
+        
+        count_pending = len(pending_requests)
+        
+        with st.expander(f"🔔 Anfragen von Agenten verwalten ({count_pending} ausstehend)", expanded=(count_pending > 0)):
+            if not pending_requests:
+                st.info("Keine ausstehenden Anfragen von Agenten.")
+            else:
+                for req in pending_requests:
+                    req_id = req['id']
+                    agent_name = req.get('agent_name', 'Unbekannt')
+                    action_type = req.get('action_type', '-')
+                    payload_data = req.get('payload', [])
+                    
+                    st.markdown(f"**Anfrage ID:** `{req_id}` | **Agent:** `{agent_name}` | **Typ:** `{action_type}`")
+                    st.json(payload_data)
                     
                     col_app, col_rej = st.columns(2)
                     with col_app:
-                        if st.button("✅ Genehmigen (Freigeben)", key=f"approve_{req['id']}"):
-                            payload_data = req['payload']
+                        if st.button("✅ Genehmigen (Freigeben)", key=f"approve_{req_id}", type="primary"):
+                            # Вставляем данные в основную таблицу inventory
                             if isinstance(payload_data, list):
                                 supabase.table("inventory").insert(payload_data).execute()
                             else:
                                 supabase.table("inventory").insert([payload_data]).execute()
-                                
-                            supabase.table("pending_approvals").update({"status": "approved"}).eq("id", req['id']).execute()
-                            st.success("🎉 Anfrage genehmigt und Daten in inventory übernommen!")
+                            
+                            # Переводим статус заявки в approved
+                            supabase.table("pending_approvals").update({"status": "approved"}).eq("id", req_id).execute()
+                            st.success(f"🎉 Anfrage ID {req_id} genehmigt und in inventory übernommen!")
                             st.rerun()
                             
                     with col_rej:
-                        if st.button("❌ Ablehnen", key=f"reject_{req['id']}"):
-                            supabase.table("pending_approvals").update({"status": "rejected"}).eq("id", req['id']).execute()
-                            st.warning("⚠️ Anfrage abgelehnt.")
+                        if st.button("❌ Ablehnen", key=f"reject_{req_id}"):
+                            # Переводим статус заявки в rejected
+                            supabase.table("pending_approvals").update({"status": "rejected"}).eq("id", req_id).execute()
+                            st.warning(f"⚠️ Anfrage ID {req_id} abgelehnt.")
                             st.rerun()
+                            
+                    st.divider()
+
     except Exception as e:
-        st.info(f"ℹ️ Info: {e}")
+        st.error(f"❌ Fehler beim Laden der Admin-Freigaben: {e}")
