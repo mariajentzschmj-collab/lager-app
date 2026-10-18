@@ -2024,59 +2024,75 @@ if order_file_new is not None:
         st.error(f"Fehler bei der Dateiverarbeitung: {e}")
 
 # =========================================================
-# БЛОК: ПАНЕЛЬ МОДЕРАЦИИ ДЛЯ МЕНЕДЖЕРА / АДМИНИСТРАТОРА
+# БЛОК: УПРАВЛЕНИЕ ЗАПРОСАМИ АГЕНТОВ (ТОЧНАЯ ПРОВЕРКА РОЛЕЙ)
 # =========================================================
-if "Agent" not in current_role:
-    st.markdown("---")
-    
-    try:
-        # Загружаем все записи из pending_approvals
-        res_all = supabase.table("pending_approvals").select("*").execute()
-        all_data = res_all.data if res_all and res_all.data else []
-        
-        # Фильтруем только статусы 'pending' без учета регистра и пробелов
-        pending_requests = [
-            req for req in all_data 
-            if str(req.get("status", "")).strip().lower() == "pending"
-        ]
-        
-        count_pending = len(pending_requests)
-        
-        with st.expander(f"🔔 Anfragen von Agenten verwalten ({count_pending} ausstehend)", expanded=(count_pending > 0)):
-            if not pending_requests:
-                st.info("Keine ausstehenden Anfragen von Agenten.")
-            else:
-                for req in pending_requests:
-                    req_id = req['id']
-                    agent_name = req.get('agent_name', 'Unbekannt')
-                    action_type = req.get('action_type', '-')
-                    payload_data = req.get('payload', [])
-                    
-                    st.markdown(f"**Anfrage ID:** `{req_id}` | **Agent:** `{agent_name}` | **Typ:** `{action_type}`")
-                    st.json(payload_data)
-                    
-                    col_app, col_rej = st.columns(2)
-                    with col_app:
-                        if st.button("✅ Genehmigen (Freigeben)", key=f"approve_{req_id}", type="primary"):
-                            # Вставляем данные в основную таблицу inventory
-                            if isinstance(payload_data, list):
-                                supabase.table("inventory").insert(payload_data).execute()
-                            else:
-                                supabase.table("inventory").insert([payload_data]).execute()
-                            
-                            # Переводим статус заявки в approved
-                            supabase.table("pending_approvals").update({"status": "approved"}).eq("id", req_id).execute()
-                            st.success(f"🎉 Anfrage ID {req_id} genehmigt und in inventory übernommen!")
-                            st.rerun()
-                            
-                    with col_rej:
-                        if st.button("❌ Ablehnen", key=f"reject_{req_id}"):
-                            # Переводим статус заявки в rejected
-                            supabase.table("pending_approvals").update({"status": "rejected"}).eq("id", req_id).execute()
-                            st.warning(f"⚠️ Anfrage ID {req_id} abgelehnt.")
-                            st.rerun()
-                            
-                    st.divider()
+st.markdown("---")
+st.subheader("🔔 Anfragen von Agenten verwalten")
 
-    except Exception as e:
-        st.error(f"❌ Fehler beim Laden der Admin-Freigaben: {e}")
+try:
+    # 1. Получаем все записи из таблицы модерации
+    res = supabase.table("pending_approvals").select("*").execute()
+    data = res.data if res and res.data else []
+    
+    # 2. Отбираем только записи со статусом 'pending'
+    pending_items = [
+        item for item in data 
+        if str(item.get("status", "")).strip().lower() == "pending"
+    ]
+    
+    count_pending = len(pending_items)
+    st.write(f"Ausstehende Anfragen gefunden: **{count_pending}**")
+    
+    if not pending_items:
+        st.info("Keine ausstehenden Anfragen von Agenten.")
+    else:
+        # Сбираем абсолютно все источники сведений о текущей роли для 100% надежности
+        role_sources = [
+            str(globals().get('current_role', '')),
+            str(st.session_state.get('role', '')),
+            str(st.session_state.get('user_role', '')),
+            str(st.session_state.get('user', '')),
+            str(st.session_state.get('username', ''))
+        ]
+        combined_role_info = " ".join(role_sources).lower()
+        
+        # Если в боковом меню выбрана роль менеджера / полный доступ OR нет явной метки строгого агента
+        # Менеджером является пользователь, у которого в данных есть manager / vollzugriff / admin / maria
+        is_manager = any(keyword in combined_role_info for keyword in ["manager", "vollzugriff", "admin", "maria"])
+        
+        # Если при этом явно НЕ включен режим чистого агента (Agent без Vollzugriff)
+        if "agent (freigabe" in combined_role_info or combined_role_info.strip() == "agent":
+            is_manager = False
+
+        for item in pending_items:
+            item_id = item.get("id")
+            agent = item.get("agent_name", "Unbekannt")
+            action = item.get("action_type", "-")
+            payload = item.get("payload", [])
+            
+            with st.expander(f"📋 Anfrage ID: {item_id} | Agent: {agent} | Typ: {action}"):
+                st.json(payload)
+                
+                if is_manager:
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("✅ Genehmigen (Freigeben)", key=f"ok_{item_id}", type="primary"):
+                            if isinstance(payload, list):
+                                supabase.table("inventory").insert(payload).execute()
+                            else:
+                                supabase.table("inventory").insert([payload]).execute()
+                            
+                            supabase.table("pending_approvals").update({"status": "approved"}).eq("id", item_id).execute()
+                            st.success(f"Anfrage ID {item_id} erfolgreich genehmigt!")
+                            st.rerun()
+                            
+                    with col2:
+                        if st.button("❌ Ablehnen", key=f"no_{item_id}"):
+                            supabase.table("pending_approvals").update({"status": "rejected"}).eq("id", item_id).execute()
+                            st.warning(f"Anfrage ID {item_id} wurde abgelehnt.")
+                            st.rerun()
+                else:
+                    st.caption("🔒 Nur für Manager: Freigabe ausstehend.")
+
+except Exception as err:
+    st.error(f"❌ Fehler beim Laden der Anfragen: {err}")
