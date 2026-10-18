@@ -1738,3 +1738,325 @@ if uploaded_promo_file:
     except Exception as e:
         st.error(f"Fehler beim Verarbeiten der Datei: {e}")
 
+import pandas as pd
+import numpy as np
+import streamlit as st
+
+# =========================================================
+# ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ: ЗАЩИТА ОТ NaN / ПУСТЫХ ЯЧЕЕК
+# =========================================================
+def clean_val(val, default, val_type=str):
+    if pd.isna(val) or val is None:
+        return default
+    try:
+        return val_type(val)
+    except:
+        return default
+
+# Определяем текущего пользователя и роль
+current_role = st.session_state.get("user_role", "Agent")
+current_user_name = st.session_state.get("username", "Unbekannt")
+
+# =========================================================
+# БЛОК 1: ПРОВЕРКА ЗАКАЗА И ДОБАВЛЕНИЕ НЕДОСТАЮЩИХ ТОВАРОВ
+# =========================================================
+
+st.markdown("---")
+st.subheader("🔍 Abgleich: Bestellte Artikel ohne SAP im Bestand")
+st.caption("Laden Sie eine Bestelldatei hoch, um neue Artikel zu prüfen und zuzuordnen.")
+
+with st.container():
+    order_file = st.file_uploader(
+        "Bestelldatei auswählen (.xlsx oder .csv):",
+        type=["xlsx", "csv"],
+        key="missing_check_uploader"
+    )
+
+    if order_file is not None:
+        try:
+            if order_file.name.endswith(".csv"):
+                df_order = pd.read_csv(order_file)
+            else:
+                df_order = pd.read_excel(order_file)
+
+            df_order.columns = [str(c).strip().lower() for c in df_order.columns]
+
+            if "sap" not in df_order.columns:
+                st.error("❌ In der Datei fehlt die Spalte 'sap'.")
+            else:
+                db_saps = set(df['sap'].astype(str).str.strip().tolist()) if not df.empty else set()
+                df_order['sap_clean'] = df_order['sap'].astype(str).str.strip()
+                
+                missing_df = df_order[~df_order['sap_clean'].isin(db_saps)].copy()
+
+                if missing_df.empty:
+                    st.success("✅ Alle bestellten Artikel sind bereits in der Bestandsdatenbank vorhanden!")
+                else:
+                    st.warning(f"⚠️ Es wurden **{len(missing_df)}** neue Positionen gefunden, die noch **nicht** in `inventory` existieren:")
+                    
+                    st.dataframe(
+                        missing_df[['sap_clean'] + [c for c in missing_df.columns if c in ['name', 'brand', 'quantity', 'preis', 'barcode']]], 
+                        use_container_width=True
+                    )
+
+                    st.markdown("### Status für den Import festlegen:")
+                    import_status_choice = st.radio(
+                        "Wie soll der Status / Lagerort für diese neuen Artikel gesetzt werden?",
+                        options=[
+                            "Bestellt (Unterwegs / Noch nicht eingetroffen)",
+                            "Wareneingang / Unbekannt (Eingetroffen, aber noch nicht einsortiert)"
+                        ],
+                        key="import_status_radio"
+                    )
+                    
+                    default_location_value = "Bestellt (Unterwegs)" if "Unterwegs" in import_status_choice else "Wareneingang (Unbekannt)"
+
+                    action_tab1, action_tab2 = st.tabs(["⚡ Automatischer Import", "✏️ Manuelle Einzelerfassung"])
+
+                    with action_tab1:
+                        st.info(f"Fügt alle Positionen mit dem Status **'{default_location_value}'** hinzu.")
+                        if st.button("🚀 Fehlende Artikel in inventory eintragen", key="btn_add_all_missing", type="primary"):
+                            try:
+                                new_records = []
+                                for _, r in missing_df.iterrows():
+                                    new_records.append({
+                                        "sap": clean_val(r.get("sap_clean"), "", str),
+                                        "name": clean_val(r.get("name", r.get("artikelname")), "Neuer Artikel", str),
+                                        "brand": clean_val(r.get("brand", r.get("marke")), "Royal Copenhagen / Iittala", str),
+                                        "quantity": clean_val(r.get("quantity", r.get("menge")), 0, int),
+                                        "preis": clean_val(r.get("preis", r.get("price")), 0.0, float),
+                                        "barcode": clean_val(r.get("barcode"), "", str),
+                                        "location": default_location_value,
+                                        "min_stock": 0,
+                                        "max_stock": 0
+                                    })
+
+                                if "Agent" in current_role:
+                                    res = supabase.table("pending_approvals").insert({
+                                        "agent_name": current_user_name,
+                                        "action_type": "insert_new_items_batch",
+                                        "payload": new_records,
+                                        "status": "pending"
+                                    }).execute()
+                                    st.warning("⏳ Ihre Anfrage wurde an den Administrator gesendet und wartet auf Freigabe!")
+                                    st.caption(f"Debug Info Supabase: {res}")
+                                else:
+                                    supabase.table("inventory").insert(new_records).execute()
+                                    st.success(f"🎉 Erfolgreich {len(new_records)} neue Artikel hinzugefügt!")
+                                    st.rerun()
+
+                            except Exception as ex:
+                                st.error(f"❌ Fehler beim Speichern: {ex}")
+
+                    with action_tab2:
+                        st.write("Wählen Sie eine spezifische Position aus der Liste:")
+                        selected_missing_sap = st.selectbox(
+                            "SAP auswählen:",
+                            options=missing_df['sap_clean'].tolist(),
+                            key="select_missing_single"
+                        )
+
+                        if selected_missing_sap:
+                            row_info = missing_df[missing_df['sap_clean'] == selected_missing_sap].iloc[0]
+
+                            with st.form("single_add_form"):
+                                col_a, col_b = st.columns(2)
+                                with col_a:
+                                    init_name = clean_val(row_info.get("name", row_info.get("artikelname")), "", str)
+                                    s_name = st.text_input("Artikelname (Name)", value=init_name)
+                                    s_brand = st.selectbox("Marke (Brand)", ["Royal Copenhagen", "Iittala", "Moomin Arabia", "Georg Jensen"])
+                                    init_qty = clean_val(row_info.get("quantity", row_info.get("menge")), 1, int)
+                                    s_qty = st.number_input("Menge (Quantity)", min_value=0, value=init_qty)
+                                with col_b:
+                                    s_loc = st.selectbox(
+                                        "Lagerort / Status (Location)",
+                                        ["Bestellt (Unterwegs)", "Wareneingang (Unbekannt)", "RC Lager", "Shop Lager"]
+                                    )
+                                    init_price = clean_val(row_info.get("preis", row_info.get("price")), 0.0, float)
+                                    s_price = st.number_input("Preis (€)", min_value=0.0, value=init_price)
+                                    init_barcode = clean_val(row_info.get("barcode"), "", str)
+                                    s_barcode = st.text_input("Barcode", value=init_barcode)
+
+                                if st.form_submit_button("💾 Diesen Artikel speichern"):
+                                    try:
+                                        single_record = [{
+                                            "sap": selected_missing_sap,
+                                            "name": s_name if s_name else "Neuer Artikel",
+                                            "brand": s_brand,
+                                            "quantity": s_qty,
+                                            "location": s_loc,
+                                            "preis": s_price,
+                                            "barcode": s_barcode,
+                                            "min_stock": 0,
+                                            "max_stock": 0
+                                        }]
+
+                                        if "Agent" in current_role:
+                                            res = supabase.table("pending_approvals").insert({
+                                                "agent_name": current_user_name,
+                                                "action_type": "insert_single_item",
+                                                "payload": single_record,
+                                                "status": "pending"
+                                            }).execute()
+                                            st.warning("⏳ Ihre Einzelauswahl wurde zur Freigabe an den Administrator gesendet!")
+                                            st.caption(f"Debug Info Supabase: {res}")
+                                        else:
+                                            supabase.table("inventory").insert(single_record[0]).execute()
+                                            st.success(f"✅ Artikel mit SAP {selected_missing_sap} erfolgreich hinzugefügt!")
+                                            st.rerun()
+
+                                    except Exception as ex:
+                                        st.error(f"❌ Fehler beim Speichern: {ex}")
+
+        except Exception as e:
+            st.error(f"❌ Fehler beim Lesen der Datei: {e}")
+
+# =========================================================
+# БЛОК 2: ЗАКАЗ НОВЫХ ТОВАРОВ (ОТДЕЛЬНЫЙ ИМПОРТ ФАЙЛА)
+# =========================================================
+
+st.markdown("---")
+st.subheader("📦 Neue Artikel aus Bestellung erfassen")
+st.caption("Laden Sie die Bestelldatei hoch, um neue Artikel mit SAP-Nummer automatisch anzulegen.")
+
+order_file_new = st.file_uploader(
+    "Bestelldatei hochladen (.xlsx / .csv):",
+    type=["xlsx", "csv"],
+    key="new_items_order_uploader"
+)
+
+if order_file_new is not None:
+    try:
+        if order_file_new.name.endswith(".csv"):
+            df_order_new = pd.read_csv(order_file_new)
+        else:
+            df_order_new = pd.read_excel(order_file_new)
+
+        df_order_new.columns = [str(c).strip().lower() for c in df_order_new.columns]
+
+        if "sap" not in df_order_new.columns:
+            st.error("❌ Die Spalte 'sap' ist in der Datei zwingend erforderlich!")
+        else:
+            existing_saps = set(df['sap'].astype(str).str.strip().tolist()) if not df.empty else set()
+            df_order_new['sap_clean'] = df_order_new['sap'].astype(str).str.strip()
+            
+            new_items_df = df_order_new[~df_order_new['sap_clean'].isin(existing_saps)].copy()
+
+            if new_items_df.empty:
+                st.info("ℹ️ Alle Artikel aus dieser Datei sind bereits in Ihrer Datenbank vorhanden.")
+            else:
+                st.warning(f"🆕 Es wurden **{len(new_items_df)} neue Artikel** (nach SAP) gefunden, die noch nicht in der Datenbank existieren:")
+                
+                display_cols = [c for c in ['sap_clean', 'name', 'brand', 'quantity', 'preis', 'barcode'] if c in new_items_df.columns]
+                st.dataframe(new_items_df[display_cols], use_container_width=True)
+
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    if st.button("🚀 Alle neuen Artikel mit Bestand eintragen", type="primary", key="btn_add_new_with_qty"):
+                        try:
+                            records = []
+                            for _, row in new_items_df.iterrows():
+                                records.append({
+                                    "sap": clean_val(row.get("sap_clean"), "", str),
+                                    "name": clean_val(row.get("name", row.get("artikelname")), "Neuer Artikel", str),
+                                    "brand": clean_val(row.get("brand", row.get("marke")), "Royal Copenhagen / Iittala", str),
+                                    "quantity": clean_val(row.get("quantity", row.get("menge")), 0, int),
+                                    "preis": clean_val(row.get("preis", row.get("price")), 0.0, float),
+                                    "barcode": clean_val(row.get("barcode"), "", str),
+                                    "location": "Bestellt",
+                                    "min_stock": 0,
+                                    "max_stock": 0
+                                })
+
+                            if "Agent" in current_role:
+                                res = supabase.table("pending_approvals").insert({
+                                    "agent_name": current_user_name,
+                                    "action_type": "insert_new_items_with_qty",
+                                    "payload": records,
+                                    "status": "pending"
+                                }).execute()
+                                st.warning("⏳ Ihre Anfrage wurde an den Administrator gesendet und wartet auf Freigabe!")
+                                st.caption(f"Debug Info Supabase: {res}")
+                            else:
+                                supabase.table("inventory").insert(records).execute()
+                                st.success(f"🎉 Erfolgreich {len(records)} neue Artikel in die Datenbank eingetragen!")
+                                st.rerun()
+
+                        except Exception as ex:
+                            st.error(f"Fehler beim Speichern: {ex}")
+
+                with col2:
+                    if st.button("📋 Als Stammdaten anlegen (Bestand = 0)", key="btn_add_new_zero_qty"):
+                        try:
+                            records = []
+                            for _, row in new_items_df.iterrows():
+                                records.append({
+                                    "sap": clean_val(row.get("sap_clean"), "", str),
+                                    "name": clean_val(row.get("name", row.get("artikelname")), "Neuer Artikel", str),
+                                    "brand": clean_val(row.get("brand", row.get("marke")), "Royal Copenhagen / Iittala", str),
+                                    "quantity": 0,
+                                    "preis": clean_val(row.get("preis", row.get("price")), 0.0, float),
+                                    "barcode": clean_val(row.get("barcode"), "", str),
+                                    "location": "Bestellt",
+                                    "min_stock": 0,
+                                    "max_stock": 0
+                                })
+
+                            if "Agent" in current_role:
+                                res = supabase.table("pending_approvals").insert({
+                                    "agent_name": current_user_name,
+                                    "action_type": "insert_new_items_zero_qty",
+                                    "payload": records,
+                                    "status": "pending"
+                                }).execute()
+                                st.warning("⏳ Ihre Anfrage wurde an den Administrator gesendet und wartet auf Freigabe!")
+                                st.caption(f"Debug Info Supabase: {res}")
+                            else:
+                                supabase.table("inventory").insert(records).execute()
+                                st.success(f"🎉 {len(records)} neue Artikel-Stammdaten mit Bestand 0 erstellt!")
+                                st.rerun()
+
+                        except Exception as ex:
+                            st.error(f"Fehler beim Speichern: {ex}")
+
+    except Exception as e:
+        st.error(f"Fehler bei der Dateiverarbeitung: {e}")
+
+# =========================================================
+# БЛОК 3: ПАНЕЛЬ АДМИНИСТРАТОРА (ОДОБРЕНИЕ ЗАПРОСОВ)
+# =========================================================
+if "Agent" not in current_role:
+    st.markdown("---")
+    st.subheader("🛡️ Admin-Freigaben (Ausstehende Anfragen von Agenten)")
+    
+    try:
+        pending_requests = supabase.table("pending_approvals").select("*").eq("status", "pending").execute().data
+        
+        if not pending_requests:
+            st.info("ℹ️ Keine ausstehenden Anfragen von Agenten vorhanden.")
+        else:
+            for req in pending_requests:
+                with st.expander(f"Anfrage von: {req['agent_name']} | Typ: {req['action_type']} | ID: {req['id']}"):
+                    st.json(req['payload'])
+                    
+                    col_app, col_rej = st.columns(2)
+                    with col_app:
+                        if st.button("✅ Genehmigen (Freigeben)", key=f"approve_{req['id']}"):
+                            payload_data = req['payload']
+                            if isinstance(payload_data, list):
+                                supabase.table("inventory").insert(payload_data).execute()
+                            else:
+                                supabase.table("inventory").insert([payload_data]).execute()
+                                
+                            supabase.table("pending_approvals").update({"status": "approved"}).eq("id", req['id']).execute()
+                            st.success("🎉 Anfrage genehmigt und Daten in inventory übernommen!")
+                            st.rerun()
+                            
+                    with col_rej:
+                        if st.button("❌ Ablehnen", key=f"reject_{req['id']}"):
+                            supabase.table("pending_approvals").update({"status": "rejected"}).eq("id", req['id']).execute()
+                            st.warning("⚠️ Anfrage abgelehnt.")
+                            st.rerun()
+    except Exception as e:
+        st.info(f"ℹ️ Info: {e}")
