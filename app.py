@@ -1,3 +1,5 @@
+import pandas as pd
+import plotly.express as px
 import hashlib
 import io
 import json
@@ -2096,3 +2098,119 @@ try:
 
 except Exception as err:
     st.error(f"❌ Fehler beim Laden der Anfragen: {err}")
+
+# =========================================================
+# BLOCK: LAGERANALYSE & KRITISCHE BESTÄNDE (DEUTSCH)
+# =========================================================
+import pandas as pd
+import plotly.express as px
+
+st.markdown("---")
+st.header("📊 Lageranalyse & Kritische Bestände")
+
+try:
+    # 1. Alle Artikel aus der Tabelle 'inventory' abrufen
+    res_inv = supabase.table("inventory").select("*").execute()
+    inv_data = res_inv.data if res_inv and res_inv.data else []
+
+    if not inv_data:
+        st.info("Keine Artikel in der Datenbank vorhanden.")
+    else:
+        df_inv = pd.DataFrame(inv_data)
+
+        # Numerische Spalten umwandeln
+        numeric_cols = ["quantity", "min_stock", "max_stock", "preis"]
+        for col in numeric_cols:
+            if col in df_inv.columns:
+                df_inv[col] = pd.to_numeric(df_inv[col], errors="coerce").fillna(0)
+
+        # -----------------------------------------------------
+        # 1. WARNUNGEN FÜR KRITISCHE BESTÄNDE (LOW STOCK)
+        # -----------------------------------------------------
+        st.subheader("⚠️ Kritische Bestände (Unter Min-Stock)")
+
+        # Filtern: Bestand <= min_stock und min_stock > 0
+        low_stock_df = df_inv[
+            (df_inv["quantity"] <= df_inv["min_stock"]) & (df_inv["min_stock"] > 0)
+        ]
+
+        out_of_stock_df = df_inv[df_inv["quantity"] == 0]
+
+        # Kennzahlen (Metrics) anzeigen
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Gesamte Artikelanzahl", len(df_inv))
+        m2.metric("Artikel unter Min-Stock", len(low_stock_df), delta_color="inverse")
+        m3.metric("Ausverkauft (0 Stk.)", len(out_of_stock_df), delta_color="inverse")
+
+        if not low_stock_df.empty:
+            st.error(f"🚨 Achtung: **{len(low_stock_df)}** Positionen müssen dringend nachbestellt werden!")
+            
+            display_cols = [c for c in ["article", "sap", "name", "brand", "quantity", "min_stock", "location"] if c in low_stock_df.columns]
+            st.dataframe(
+                low_stock_df[display_cols].rename(columns={
+                    "article": "Artikel-Nr.",
+                    "sap": "SAP",
+                    "name": "Bezeichnung",
+                    "brand": "Marke",
+                    "quantity": "Bestand (Stk.)",
+                    "min_stock": "Min.-Bestand",
+                    "location": "Lagerort"
+                }),
+                use_container_width=True
+            )
+        else:
+            st.success("✅ Alle Artikel liegen im normalen Bereich (über Min-Stock).")
+
+        # -----------------------------------------------------
+        # 2. INTERAKTIVE DIAGRAMME UND ANALYSE
+        # -----------------------------------------------------
+        st.subheader("📈 Bestands- und Sortimentsvisualisierung")
+
+        tab_brand, tab_loc, tab_top = st.tabs(["🏷️ Bestände nach Marken", "📍 Verteilung nach Lagerort", "🔝 Top-Positionen"])
+
+        with tab_brand:
+            if "brand" in df_inv.columns and "quantity" in df_inv.columns:
+                brand_summary = df_inv.groupby("brand")["quantity"].sum().reset_index()
+                brand_summary = brand_summary.sort_values(by="quantity", ascending=False)
+
+                fig_brand = px.bar(
+                    brand_summary,
+                    x="brand",
+                    y="quantity",
+                    title="Gesamte Stückzahl nach Marken",
+                    labels={"brand": "Marke", "quantity": "Stückzahl"},
+                    color="brand",
+                    text_auto=True
+                )
+                fig_brand.update_layout(showlegend=False)
+                st.plotly_chart(fig_brand, use_container_width=True)
+
+        with tab_loc:
+            if "location" in df_inv.columns and "quantity" in df_inv.columns:
+                loc_summary = df_inv.groupby("location")["quantity"].sum().reset_index()
+
+                fig_loc = px.pie(
+                    loc_summary,
+                    names="location",
+                    values="quantity",
+                    title="Verteilung der Artikel nach Lagerzonen",
+                    hole=0.4
+                )
+                st.plotly_chart(fig_loc, use_container_width=True)
+
+        with tab_top:
+            if "name" in df_inv.columns and "quantity" in df_inv.columns:
+                top_items = df_inv.nlargest(10, "quantity")[["name", "brand", "quantity", "location"]]
+                st.markdown("**Top 10 Artikel mit dem höchsten Lagerbestand:**")
+                st.dataframe(
+                    top_items.rename(columns={
+                        "name": "Bezeichnung",
+                        "brand": "Marke",
+                        "quantity": "Bestand (Stk.)",
+                        "location": "Lagerort"
+                    }),
+                    use_container_width=True
+                )
+
+except Exception as e:
+    st.error(f"❌ Fehler beim Laden der Lageranalyse: {e}")
