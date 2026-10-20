@@ -2127,7 +2127,9 @@ try:
         # -----------------------------------------------------
         
         # =========================================================
-# SPRACHAUSWAHL / LANGUAGE SELECTOR / ВЫБОР ЯЗЫКА
+except Exception:
+    pass
+    # SPRACHAUSWAHL / LANGUAGE SELECTOR / ВЫБОР ЯЗЫКА
 # =========================================================
 lang = st.sidebar.selectbox(
     "🌐 Sprache / Language / Язык",
