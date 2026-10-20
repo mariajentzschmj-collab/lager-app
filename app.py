@@ -270,7 +270,17 @@ TEXTS = {
 }
 
 t = TEXTS.get(lang, TEXTS["DE"])
+# Подсчет незавершенных запросов от агентов
+pending_count = 0
+if st.session_state.get("role") == "manager" and supabase is not None:
+    try:
+        res = supabase.table("approvals").select("*", count="exact").eq("status", "pending").execute()
+        pending_count = res.count if res.count is not None else len(res.data)
+    except Exception:
+        pending_count = 0
 
+if pending_count > 0:
+    st.sidebar.error(f"🔔 **{pending_count}** {t.get('opt_pending', 'Anfragen von Agenten')}")
 # Вывод информации о пользователе с переводом
 st.sidebar.markdown(f"👤 **{t['logged_as']}:** {st.session_state.get('user_name', 'User')}")
 st.sidebar.markdown(f"🏷️ **{t['role']}:** {st.session_state.get('role', 'User')}")
