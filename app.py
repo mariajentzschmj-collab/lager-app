@@ -78,7 +78,26 @@ try:
 except Exception as e:
   pass
 
+# =========================================================
+# 📢 НОВОСТНОЙ / АКЦИОННЫЙ БАННЕР (NEWS BANNER)
+# =========================================================
+try:
+    # Запрашиваем последнюю новость из таблицы news
+    res_news = supabase.table("news").select("*").order("created_at", desc=True).limit(1).execute()
+    news_data = res_news.data if res_news and res_news.data else []
+    
+    if news_data:
+        banner_text = news_data[0].get("message", "")
+    else:
+        # Текст по умолчанию, если таблица пустая
+        banner_text = "🔥 **Aktuelle Aktion:** Royal Copenhagen & Iittala Sonderverkauf – Reduzierte Artikel bis zu -20%!"
+        
+    if banner_text:
+        st.warning(f"📢 **Wichtige Information / Aktion:** {banner_text}")
 
+except Exception:
+    # Запасной вариант на случай, если таблицы news нет в базе
+    st.warning("📢 **Wichtige Information / Aktion:** 🔥 **Aktuelle Aktion:** Royal Copenhagen & Iittala Sonderverkauf – Reduzierte Artikel bis zu -20%!")
 # --- СИСТЕМА АВТОРИЗАЦИИ (МЕНЕДЖЕР И АГЕНТЫ С ПИН-КОДОМ) ---
 def check_authentication():
   TIMEOUT_SECONDS = 300  # 5 минут неактивности
