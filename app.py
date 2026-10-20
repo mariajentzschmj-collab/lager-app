@@ -2125,42 +2125,7 @@ try:
                 df_inv[col] = pd.to_numeric(df_inv[col], errors="coerce").fillna(0)
 
         # -----------------------------------------------------
-        # 1. WARNUNGEN FÜR KRITISCHE BESTÄNDE (LOW STOCK)
-        # -----------------------------------------------------
-        st.subheader("⚠️ Kritische Bestände (Unter Min-Stock)")
-
-        # Filtern: Bestand <= min_stock und min_stock > 0
-        low_stock_df = df_inv[
-            (df_inv["quantity"] <= df_inv["min_stock"]) & (df_inv["min_stock"] > 0)
-        ]
-
-        out_of_stock_df = df_inv[df_inv["quantity"] == 0]
-
-        # Kennzahlen (Metrics) anzeigen
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Gesamte Artikelanzahl", len(df_inv))
-        m2.metric("Artikel unter Min-Stock", len(low_stock_df), delta_color="inverse")
-        m3.metric("Ausverkauft (0 Stk.)", len(out_of_stock_df), delta_color="inverse")
-
-        if not low_stock_df.empty:
-            st.error(f"🚨 Achtung: **{len(low_stock_df)}** Positionen müssen dringend nachbestellt werden!")
-            
-            display_cols = [c for c in ["article", "sap", "name", "brand", "quantity", "min_stock", "location"] if c in low_stock_df.columns]
-            st.dataframe(
-                low_stock_df[display_cols].rename(columns={
-                    "article": "Artikel-Nr.",
-                    "sap": "SAP",
-                    "name": "Bezeichnung",
-                    "brand": "Marke",
-                    "quantity": "Bestand (Stk.)",
-                    "min_stock": "Min.-Bestand",
-                    "location": "Lagerort"
-                }),
-                use_container_width=True
-            )
-        else:
-            st.success("✅ Alle Artikel liegen im normalen Bereich (über Min-Stock).")
-
+        
         # =========================================================
 # SPRACHAUSWAHL / LANGUAGE SELECTOR / ВЫБОР ЯЗЫКА
 # =========================================================
