@@ -2430,13 +2430,35 @@ if action in ["📊 Bestände anzeigen", "📊 Показать остатки",
         st.subheader(t.get("rev_title", "Monatlicher Umsatz nach Marken laut Barcode (€)"))
         try:
             if supabase is not None:
-                sales_res = supabase.table("sales").select("*").execute()
-                if sales_res.data:
+                # Пробуем получить данные из sales, daily_sales или operations_log
+                sales_data = []
+                for tbl in ["daily_sales", "sales", "operations_log"]:
+                    try:
+                        res = supabase.table(tbl).select("*").execute()
+                        if res.data:
+                            sales_data.extend(res.data)
+                    except Exception:
+                        pass
+                
+                if sales_data:
                     import pandas as pd
-                    df_sales = pd.DataFrame(sales_res.data)
-                    if not df_sales.empty and "revenue" in df_sales.columns:
-                        brand_col = "brand" if "brand" in df_sales.columns else df_sales.columns[0]
-                        df_rev_brand = df_sales.groupby(brand_col)["revenue"].sum().reset_index()
+                    df_sales = pd.DataFrame(sales_data)
+                    
+                    # Ищем колонку суммы/выручки
+                    rev_col = None
+                    for c in ["revenue", "price", "amount", "umsatz", "summe", "total"]:
+                        if c in df_sales.columns:
+                            rev_col = c
+                            break
+                    
+                    brand_col = None
+                    for c in ["brand", "marke", "manufacturer", "category"]:
+                        if c in df_sales.columns:
+                            brand_col = c
+                            break
+
+                    if rev_col and brand_col:
+                        df_rev_brand = df_sales.groupby(brand_col)[rev_col].sum().reset_index()
                         df_rev_brand.columns = [t.get("brand", "Marke"), t.get("umsatz", "Umsatz (€)")]
                         
                         st.bar_chart(df_rev_brand.set_index(t.get("brand", "Marke")))
@@ -2455,14 +2477,32 @@ if action in ["📊 Bestände anzeigen", "📊 Показать остатки",
         st.subheader(t.get("top_title", "🔥 Top 10 meistverkaufte Artikel"))
         try:
             if supabase is not None:
-                top_res = supabase.table("sales").select("*").execute()
-                if top_res.data:
+                sales_data = []
+                for tbl in ["daily_sales", "sales", "operations_log"]:
+                    try:
+                        res = supabase.table(tbl).select("*").execute()
+                        if res.data:
+                            sales_data.extend(res.data)
+                    except Exception:
+                        pass
+
+                if sales_data:
                     import pandas as pd
-                    df_top = pd.DataFrame(top_res.data)
-                    if not df_top.empty:
-                        name_col = "article_name" if "article_name" in df_top.columns else "name" if "name" in df_top.columns else df_top.columns[0]
-                        qty_col = "quantity" if "quantity" in df_top.columns else df_top.columns[1]
-                        
+                    df_top = pd.DataFrame(sales_data)
+                    
+                    name_col = None
+                    for c in ["article_name", "name", "title", "bezeichnung", "sap_number"]:
+                        if c in df_top.columns:
+                            name_col = c
+                            break
+                            
+                    qty_col = None
+                    for c in ["quantity", "anzahl", "stk", "count"]:
+                        if c in df_top.columns:
+                            qty_col = c
+                            break
+
+                    if name_col and qty_col:
                         df_top_10 = df_top.groupby(name_col)[qty_col].sum().reset_index()
                         df_top_10 = df_top_10.sort_values(by=qty_col, ascending=False).head(10)
                         df_top_10.columns = [t.get("top_col_art", "Artikel"), t.get("top_col_qty", "Verkaufte Stk.")]
