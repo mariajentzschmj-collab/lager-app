@@ -159,7 +159,7 @@ def check_authentication():
 if not check_authentication():
   st.stop()
 # =========================================================
-# 🌐 МУЛЬТИЯЗЫЧНОСТЬ (LANGUAGE SELECTOR)
+# 🌐 МУЛЬТИЯЗЫЧНОСТЬ И ЕДИНОЕ МЕНЮ (LANGUAGE & NAVIGATION)
 # =========================================================
 lang = st.sidebar.selectbox(
     "🌐 Sprache / Language / Язык",
@@ -195,7 +195,11 @@ TEXTS = {
         "opt_reduce": "📉 Artikel reduzieren (Verkauf)",
         "opt_intake": "📦 Massen-Wareneingang (Zuwachs)",
         "opt_report": "📊 Auto-Abverkauf per Bericht",
-        "opt_catalog": "📁 Katalog aus Datei"
+        "opt_catalog": "📁 Katalog aus Datei",
+        "opt_scanner": "📷 Live-Kamera-Scanner",
+        "opt_labels": "🖨️ Etiketten drucken",
+        "opt_inventur": "📋 Inventur-Schnelleingabe",
+        "opt_qr": "📲 QR-Code für Kollegen"
     },
     "EN": {
         "header": "📊 Inventory, Revenue & Top Sellers",
@@ -224,7 +228,11 @@ TEXTS = {
         "opt_reduce": "📉 Reduce item (Sale)",
         "opt_intake": "📦 Bulk goods receipt",
         "opt_report": "📊 Auto-sales report",
-        "opt_catalog": "📁 Catalog from file"
+        "opt_catalog": "📁 Catalog from file",
+        "opt_scanner": "📷 Live Camera Scanner",
+        "opt_labels": "🖨️ Print Labels",
+        "opt_inventur": "📋 Quick Inventory Entry",
+        "opt_qr": "📲 QR Code for Colleagues"
     },
     "RU": {
         "header": "📊 Остатки, Выручка и Топ Продаж",
@@ -253,33 +261,41 @@ TEXTS = {
         "opt_reduce": "📉 Списать товар (Продажа)",
         "opt_intake": "📦 Массовый приход товара",
         "opt_report": "📊 Авто-списание по отчету",
-        "opt_catalog": "📁 Каталог из файла"
+        "opt_catalog": "📁 Каталог из файла",
+        "opt_scanner": "📷 Сканер штрихкодов",
+        "opt_labels": "🖨️ Печать этикеток",
+        "opt_inventur": "📋 Быстрый ввод инвентаризации",
+        "opt_qr": "📲 QR-код для коллег"
     }
 }
 
 t = TEXTS.get(lang, TEXTS["DE"])
-# Верхняя панель с информацией о текущем пользователе и кнопкой выхода
-st.sidebar.markdown(f"👤 **Angemeldet als:** {st.session_state.get('user_name')}")
-st.sidebar.markdown(f"🏷️ **Rolle:** {'Manager (Vollzugriff)' if st.session_state.get('role') == 'manager' else 'Agent (Freigabe in App)'}")
 
-# Если менеджер — проверяем количество ожидающих запросов в базе данных
-pending_count = 0
-if st.session_state.get("role") == "manager" and supabase is not None:
-  try:
-    res = supabase.table("approvals").select("*", count="exact").eq("status", "pending").execute()
-    pending_count = res.count if res.count is not None else len(res.data)
-  except Exception:
-    pending_count = 0
-
-if pending_count > 0:
-  st.sidebar.error(f"🔔 **Wartet auf Freigabe:** {pending_count} Anfrage(n)")
+# Вывод информации о пользователе с переводом
+st.sidebar.markdown(f"👤 **{t['logged_as']}:** {st.session_state.get('user_name', 'User')}")
+st.sidebar.markdown(f"🏷️ **{t['role']}:** {st.session_state.get('role', 'User')}")
 
 if st.sidebar.button(f"🚪 {t['logout']}"):
-  st.session_state["logged_in"] = False
-  st.session_state["role"] = None
-  st.session_state["user_name"] = None
-  st.rerun()
-menu_options = [t["opt_show"], t["opt_add"], t["opt_reduce"], t["opt_intake"], t["opt_report"], t["opt_catalog"]]
+    st.session_state["logged_in"] = False
+    st.session_state["role"] = None
+    st.session_state["user_name"] = None
+    st.rerun()
+
+# Единое переводимое меню управления складом
+st.sidebar.markdown(f"### ⚙️ {t['nav_header']}")
+
+menu_options = [
+    t["opt_show"],
+    t["opt_add"],
+    t["opt_reduce"],
+    t["opt_intake"],
+    t["opt_report"],
+    t["opt_catalog"],
+    t["opt_scanner"],
+    t["opt_labels"],
+    t["opt_inventur"],
+    t["opt_qr"]
+]
 
 action = st.sidebar.radio(t["nav_action_label"], menu_options)
 # --- HAUPTCODE DER ANWENDUNG ---
