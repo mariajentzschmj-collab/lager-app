@@ -2463,3 +2463,83 @@ if action in ["📊 Bestände anzeigen", "📊 Показать остатки",
                 st.warning("Supabase Connection Error")
         except Exception as e:
             st.info(t.get("no_sales", "Keine Verkaufsdaten vorhanden."))
+            # ==========================================
+# 📊 ОТДЕЛЬНЫЙ БЛОК: Аналитика историческоих продаж (за Октябрь)
+# ==========================================
+st.markdown("---")
+st.subheader("📊 Аналитика загруженной истории продаж")
+
+try:
+    # Загружаем данные из таблицы суточных/массовых продаж
+    hist_res = supabase.table("daily_sales").select("*").execute()
+    
+    if hist_res.data:
+        import pandas as pd
+        import streamlit as st
+        
+        df_hist = pd.DataFrame(hist_res.data)
+        
+        if not df_hist.empty:
+            # Создаем две вкладки для наглядности
+            tab_hist_brands, tab_hist_top = st.tabs(["🏷️ Выручка по брендам", "🏆 Топ-10 Бестселлеров"])
+            
+            # --- Вкладка 1: Выручка по брендам ---
+            with tab_hist_brands:
+                brand_col = None
+                for col in ["brand", "marke", "manufacturer"]:
+                    if col in df_hist.columns:
+                        brand_col = col
+                        break
+                
+                # Ищем колонку с суммой выручки (netto/brutto/price/total)
+                price_col = None
+                for col in ["netto", "total_price", "price", "amount", "gesamt_netto"]:
+                    if col in df_hist.columns:
+                        price_col = col
+                        break
+                
+                if brand_col and price_col:
+                    # Чистим названия брендов от пробелов
+                    df_hist[brand_col] = df_hist[brand_col].astype(str).str.strip().str.title()
+                    df_hist[price_col] = pd.to_numeric(df_hist[price_col], errors='coerce').fillna(0)
+                    
+                    df_brand_sum = df_hist.groupby(brand_col)[price_col].sum().reset_index()
+                    df_brand_sum.columns = ["Бренд", "Выручка (€)"]
+                    
+                    st.bar_chart(df_brand_sum.set_index("Бренд"))
+                    st.dataframe(df_brand_sum, use_container_width=True)
+                else:
+                    st.info("Данные о брендах или суммах в загруженных отчетах пока обрабатываются.")
+
+            # --- Вкладка 2: Топ-10 Бестселлеров ---
+            with tab_hist_top:
+                title_col = None
+                for col in ["title", "name", "artikel_bezeichnung", "description", "sap_number"]:
+                    if col in df_hist.columns:
+                        title_col = col
+                        break
+                        
+                qty_col = None
+                for col in ["quantity", "qty", "stk", "anzahl", "count"]:
+                    if col in df_hist.columns:
+                        qty_col = col
+                        break
+
+                if title_col and qty_col:
+                    df_hist[qty_col] = pd.to_numeric(df_hist[qty_col], errors='coerce').fillna(0)
+                    
+                    df_top = df_hist.groupby(title_col)[qty_col].sum().reset_index()
+                    df_top = df_top.sort_values(by=qty_col, ascending=False).head(10)
+                    df_top.columns = ["Товар / SAP", "Продано (шт)"]
+                    
+                    st.bar_chart(df_top.set_index("Товар / SAP"))
+                    st.dataframe(df_top, use_container_width=True)
+                else:
+                    st.info("Информация о количестве проданных штучно товаров не найдена в этой таблице.")
+        else:
+            st.info("Таблица исторических продаж пока пуста.")
+    else:
+        st.info("Не удалось загрузить данные из базы.")
+
+except Exception as e:
+    st.error(f"Ошибка отображения блока аналитики истории: {e}")
