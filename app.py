@@ -2361,76 +2361,23 @@ except Exception as e:
     st.error(f"❌ Fehler beim Laden der Lageranalyse: {e}")
 
 # =========================================================
-# 📊 ДОПОЛНИТЕЛЬНЫЙ БЛОК АНАЛИТИКИ (INVENTORY & SALES ANALYTICS)
+# 📊 ДОПОЛНИТЕЛЬНЫЙ БЛОК ФИНАНСОВОЙ АНАЛИТИКИ И ПРОДАЖ
 # =========================================================
 if action in ["📊 Bestände anzeigen", "📊 Показать остатки", "📊 View inventory"]:
     st.markdown("---")
-    st.header(t.get("header", "📊 Lagerbestand, Umsatz & Top-Seller"))
+    st.header(t.get("header_sales", "💰 Umsatz & Top-Seller Analytik"))
 
-    # Создаем 3 вкладки аналитики
-    tab_inv, tab_rev, tab_top = st.tabs([
-        t.get("tab_inv", "🏷️ Bestände nach Marken (Stk.)"),
+    # Создаем 2 вкладки: Выручка и Бестселлеры
+    tab_rev, tab_top = st.tabs([
         t.get("tab_rev", "💰 Umsatz nach Marken (€)"),
         t.get("tab_top", "🔝 Bestseller / Top-Verkäufe")
     ])
 
-    # --- Вкладка 1: Остатки по брендам ---
-    with tab_inv:
-        st.subheader(t.get("inv_title", "Gesamte Stückzahl im Lager nach Marken"))
-        try:
-            if supabase is not None:
-                # Запрашиваем все данные из таблицы inventory
-                inv_res = supabase.table("inventory").select("*").execute()
-                if inv_res.data:
-                    import pandas as pd
-                    df_inv = pd.DataFrame(inv_res.data)
-                    
-                    if not df_inv.empty:
-                        # Ищем подходящую колонку для бренда/производителя
-                        possible_brand_cols = ["brand", "marke", "manufacturer", "category", "vendor"]
-                        found_brand = None
-                        for col in possible_brand_cols:
-                            if col in df_inv.columns:
-                                found_brand = col
-                                break
-                        
-                        # Если специфическая колонка не найдена, ищем любую строковую колонку со значениями iittala/royal
-                        if not found_brand:
-                            for col in df_inv.columns:
-                                if df_inv[col].dtype == 'object':
-                                    found_brand = col
-                                    break
-                        
-                        # Ищем колонку с количеством
-                        qty_col = "quantity" if "quantity" in df_inv.columns else "anzahl" if "anzahl" in df_inv.columns else "stk"
-                        if qty_col not in df_inv.columns:
-                            # Берем первую числовую колонку
-                            num_cols = df_inv.select_dtypes(include=['number']).columns
-                            qty_col = num_cols[0] if len(num_cols) > 0 else None
-
-                        if found_brand and qty_col:
-                            df_brand = df_inv.groupby(found_brand)[qty_col].sum().reset_index()
-                            df_brand.columns = [t.get("brand", "Marke"), t.get("quantity", "Stückzahl (Stk.)")]
-                            
-                            st.bar_chart(df_brand.set_index(t.get("brand", "Marke")))
-                            st.dataframe(df_brand, use_container_width=True)
-                        else:
-                            st.dataframe(df_inv, use_container_width=True)
-                    else:
-                        st.info(t.get("no_inv", "Keine Artikel in der Datenbank vorhanden."))
-                else:
-                    st.info(t.get("no_inv", "Keine Artikel in der Datenbank vorhanden."))
-            else:
-                st.warning("Supabase Connection Error")
-        except Exception as e:
-            st.error(f"Error loading inventory analytics: {e}")
-
-    # --- Вкладка 2: Выручка по брендам (€) ---
+    # --- Вкладка 1: Выручка по брендам (€) ---
     with tab_rev:
         st.subheader(t.get("rev_title", "Monatlicher Umsatz nach Marken laut Barcode (€)"))
         try:
             if supabase is not None:
-                # Пробуем получить данные из sales, daily_sales или operations_log
                 sales_data = []
                 for tbl in ["daily_sales", "sales", "operations_log"]:
                     try:
@@ -2444,7 +2391,6 @@ if action in ["📊 Bestände anzeigen", "📊 Показать остатки",
                     import pandas as pd
                     df_sales = pd.DataFrame(sales_data)
                     
-                    # Ищем колонку суммы/выручки
                     rev_col = None
                     for c in ["revenue", "price", "amount", "umsatz", "summe", "total"]:
                         if c in df_sales.columns:
@@ -2458,6 +2404,7 @@ if action in ["📊 Bestände anzeigen", "📊 Показать остатки",
                             break
 
                     if rev_col and brand_col:
+                        df_sales[brand_col] = df_sales[brand_col].astype(str).str.strip().str.title()
                         df_rev_brand = df_sales.groupby(brand_col)[rev_col].sum().reset_index()
                         df_rev_brand.columns = [t.get("brand", "Marke"), t.get("umsatz", "Umsatz (€)")]
                         
@@ -2472,7 +2419,7 @@ if action in ["📊 Bestände anzeigen", "📊 Показать остатки",
         except Exception as e:
             st.info(t.get("no_sales", "Keine Verkaufsdaten vorhanden."))
 
-    # --- Вкладка 3: Бестселлеры (Топ-10) ---
+    # --- Вкладка 2: Бестселлеры (Топ-10) ---
     with tab_top:
         st.subheader(t.get("top_title", "🔥 Top 10 meistverkaufte Artikel"))
         try:
