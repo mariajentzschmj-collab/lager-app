@@ -2359,3 +2359,87 @@ try:
 
 except Exception as e:
     st.error(f"❌ Fehler beim Laden der Lageranalyse: {e}")
+
+# =========================================================
+# 📊 ДОПОЛНИТЕЛЬНЫЙ БЛОК АНАЛИТИКИ (INVENTORY & SALES ANALYTICS)
+# =========================================================
+# Вы можете вставить этот блок там, где выводится главный экран или проверка выбранного действия
+if action in ["📊 Bestände anzeigen", "📊 Показать остатки", "📊 View inventory"]:
+    st.markdown("---")
+    st.header(t.get("header", "📊 Lagerbestand, Umsatz & Top-Seller"))
+
+    # Создаем 3 вкладки аналитики
+    tab_inv, tab_rev, tab_top = st.tabs([
+        t.get("tab_inv", "🏷️ Bestände nach Marken (Stk.)"),
+        t.get("tab_rev", "💰 Umsatz nach Marken (€)"),
+        t.get("tab_top", "🔝 Bestseller / Top-Verkäufe")
+    ])
+
+    # --- Вкладка 1: Остатки по брендам ---
+    with tab_inv:
+        st.subheader(t.get("inv_title", "Gesamte Stückzahl im Lager nach Marken"))
+        try:
+            if supabase is not None:
+                inv_res = supabase.table("products").select("brand, quantity").execute()
+                if inv_res.data:
+                    import pandas as pd
+                    df_inv = pd.DataFrame(inv_res.data)
+                    df_brand = df_inv.groupby("brand")["quantity"].sum().reset_index()
+                    df_brand.columns = [t.get("brand", "Marke"), t.get("quantity", "Stückzahl (Stk.)")]
+                    
+                    st.bar_chart(df_brand.set_index(t.get("brand", "Marke")))
+                    st.dataframe(df_brand, use_container_width=True)
+                else:
+                    st.info(t.get("no_inv", "Keine Artikel in der Datenbank vorhanden."))
+            else:
+                st.warning("Supabase Connection Error")
+        except Exception as e:
+            st.error(f"Error loading inventory analytics: {e}")
+
+    # --- Вкладка 2: Выручка по брендам (€) ---
+    with tab_rev:
+        st.subheader(t.get("rev_title", "Monatlicher Umsatz nach Marken laut Barcode (€)"))
+        try:
+            if supabase is not None:
+                sales_res = supabase.table("sales").select("brand, revenue").execute()
+                if sales_res.data:
+                    import pandas as pd
+                    df_sales = pd.DataFrame(sales_res.data)
+                    if not df_sales.empty and "revenue" in df_sales.columns:
+                        df_rev_brand = df_sales.groupby("brand")["revenue"].sum().reset_index()
+                        df_rev_brand.columns = [t.get("brand", "Marke"), t.get("umsatz", "Umsatz (€)")]
+                        
+                        st.bar_chart(df_rev_brand.set_index(t.get("brand", "Marke")))
+                        st.dataframe(df_rev_brand, use_container_width=True)
+                    else:
+                        st.info(t.get("no_sales", "Keine Verkaufsdaten vorhanden."))
+                else:
+                    st.info(t.get("no_sales", "Keine Verkaufsdaten vorhanden."))
+            else:
+                st.warning("Supabase Connection Error")
+        except Exception as e:
+            st.info(t.get("no_sales", "Keine Verkaufsdaten vorhanden."))
+
+    # --- Вкладка 3: Бестселлеры (Топ-10) ---
+    with tab_top:
+        st.subheader(t.get("top_title", "🔥 Top 10 meistverkaufte Artikel"))
+        try:
+            if supabase is not None:
+                top_res = supabase.table("sales").select("article_name, quantity").execute()
+                if top_res.data:
+                    import pandas as pd
+                    df_top = pd.DataFrame(top_res.data)
+                    if not df_top.empty:
+                        df_top_10 = df_top.groupby("article_name")["quantity"].sum().reset_index()
+                        df_top_10 = df_top_10.sort_values(by="quantity", ascending=False).head(10)
+                        df_top_10.columns = [t.get("top_col_art", "Artikel"), t.get("top_col_qty", "Verkaufte Stk.")]
+                        
+                        st.dataframe(df_top_10, use_container_width=True)
+                    else:
+                        st.info(t.get("no_sales", "Keine Verkaufsdaten vorhanden."))
+                else:
+                    st.info(t.get("no_sales", "Keine Verkaufsdaten vorhanden."))
+            else:
+                st.warning("Supabase Connection Error")
+        except Exception as e:
+            st.info(t.get("no_sales", "Keine Verkaufsdaten vorhanden."))
