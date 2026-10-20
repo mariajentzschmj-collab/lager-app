@@ -158,7 +158,73 @@ def check_authentication():
 
 if not check_authentication():
   st.stop()
+# =========================================================
+# 🌐 МУЛЬТИЯЗЫЧНОСТЬ (LANGUAGE SELECTOR)
+# =========================================================
+lang = st.sidebar.selectbox(
+    "🌐 Sprache / Language / Язык",
+    ["DE", "EN", "RU"],
+    index=0
+)
 
+TEXTS = {
+    "DE": {
+        "header": "📊 Lagerbestand, Umsatz & Top-Seller",
+        "tab_inv": "🏷️ Bestände nach Marken (Stk.)",
+        "tab_rev": "💰 Umsatz nach Marken (€)",
+        "tab_top": "🔝 Bestseller / Top-Verkäufe",
+        "inv_title": "Gesamte Stückzahl im Lager nach Marken",
+        "inv_tbl_title": "Bestandsübersicht in Stück:",
+        "brand": "Marke",
+        "quantity": "Stückzahl (Stk.)",
+        "rev_title": "Monatlicher Umsatz nach Marken laut Barcode (€)",
+        "monat": "Monat",
+        "umsatz": "Umsatz (€)",
+        "top_title": "🔥 Top 10 meistverkaufte Artikel",
+        "top_col_art": "Artikel / Bezeichnung",
+        "top_col_qty": "Verkaufte Stk.",
+        "no_inv": "Keine Artikel in der Datenbank vorhanden.",
+        "no_sales": "Keine Verkaufsdaten vorhanden."
+    },
+    "EN": {
+        "header": "📊 Inventory, Revenue & Top Sellers",
+        "tab_inv": "🏷️ Stock by Brand (pcs)",
+        "tab_rev": "💰 Revenue by Brand (€)",
+        "tab_top": "🔝 Bestsellers / Top Sales",
+        "inv_title": "Total Quantity in Stock by Brand",
+        "inv_tbl_title": "Stock Overview in Pieces:",
+        "brand": "Brand",
+        "quantity": "Quantity (pcs)",
+        "rev_title": "Monthly Revenue by Brand via Barcode (€)",
+        "monat": "Month",
+        "umsatz": "Revenue (€)",
+        "top_title": "🔥 Top 10 Best-Selling Items",
+        "top_col_art": "Item / Description",
+        "top_col_qty": "Sold (pcs)",
+        "no_inv": "No items found in the database.",
+        "no_sales": "No sales data available."
+    },
+    "RU": {
+        "header": "📊 Остатки, Выручка и Топ Продаж",
+        "tab_inv": "🏷️ Остатки по брендам (шт.)",
+        "tab_rev": "💰 Выручка по брендам (€)",
+        "tab_top": "🔝 Бестселлеры / Топ продаж",
+        "inv_title": "Общее количество на складе по брендам",
+        "inv_tbl_title": "Обзор остатков в штуках:",
+        "brand": "Бренд",
+        "quantity": "Количество (шт.)",
+        "rev_title": "Ежемесячная выручка по брендам по штрихкоду (€)",
+        "monat": "Месяц",
+        "umsatz": "Выручка (€)",
+        "top_title": "🔥 Топ-10 самых продаваемых товаров",
+        "top_col_art": "Товар / Наименование",
+        "top_col_qty": "Продано (шт.)",
+        "no_inv": "В базе данных нет товаров.",
+        "no_sales": "Нет данных о продажах."
+    }
+}
+
+t = TEXTS.get(lang, TEXTS["DE"])
 
 # Верхняя панель с информацией о текущем пользователе и кнопкой выхода
 st.sidebar.markdown(f"👤 **Angemeldet als:** {st.session_state.get('user_name')}")
