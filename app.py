@@ -2161,14 +2161,100 @@ try:
         else:
             st.success("✅ Alle Artikel liegen im normalen Bereich (über Min-Stock).")
 
-        # -----------------------------------------------------
-        # 2. INTERAKTIVE DIAGRAMME UND ANALYSE
-        # -----------------------------------------------------
-        st.subheader("📈 Bestands- und Sortimentsvisualisierung")
+        # =========================================================
+# SPRACHAUSWAHL / LANGUAGE SELECTOR / ВЫБОР ЯЗЫКА
+# =========================================================
+lang = st.sidebar.selectbox(
+    "🌐 Sprache / Language / Язык",
+    ["DE", "EN", "RU"],
+    index=0
+)
 
-        tab_brand, tab_loc, tab_top = st.tabs(["🏷️ Bestände nach Marken", "📍 Verteilung nach Lagerort", "🔝 Top-Positionen"])
+# Словарь переводов
+TEXTS = {
+    "DE": {
+        "header": "📊 Lagerbestand, Umsatz & Top-Seller",
+        "tab_inv": "🏷️ Bestände nach Marken (Stk.)",
+        "tab_rev": "💰 Umsatz nach Marken (€)",
+        "tab_top": "🔝 Bestseller / Top-Verkäufe",
+        "inv_title": "Gesamte Stückzahl im Lager nach Marken",
+        "inv_tbl_title": "Bestandsübersicht in Stück:",
+        "brand": "Marke",
+        "quantity": "Stückzahl (Stk.)",
+        "rev_title": "Monatlicher Umsatz nach Marken laut Barcode (€)",
+        "monat": "Monat",
+        "umsatz": "Umsatz (€)",
+        "top_title": "🔥 Top 10 meistverkaufte Artikel",
+        "top_col_art": "Artikel / Bezeichnung",
+        "top_col_qty": "Verkaufte Stk.",
+        "no_inv": "Keine Artikel in der Datenbank vorhanden.",
+        "no_sales": "Keine Verkaufsdaten vorhanden."
+    },
+    "EN": {
+        "header": "📊 Inventory, Revenue & Top Sellers",
+        "tab_inv": "🏷️ Stock by Brand (pcs)",
+        "tab_rev": "💰 Revenue by Brand (€)",
+        "tab_top": "🔝 Bestsellers / Top Sales",
+        "inv_title": "Total Quantity in Stock by Brand",
+        "inv_tbl_title": "Stock Overview in Pieces:",
+        "brand": "Brand",
+        "quantity": "Quantity (pcs)",
+        "rev_title": "Monthly Revenue by Brand via Barcode (€)",
+        "monat": "Month",
+        "umsatz": "Revenue (€)",
+        "top_title": "🔥 Top 10 Best-Selling Items",
+        "top_col_art": "Item / Description",
+        "top_col_qty": "Sold (pcs)",
+        "no_inv": "No items found in the database.",
+        "no_sales": "No sales data available."
+    },
+    "RU": {
+        "header": "📊 Остатки, Выручка и Топ Продаж",
+        "tab_inv": "🏷️ Остатки по брендам (шт.)",
+        "tab_rev": "💰 Выручка по брендам (€)",
+        "tab_top": "🔝 Бестселлеры / Топ продаж",
+        "inv_title": "Общее количество на складе по брендам",
+        "inv_tbl_title": "Обзор остатков в штуках:",
+        "brand": "Бренд",
+        "quantity": "Количество (шт.)",
+        "rev_title": "Ежемесячная выручка по брендам по штрихкоду (€)",
+        "monat": "Месяц",
+        "umsatz": "Выручка (€)",
+        "top_title": "🔥 Топ-10 самых продаваемых товаров",
+        "top_col_art": "Товар / Наименование",
+        "top_col_qty": "Продано (шт.)",
+        "no_inv": "В базе данных нет товаров.",
+        "no_sales": "Нет данных о продажах."
+    }
+}
 
-        with tab_brand:
+t = TEXTS[lang]
+
+# =========================================================
+# BLOCK: LAGER- UND VERKAUFSANALYSE
+# =========================================================
+st.markdown("---")
+st.header(t["header"])
+
+tab_inv_brand, tab_rev, tab_top = st.tabs([
+    t["tab_inv"], 
+    t["tab_rev"], 
+    t["tab_top"]
+])
+
+# 1. ВКЛАДКА: ОСТАТКИ ПО БРЕНДАМ
+with tab_inv_brand:
+    try:
+        res_inv = supabase.table("inventory").select("*").execute()
+        inv_data = res_inv.data if res_inv and res_inv.data else []
+
+        if not inv_data:
+            st.info(t["no_inv"])
+        else:
+            df_inv = pd.DataFrame(inv_data)
+            if "quantity" in df_inv.columns:
+                df_inv["quantity"] = pd.to_numeric(df_inv["quantity"], errors="coerce").fillna(0)
+
             if "brand" in df_inv.columns and "quantity" in df_inv.columns:
                 brand_summary = df_inv.groupby("brand")["quantity"].sum().reset_index()
                 brand_summary = brand_summary.sort_values(by="quantity", ascending=False)
@@ -2177,40 +2263,126 @@ try:
                     brand_summary,
                     x="brand",
                     y="quantity",
-                    title="Gesamte Stückzahl nach Marken",
-                    labels={"brand": "Marke", "quantity": "Stückzahl"},
+                    title=t["inv_title"],
+                    labels={"brand": t["brand"], "quantity": t["quantity"]},
                     color="brand",
                     text_auto=True
                 )
                 fig_brand.update_layout(showlegend=False)
                 st.plotly_chart(fig_brand, use_container_width=True)
-
-        with tab_loc:
-            if "location" in df_inv.columns and "quantity" in df_inv.columns:
-                loc_summary = df_inv.groupby("location")["quantity"].sum().reset_index()
-
-                fig_loc = px.pie(
-                    loc_summary,
-                    names="location",
-                    values="quantity",
-                    title="Verteilung der Artikel nach Lagerzonen",
-                    hole=0.4
-                )
-                st.plotly_chart(fig_loc, use_container_width=True)
-
-        with tab_top:
-            if "name" in df_inv.columns and "quantity" in df_inv.columns:
-                top_items = df_inv.nlargest(10, "quantity")[["name", "brand", "quantity", "location"]]
-                st.markdown("**Top 10 Artikel mit dem höchsten Lagerbestand:**")
+                
+                st.markdown(f"**{t['inv_tbl_title']}**")
                 st.dataframe(
-                    top_items.rename(columns={
-                        "name": "Bezeichnung",
-                        "brand": "Marke",
-                        "quantity": "Bestand (Stk.)",
-                        "location": "Lagerort"
+                    brand_summary.rename(columns={"brand": t["brand"], "quantity": t["quantity"]}),
+                    use_container_width=True
+                )
+    except Exception as e:
+        st.warning(f"Error: {e}")
+
+# 2. ВКЛАДКА: ВЫРУЧКА ПО БРЕНДАМ (€)
+with tab_rev:
+    try:
+        res_sales = supabase.table("sales").select("*").execute()
+        sales_data = res_sales.data if res_sales and res_sales.data else []
+
+        if not sales_data:
+            st.info(t["no_sales"])
+        else:
+            df_sales = pd.DataFrame(sales_data)
+
+            if "sale_date" in df_sales.columns:
+                df_sales["sale_date"] = pd.to_datetime(df_sales["sale_date"])
+                df_sales["Monat"] = df_sales["sale_date"].dt.to_period("M").astype(str)
+            elif "created_at" in df_sales.columns:
+                df_sales["created_at"] = pd.to_datetime(df_sales["created_at"])
+                df_sales["Monat"] = df_sales["created_at"].dt.to_period("M").astype(str)
+            elif "datum" in df_sales.columns:
+                df_sales["datum"] = pd.to_datetime(df_sales["datum"], dayfirst=True)
+                df_sales["Monat"] = df_sales["datum"].dt.to_period("M").astype(str)
+
+            revenue_col = None
+            for col in ["Umsatz Netto -19% MwSt (EUR)", "Umsatz Brutto (EUR)", "umsatz", "total_price", "total_amount", "betrag", "summe"]:
+                if col in df_sales.columns:
+                    revenue_col = col
+                    break
+
+            if revenue_col:
+                df_sales["Umsatz"] = pd.to_numeric(df_sales[revenue_col], errors="coerce").fillna(0)
+            elif "preis" in df_sales.columns and "quantity" in df_sales.columns:
+                df_sales["Umsatz"] = pd.to_numeric(df_sales["quantity"], errors="coerce").fillna(0) * pd.to_numeric(df_sales["preis"], errors="coerce").fillna(0)
+
+            barcode_col = None
+            for b_col in ["barcode", "ean", "bar_code", "strichcode"]:
+                if b_col in df_sales.columns:
+                    barcode_col = b_col
+                    break
+
+            if barcode_col and ("brand" not in df_sales.columns or df_sales["brand"].isnull().all()):
+                df_sales[barcode_col] = df_sales[barcode_col].astype(str).str.strip()
+
+                def detect_brand(barcode):
+                    if barcode.startswith("641192") or barcode.startswith("73"):
+                        return "Iittala"
+                    elif barcode.startswith("570514"):
+                        return "Royal Copenhagen"
+                    else:
+                        return "Sonstige / Other"
+
+                df_sales["brand"] = df_sales[barcode_col].apply(detect_brand)
+
+            if "Umsatz" in df_sales.columns and "brand" in df_sales.columns and "Monat" in df_sales.columns:
+                monthly_revenue = df_sales.groupby(["Monat", "brand"])["Umsatz"].sum().reset_index()
+                monthly_revenue["Umsatz"] = monthly_revenue["Umsatz"].round(2)
+
+                fig_revenue = px.bar(
+                    monthly_revenue,
+                    x="Monat",
+                    y="Umsatz",
+                    color="brand",
+                    barmode="group",
+                    title=t["rev_title"],
+                    labels={"Monat": t["monat"], "Umsatz": t["umsatz"], "brand": t["brand"]},
+                    text_auto=".2f"
+                )
+                fig_revenue.update_traces(texttemplate='%{y:.2f} €', textposition='outside')
+                st.plotly_chart(fig_revenue, use_container_width=True)
+
+                display_df = monthly_revenue.copy()
+                display_df["Umsatz (€)"] = display_df["Umsatz"].apply(lambda x: f"{x:,.2f} €".replace(",", " "))
+                st.dataframe(
+                    display_df[["Monat", "brand", "Umsatz (€)"]].rename(columns={"Monat": t["monat"], "brand": t["brand"], "Umsatz (€)": t["umsatz"]}),
+                    use_container_width=True
+                )
+    except Exception as s_err:
+        st.warning(f"Error: {s_err}")
+
+# 3. ВКЛАДКА: ТОП ПРОДАЖ
+with tab_top:
+    try:
+        if 'df_sales' in locals() and not df_sales.empty:
+            item_col = None
+            for col in ["name", "bezeichnung", "article", "artikel", "barcode"]:
+                if col in df_sales.columns:
+                    item_col = col
+                    break
+
+            if item_col and "quantity" in df_sales.columns:
+                df_sales["quantity"] = pd.to_numeric(df_sales["quantity"], errors="coerce").fillna(1)
+                top_sellers = df_sales.groupby([item_col, "brand"])["quantity"].sum().reset_index()
+                top_sellers = top_sellers.sort_values(by="quantity", ascending=False).head(10)
+
+                st.subheader(t["top_title"])
+                st.dataframe(
+                    top_sellers.rename(columns={
+                        item_col: t["top_col_art"],
+                        "brand": t["brand"],
+                        "quantity": t["top_col_qty"]
                     }),
                     use_container_width=True
                 )
-
-except Exception as e:
-    st.error(f"❌ Fehler beim Laden der Lageranalyse: {e}")
+            else:
+                st.info(t["no_sales"])
+        else:
+            st.info(t["no_sales"])
+    except Exception as t_err:
+        st.warning(f"Error: {t_err}")
