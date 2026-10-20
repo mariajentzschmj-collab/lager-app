@@ -274,12 +274,14 @@ if st.session_state.get("role") == "manager" and supabase is not None:
 if pending_count > 0:
   st.sidebar.error(f"🔔 **Wartet auf Freigabe:** {pending_count} Anfrage(n)")
 
-if st.sidebar.button("🚪 Abmelden"):
+if st.sidebar.button(f"🚪 {t['logout']}"):
   st.session_state["logged_in"] = False
   st.session_state["role"] = None
   st.session_state["user_name"] = None
   st.rerun()
+menu_options = [t["opt_show"], t["opt_add"], t["opt_reduce"], t["opt_intake"], t["opt_report"], t["opt_catalog"]]
 
+action = st.sidebar.radio(t["nav_action_label"], menu_options)
 # --- HAUPTCODE DER ANWENDUNG ---
 st.title("📦 Lagerverwaltung (5. Etage)")
 st.subheader("Iittala & Royal Copenhagen")
