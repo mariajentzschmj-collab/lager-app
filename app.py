@@ -2374,25 +2374,48 @@ if action in ["📊 Bestände anzeigen", "📊 Показать остатки",
         t.get("tab_top", "🔝 Bestseller / Top-Verkäufe")
     ])
 
-    # --- Вкладка 1: Остатки по брендам / категориям ---
+    # --- Вкладка 1: Остатки по брендам ---
     with tab_inv:
         st.subheader(t.get("inv_title", "Gesamte Stückzahl im Lager nach Marken"))
         try:
             if supabase is not None:
-                # Читаем из правильной таблицы inventory
-                inv_res = supabase.table("inventory").select("category, quantity").execute()
+                # Запрашиваем все данные из таблицы inventory
+                inv_res = supabase.table("inventory").select("*").execute()
                 if inv_res.data:
                     import pandas as pd
                     df_inv = pd.DataFrame(inv_res.data)
                     
-                    if not df_inv.empty and "category" in df_inv.columns:
-                        # Заменяем пустые категории на 'Unbekannt'
-                        df_inv["category"] = df_inv["category"].fillna("Iittala / Royal Copenhagen")
-                        df_brand = df_inv.groupby("category")["quantity"].sum().reset_index()
-                        df_brand.columns = [t.get("brand", "Marke"), t.get("quantity", "Stückzahl (Stk.)")]
+                    if not df_inv.empty:
+                        # Ищем подходящую колонку для бренда/производителя
+                        possible_brand_cols = ["brand", "marke", "manufacturer", "category", "vendor"]
+                        found_brand = None
+                        for col in possible_brand_cols:
+                            if col in df_inv.columns:
+                                found_brand = col
+                                break
                         
-                        st.bar_chart(df_brand.set_index(t.get("brand", "Marke")))
-                        st.dataframe(df_brand, use_container_width=True)
+                        # Если специфическая колонка не найдена, ищем любую строковую колонку со значениями iittala/royal
+                        if not found_brand:
+                            for col in df_inv.columns:
+                                if df_inv[col].dtype == 'object':
+                                    found_brand = col
+                                    break
+                        
+                        # Ищем колонку с количеством
+                        qty_col = "quantity" if "quantity" in df_inv.columns else "anzahl" if "anzahl" in df_inv.columns else "stk"
+                        if qty_col not in df_inv.columns:
+                            # Берем первую числовую колонку
+                            num_cols = df_inv.select_dtypes(include=['number']).columns
+                            qty_col = num_cols[0] if len(num_cols) > 0 else None
+
+                        if found_brand and qty_col:
+                            df_brand = df_inv.groupby(found_brand)[qty_col].sum().reset_index()
+                            df_brand.columns = [t.get("brand", "Marke"), t.get("quantity", "Stückzahl (Stk.)")]
+                            
+                            st.bar_chart(df_brand.set_index(t.get("brand", "Marke")))
+                            st.dataframe(df_brand, use_container_width=True)
+                        else:
+                            st.dataframe(df_inv, use_container_width=True)
                     else:
                         st.info(t.get("no_inv", "Keine Artikel in der Datenbank vorhanden."))
                 else:
@@ -2402,7 +2425,7 @@ if action in ["📊 Bestände anzeigen", "📊 Показать остатки",
         except Exception as e:
             st.error(f"Error loading inventory analytics: {e}")
 
-    # --- Вкладка 2: Выручка (€) ---
+    # --- Вкладка 2: Выручка по брендам (€) ---
     with tab_rev:
         st.subheader(t.get("rev_title", "Monatlicher Umsatz nach Marken laut Barcode (€)"))
         try:
@@ -2412,7 +2435,7 @@ if action in ["📊 Bestände anzeigen", "📊 Показать остатки",
                     import pandas as pd
                     df_sales = pd.DataFrame(sales_res.data)
                     if not df_sales.empty and "revenue" in df_sales.columns:
-                        brand_col = "category" if "category" in df_sales.columns else "brand" if "brand" in df_sales.columns else df_sales.columns[0]
+                        brand_col = "brand" if "brand" in df_sales.columns else df_sales.columns[0]
                         df_rev_brand = df_sales.groupby(brand_col)["revenue"].sum().reset_index()
                         df_rev_brand.columns = [t.get("brand", "Marke"), t.get("umsatz", "Umsatz (€)")]
                         
@@ -2436,10 +2459,10 @@ if action in ["📊 Bestände anzeigen", "📊 Показать остатки",
                 if top_res.data:
                     import pandas as pd
                     df_top = pd.DataFrame(top_res.data)
-                    name_col = "name" if "name" in df_top.columns else "article_name" if "article_name" in df_top.columns else df_top.columns[0]
-                    qty_col = "quantity" if "quantity" in df_top.columns else df_top.columns[1]
-                    
                     if not df_top.empty:
+                        name_col = "article_name" if "article_name" in df_top.columns else "name" if "name" in df_top.columns else df_top.columns[0]
+                        qty_col = "quantity" if "quantity" in df_top.columns else df_top.columns[1]
+                        
                         df_top_10 = df_top.groupby(name_col)[qty_col].sum().reset_index()
                         df_top_10 = df_top_10.sort_values(by=qty_col, ascending=False).head(10)
                         df_top_10.columns = [t.get("top_col_art", "Artikel"), t.get("top_col_qty", "Verkaufte Stk.")]
