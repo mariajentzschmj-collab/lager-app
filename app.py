@@ -184,7 +184,18 @@ TEXTS = {
         "top_col_art": "Artikel / Bezeichnung",
         "top_col_qty": "Verkaufte Stk.",
         "no_inv": "Keine Artikel in der Datenbank vorhanden.",
-        "no_sales": "Keine Verkaufsdaten vorhanden."
+        "no_sales": "Keine Verkaufsdaten vorhanden.",
+        "logged_as": "Angemeldet als",
+        "role": "Rolle",
+        "logout": "Abmelden",
+        "nav_header": "Lagersteuerung",
+        "nav_action_label": "Aktion auswählen:",
+        "opt_show": "📊 Bestände anzeigen",
+        "opt_add": "➕ Artikel hinzufügen",
+        "opt_reduce": "📉 Artikel reduzieren (Verkauf)",
+        "opt_intake": "📦 Massen-Wareneingang (Zuwachs)",
+        "opt_report": "📊 Auto-Abverkauf per Bericht",
+        "opt_catalog": "📁 Katalog aus Datei"
     },
     "EN": {
         "header": "📊 Inventory, Revenue & Top Sellers",
@@ -202,7 +213,18 @@ TEXTS = {
         "top_col_art": "Item / Description",
         "top_col_qty": "Sold (pcs)",
         "no_inv": "No items found in the database.",
-        "no_sales": "No sales data available."
+        "no_sales": "No sales data available.",
+        "logged_as": "Logged in as",
+        "role": "Role",
+        "logout": "Log out",
+        "nav_header": "Inventory Control",
+        "nav_action_label": "Select action:",
+        "opt_show": "📊 View inventory",
+        "opt_add": "➕ Add item",
+        "opt_reduce": "📉 Reduce item (Sale)",
+        "opt_intake": "📦 Bulk goods receipt",
+        "opt_report": "📊 Auto-sales report",
+        "opt_catalog": "📁 Catalog from file"
     },
     "RU": {
         "header": "📊 Остатки, Выручка и Топ Продаж",
@@ -220,12 +242,22 @@ TEXTS = {
         "top_col_art": "Товар / Наименование",
         "top_col_qty": "Продано (шт.)",
         "no_inv": "В базе данных нет товаров.",
-        "no_sales": "Нет данных о продажах."
+        "no_sales": "Нет данных о продажах.",
+        "logged_as": "Вы вошли как",
+        "role": "Роль",
+        "logout": "Выйти",
+        "nav_header": "Управление складом",
+        "nav_action_label": "Выберите действие:",
+        "opt_show": "📊 Показать остатки",
+        "opt_add": "➕ Добавить товар",
+        "opt_reduce": "📉 Списать товар (Продажа)",
+        "opt_intake": "📦 Массовый приход товара",
+        "opt_report": "📊 Авто-списание по отчету",
+        "opt_catalog": "📁 Каталог из файла"
     }
 }
 
 t = TEXTS.get(lang, TEXTS["DE"])
-
 # Верхняя панель с информацией о текущем пользователе и кнопкой выхода
 st.sidebar.markdown(f"👤 **Angemeldet als:** {st.session_state.get('user_name')}")
 st.sidebar.markdown(f"🏷️ **Rolle:** {'Manager (Vollzugriff)' if st.session_state.get('role') == 'manager' else 'Agent (Freigabe in App)'}")
