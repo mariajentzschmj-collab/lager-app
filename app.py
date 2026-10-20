@@ -2471,84 +2471,97 @@ st.markdown("---")
 st.subheader("📊 Analyse der hochgeladenen Verkaufshistorie")
 
 try:
-    # Daten aus der Tabelle daily_sales laden
-    hist_res = supabase.table("daily_sales").select("*").execute()
-    
-    if hist_res.data:
-        import pandas as pd
-        import streamlit as st
-        
-        df_hist = pd.DataFrame(hist_res.data)
-        
-        if not df_hist.empty:
-            # Veraltete Schreibweisen bei den Marken bereinigen
-            for c in df_hist.columns:
-                if c.lower() in ["brand", "marke", "manufacturer"]:
-                    df_hist[c] = df_hist[c].astype(str).str.strip()
-                    df_hist[c] = df_hist[c].replace({
-                        "royal copenhagen": "Royal Copenhagen",
-                        "ROYAL COPENHAGEN": "Royal Copenhagen",
-                        "iittala": "Iittala",
-                        "arabia": "Arabia"
-                    })
+    import pandas as pd
+    import streamlit as st
 
-            # Tabs auf Deutsch
-            tab_hist_brands, tab_hist_top = st.tabs(["🏷️ Umsatz nach Marken", "🏆 Top-10 Bestseller"])
-            
-            # --- Tab 1: Umsatz nach Marken ---
-            with tab_hist_brands:
-                brand_col = None
-                for col in ["brand", "marke", "manufacturer", "category"]:
-                    if col in df_hist.columns:
-                        brand_col = col
-                        break
-                
-                price_col = None
-                for col in ["netto", "brutto", "total_price", "price", "amount", "gesamt_netto", "summe", "umsatz"]:
-                    if col in df_hist.columns:
-                        price_col = col
-                        break
-                
-                if brand_col and price_col:
-                    df_hist[price_col] = pd.to_numeric(df_hist[price_col], errors='coerce').fillna(0)
-                    
-                    df_brand_sum = df_hist.groupby(brand_col)[price_col].sum().reset_index()
-                    df_brand_sum.columns = ["Marke", "Umsatz (€)"]
-                    
-                    st.bar_chart(df_brand_sum.set_index("Marke"))
-                    st.dataframe(df_brand_sum, use_container_width=True)
-                else:
-                    st.info("Marken- oder Umsatzdaten im hochgeladenen Bericht werden verarbeitet.")
+    # 1. Загружаем данные из обеих таблиц продаж для полной картины
+    sales_res = supabase.table("sales").select("*").execute()
+    daily_res = supabase.table("daily_sales").select("*").execute()
 
-            # --- Tab 2: Top-10 Bestseller ---
-            with tab_hist_top:
-                title_col = None
-                for col in ["title", "name", "artikel_bezeichnung", "description", "sap_number", "sap", "artikel_nr"]:
-                    if col in df_hist.columns:
-                        title_col = col
-                        break
-                        
-                qty_col = None
-                for col in ["quantity", "qty", "stk", "anzahl", "count", "menge"]:
-                    if col in df_hist.columns:
-                        qty_col = col
-                        break
+    frames = []
+    if sales_res.data:
+        frames.append(pd.DataFrame(sales_res.data))
+    if daily_res.data:
+        frames.append(pd.DataFrame(daily_res.data))
 
-                if title_col and qty_col:
-                    df_hist[qty_col] = pd.to_numeric(df_hist[qty_col], errors='coerce').fillna(0)
-                    
-                    df_top = df_hist.groupby(title_col)[qty_col].sum().reset_index()
-                    df_top = df_top.sort_values(by=qty_col, ascending=False).head(10)
-                    df_top.columns = ["Artikel / SAP", "Verkauft (Stk.)"]
-                    
-                    st.bar_chart(df_top.set_index("Artikel / SAP"))
-                    st.dataframe(df_top, use_container_width=True)
-                else:
-                    st.info("Keine Mengeninformationen für verkaufte Artikel in dieser Tabelle gefunden.")
-        else:
-            st.info("Die Tabelle der Historie ist derzeit leer.")
+    if frames:
+        df_hist = pd.concat(frames, ignore_index=True)
     else:
-        st.info("Daten konnten nicht aus der Datenbank geladen werden.")
+        df_hist = pd.DataFrame()
+
+    if not df_hist.empty:
+        # Приводим названия всех колонок к нижнему регистру для гибкого поиска
+        col_map = {c: c.lower().strip() for c in df_hist.columns}
+        
+        # Поиск колонки бренда
+        brand_col = None
+        for orig, low in col_map.items():
+            if low in ["brand", "marke", "manufacturer", "category", "hersteller"]:
+                brand_col = orig
+                break
+        
+        # Поиск колонки выручки/цены
+        price_col = None
+        for orig, low in col_map.items():
+            if low in ["netto", "brutto", "total_price", "price", "amount", "gesamt_netto", "summe", "umsatz", "total", "gesamtpreis"]:
+                price_col = orig
+                break
+
+        # Поиск колонки товара/названия
+        title_col = None
+        for orig, low in col_map.items():
+            if low in ["title", "name", "artikel_bezeichnung", "description", "sap_number", "sap", "artikel_nr", "artikel"]:
+                title_col = orig
+                break
+
+        # Поиск колонки количества
+        qty_col = None
+        for orig, low in col_map.items():
+            if low in ["quantity", "qty", "stk", "anzahl", "count", "menge", "anzahl_verkauft"]:
+                qty_col = orig
+                break
+
+        # Очистка брендов от разного регистра
+        if brand_col:
+            df_hist[brand_col] = df_hist[brand_col].astype(str).str.strip()
+            df_hist[brand_col] = df_hist[brand_col].replace({
+                "royal copenhagen": "Royal Copenhagen",
+                "ROYAL COPENHAGEN": "Royal Copenhagen",
+                "iittala": "Iittala",
+                "arabia": "Arabia"
+            })
+
+        tab_hist_brands, tab_hist_top = st.tabs(["🏷️ Umsatz nach Marken", "🏆 Top-10 Bestseller"])
+        
+        # --- Tab 1: Umsatz nach Marken ---
+        with tab_hist_brands:
+            if brand_col and price_col:
+                df_hist[price_col] = pd.to_numeric(df_hist[price_col], errors='coerce').fillna(0)
+                df_brand_sum = df_hist.groupby(brand_col)[price_col].sum().reset_index()
+                df_brand_sum.columns = ["Marke", "Umsatz (€)"]
+                
+                st.bar_chart(df_brand_sum.set_index("Marke"))
+                st.dataframe(df_brand_sum, use_container_width=True)
+            else:
+                st.info("Marken- oder Umsatzdaten im hochgeladenen Bericht werden verarbeitet.")
+                st.write("Vorhandene Spalten in der Datenbank:", list(df_hist.columns))
+
+        # --- Tab 2: Top-10 Bestseller ---
+        with tab_hist_top:
+            if title_col and qty_col:
+                df_hist[qty_col] = pd.to_numeric(df_hist[qty_col], errors='coerce').fillna(0)
+                df_top = df_hist.groupby(title_col)[qty_col].sum().reset_index()
+                df_top = df_top.sort_values(by=qty_col, ascending=False).head(10)
+                df_top.columns = ["Artikel / SAP", "Verkauft (Stk.)"]
+                
+                st.bar_chart(df_top.set_index("Artikel / SAP"))
+                st.dataframe(df_top, use_container_width=True)
+            else:
+                st.info("Keine Mengeninformationen für verkaufte Artikel in dieser Tabelle gefunden.")
+                st.write("Vorhandene Spalten in der Datenbank:", list(df_hist.columns))
+
+    else:
+        st.info("Die Tabelle der Historie ist derzeit leer.")
 
 except Exception as e:
     st.error(f"Fehler bei der Anzeige der Verkaufsanalyse: {e}")
