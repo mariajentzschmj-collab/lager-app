@@ -2222,3 +2222,109 @@ st.markdown(
     "</div>",
     unsafe_allow_html=True
 )
+# ==========================================
+# UMSATZ-TRACKING & MARKEN-VERTEILUNG
+# ==========================================
+st.sidebar.markdown("---")
+st.sidebar.subheader("💶 Umsatz-Tracking nach Marken")
+
+sales_file = st.sidebar.file_uploader(
+    "Verkaufsbericht hochladen (Excel / CSV)", type=["xlsx", "csv"], key="sales_report_clean"
+)
+
+if sales_file is not None:
+    try:
+        import pandas as pd
+
+        if sales_file.name.endswith(".csv"):
+            sales_report_df = pd.read_csv(sales_file)
+        else:
+            sales_report_df = pd.read_excel(sales_file)
+
+        # Нормализуем названия колонок для удобства
+        sales_report_df.columns = [str(c).strip().lower() for c in sales_report_df.columns]
+        st.sidebar.success("✅ Bericht erfolgreich geladen!")
+
+        columns_list = list(sales_report_df.columns)
+        date_col = st.sidebar.selectbox("Spalte für das Datum", columns_list, key="clean_date_col")
+        price_col = st.sidebar.selectbox("Spalte für Gesamtpreis / Umsatz", columns_list, key="clean_price_col")
+
+        if st.sidebar.button("💾 Umsatz speichern & nach Marken aufteilen", key="btn_save_sales"):
+            # Очищаем цены
+            cleaned_prices = (
+                sales_report_df[price_col]
+                .astype(str)
+                .str.replace('€', '', regex=False)
+                .str.replace(' ', '', regex=False)
+                .str.replace(',', '.', regex=False)
+            )
+            sales_report_df['cleaned_price'] = pd.to_numeric(cleaned_prices, errors='coerce').fillna(0)
+            total_brutto = sales_report_df['cleaned_price'].sum()
+
+            sales_report_df[date_col] = pd.to_datetime(sales_report_df[date_col], errors='coerce')
+            valid_dates = sales_report_df[date_col].dropna()
+            
+            if not valid_dates.empty:
+                report_date = valid_dates.iloc[0].strftime('%Y-%m-%d')
+                report_month = valid_dates.iloc[0].strftime('%Y-%m')
+            else:
+                report_date = pd.Timestamp.today().strftime('%Y-%m-%d')
+                report_month = pd.Timestamp.today().strftime('%Y-%m')
+
+            # 🏷️ Автоматическое распределение по брендам через Supabase
+            brand_revenue_tracking = {}
+            if supabase is not None:
+                for _, row in sales_report_df.iterrows():
+                    b_code = str(row.get("barcode", row.get("gtin", row.get("ean", "")))).strip()
+                    a_code = str(row.get("article", row.get("artikelnr", row.get("sku", "")))).strip()
+                    s_code = str(row.get("sap", "")).strip()
+                    
+                    line_price = float(row.get("cleaned_price", 0))
+                    matched_brand = "Unbekannt"
+
+                    inv_res = None
+                    if b_code and b_code != "nan":
+                        inv_res = supabase.table("inventory").select("brand").eq("barcode", b_code).execute()
+                    if (not inv_res or not inv_res.data) and a_code and a_code != "nan":
+                        inv_res = supabase.table("inventory").select("brand").eq("article", a_code).execute()
+                    if (not inv_res or not inv_res.data) and s_code and s_code != "nan":
+                        inv_res = supabase.table("inventory").select("brand").eq("sap", s_code).execute()
+
+                    if inv_res and inv_res.data:
+                        matched_brand = inv_res.data[0].get("brand", "Unbekannt")
+
+                    brand_revenue_tracking[matched_brand] = brand_revenue_tracking.get(matched_brand, 0.0) + line_price
+
+            # Сохранение общей суммы в Supabase
+            if supabase is not None:
+                try:
+                    existing_day = supabase.table("daily_sales").select("*").eq("date", report_date).execute()
+                    if existing_day and existing_day.data:
+                        supabase.table("daily_sales").update({
+                            "brutto": float(total_brutto),
+                            "month": report_month
+                        }).eq("date", report_date).execute()
+                    else:
+                        supabase.table("daily_sales").insert({
+                            "date": report_date,
+                            "brutto": float(total_brutto),
+                            "month": report_month
+                        }).execute()
+                    st.sidebar.success(f"✔ Umsatz für {report_date} gespeichert!")
+                except Exception as db_err:
+                    st.sidebar.warning(f"⚠ DB-Hinweis: {db_err}")
+
+            total_netto = total_brutto / 1.19
+            st.sidebar.markdown("---")
+            st.sidebar.metric(label="Brutto (Gesamt)", value=f"{total_brutto:,.2f} €")
+            st.sidebar.metric(label="Netto (exkl. 19% MwSt.)", value=f"{total_netto:,.2f} €")
+
+            # Вывод разбивки по брендам
+            if brand_revenue_tracking:
+                st.sidebar.markdown("**Umsatz nach Marken:**")
+                for brand_name, b_rev in sorted(brand_revenue_tracking.items(), key=lambda x: x[1], reverse=True):
+                    b_net = b_rev / 1.19
+                    st.sidebar.markdown(f"• *{brand_name}*: **{b_net:,.2f} €** Netto *(Brutto: {b_rev:,.2f} €)*")
+
+    except Exception as e:
+        st.sidebar.error(f"⚠ Fehler: {e}")
