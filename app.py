@@ -2245,14 +2245,7 @@ try:
 
 except Exception as e:
     st.error(f"❌ Fehler beim Laden der Lageranalyse: {e}")
-# Футер приложения
-st.markdown("---")
-st.markdown(
-    "<div style='text-align: center; color: gray; font-size: 0.9em;'>"
-    "© 2026 IQBestandPro — Maria Jentzsch. Alle Rechte vorbehalten."
-    "</div>",
-    unsafe_allow_html=True
-)
+
 # ==========================================
 # UMSATZ-TRACKING & MARKEN-VERTEILUNG
 # ==========================================
@@ -2414,3 +2407,14 @@ if supabase is not None:
             st.info("Noch keine Umsätze in der Datenbank gespeichert.")
     except Exception as fetch_err:
         st.warning(f"Konnte Historie nicht laden: {fetch_err}")
+
+        # ==========================================
+# FOOTER / COPYRIGHT
+# ==========================================
+st.markdown("---")
+st.markdown(
+    "<div style='text-align: center; color: gray; font-size: 0.9em;'>"
+    "© 2026 IQBestandPro - Maria Jentzsch. Alle Rechte vorbehalten."
+    "</div>",
+    unsafe_allow_html=True
+)
