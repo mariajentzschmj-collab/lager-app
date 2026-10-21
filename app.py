@@ -2515,3 +2515,4 @@ try:
 
 except Exception as e:
     st.error(f"Fehler: {e}")
+st.caption("© 2026 Maria Jentzsch. Alle Rechte vorbehalten. IQBestandPro™")
