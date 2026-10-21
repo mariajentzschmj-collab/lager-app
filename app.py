@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Maria Jentzsch. All rights reserved.
+# IQBestandPro™ — Proprietary Software.
 import pandas as pd
 import plotly.express as px
 import hashlib
