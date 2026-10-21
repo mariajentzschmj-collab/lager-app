@@ -1460,14 +1460,15 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("💶 Umsatz-Tracking (Tage & Monate)")
 
 st.sidebar.markdown(
-    "Laden Sie einen Verkaufsbericht hoch. Die Umsätze werden korrekt summiert und in Supabase gespeichert."
+    "Laden Sie einen Verkaufsbericht hoch. Die Umsätze werden korrekt summiert, nach Marken aufgeschlüsselt und in Supabase gespeichert."
 )
 
 with st.sidebar.expander("ℹ️ Format-Hinweis"):
     st.markdown("""
     Ihre Datei sollte folgende Spalten enthalten:
     1. **Datum** (z. B. `02.10.2026`)
-    2. **Gesamtpreis / Umsatz** (die fertige Summe pro Zeile)
+    2. **Barcode / Artikel / SAP** (zur Zuordnung der Marke)
+    3. **Gesamtpreis / Umsatz** (oder Preis pro Zeile)
     """)
 
 sales_file = st.sidebar.file_uploader(
@@ -1483,13 +1484,15 @@ if sales_file is not None:
         else:
             sales_report_df = pd.read_excel(sales_file)
 
+        # Нормализуем названия колонок для удобства поиска
+        sales_report_df.columns = [str(c).strip().lower() for c in sales_report_df.columns]
         st.sidebar.success("✅ Bericht erfolgreich geladen!")
 
         columns_list = list(sales_report_df.columns)
         date_col = st.sidebar.selectbox("Spalte für das Datum", columns_list, key="acc_date_col")
         price_col = st.sidebar.selectbox("Spalte für Gesamtpreis / Umsatz", columns_list, key="acc_price_col")
 
-        if st.sidebar.button("💾 Umsatz speichern & kumulieren"):
+        if st.sidebar.button("💾 Umsatz speichern & nach Marken aufteilen"):
             # Очищаем и суммируем общую сумму брутто
             cleaned_prices = (
                 sales_report_df[price_col]
@@ -1498,7 +1501,8 @@ if sales_file is not None:
                 .str.replace(' ', '', regex=False)
                 .str.replace(',', '.', regex=False)
             )
-            total_brutto = pd.to_numeric(cleaned_prices, errors='coerce').sum()
+            sales_report_df['cleaned_price'] = pd.to_numeric(cleaned_prices, errors='coerce').fillna(0)
+            total_brutto = sales_report_df['cleaned_price'].sum()
 
             sales_report_df[date_col] = pd.to_datetime(sales_report_df[date_col], errors='coerce')
             valid_dates = sales_report_df[date_col].dropna()
@@ -1510,7 +1514,32 @@ if sales_file is not None:
                 report_date = pd.Timestamp.today().strftime('%Y-%m-%d')
                 report_month = pd.Timestamp.today().strftime('%Y-%m')
 
-            # Сохранение в Supabase
+            # 🏷️ Автоматическое распределение по брендам на основе каталога в Supabase
+            brand_revenue_tracking = {}
+            if supabase is not None:
+                for _, row in sales_report_df.iterrows():
+                    b_code = str(row.get("barcode", row.get("gtin", row.get("ean", "")))).strip()
+                    a_code = str(row.get("article", row.get("artikelnr", row.get("sku", "")))).strip()
+                    s_code = str(row.get("sap", "")).strip()
+                    
+                    line_price = float(row.get("cleaned_price", 0))
+                    matched_brand = "Unbekannt"
+
+                    # Ищем бренд по очереди: по баркоду, затем по артикулу, затем по SAP
+                    inv_res = None
+                    if b_code and b_code != "nan":
+                        inv_res = supabase.table("inventory").select("brand").eq("barcode", b_code).execute()
+                    if (not inv_res or not inv_res.data) and a_code and a_code != "nan":
+                        inv_res = supabase.table("inventory").select("brand").eq("article", a_code).execute()
+                    if (not inv_res or not inv_res.data) and s_code and s_code != "nan":
+                        inv_res = supabase.table("inventory").select("brand").eq("sap", s_code).execute()
+
+                    if inv_res and inv_res.data:
+                        matched_brand = inv_res.data[0].get("brand", "Unbekannt")
+
+                    brand_revenue_tracking[matched_brand] = brand_revenue_tracking.get(matched_brand, 0.0) + line_price
+
+            # Сохранение общей суммы в Supabase (daily_sales)
             if supabase is not None:
                 try:
                     existing_day = supabase.table("daily_sales").select("*").eq("date", report_date).execute()
@@ -1535,6 +1564,13 @@ if sales_file is not None:
             st.sidebar.markdown("---")
             st.sidebar.metric(label="Brutto (dieser Bericht)", value=f"{total_brutto:,.2f} €")
             st.sidebar.metric(label="Netto (exkl. 19% MwSt.)", value=f"{total_netto:,.2f} €")
+
+            # 📊 Вывод распределения выручки по брендам прямо в боковой панели
+            if brand_revenue_tracking:
+                st.sidebar.markdown("**Umsatz nach Marken (dieser Bericht):**")
+                for brand_name, b_rev in sorted(brand_revenue_tracking.items(), key=lambda x: x[1], reverse=True):
+                    b_net = b_rev / 1.19
+                    st.sidebar.markdown(f"• *{brand_name}*: **{b_net:,.2f} €** Netto *(Brutto: {b_rev:,.2f} €)*")
 
     except Exception as e:
         st.sidebar.error(f"⚠ Fehler beim Verarbeiten: {e}")
@@ -1563,6 +1599,24 @@ if supabase is not None:
             st.sidebar.info("ℹ Noch keine kumulierten Daten in der Datenbank.")
     except Exception as hist_err:
         st.sidebar.caption("💡 Tipp: Stellen Sie sicher, dass die Tabelle `daily_sales` in Supabase existiert.")
+
+# --- ИСТОРИЯ ЗАГРУЖЕННЫХ ДАТ В UMSATZ-TRACKING ---
+if supabase is not None:
+    try:
+        res_hist = supabase.table("daily_sales").select("date, brutto").order("date", desc=True).execute()
+        if res_hist and res_hist.data:
+            hist_df = pd.DataFrame(res_hist.data)
+            with st.sidebar.expander("📅 Bereits geladene Tage anzeigen"):
+                if not hist_df.empty:
+                    for _, h_row in hist_df.iterrows():
+                        d_str = h_row.get("date", "-")
+                        b_val = float(h_row.get("brutto", 0) or 0)
+                        n_val = b_val / 1.19
+                        st.sidebar.markdown(f"• **{d_str}**: {n_val:,.2f} € Netto *(Brutto: {b_val:,.2f} €)*")
+                else:
+                    st.sidebar.info("Noch keine Tage erfasst.")
+    except Exception as e:
+        pass
 
 # --- ИСТОРИЯ ЗАГРУЖЕННЫХ ДАТ В UMSATZ-TRACKING ---
 if supabase is not None:
