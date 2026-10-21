@@ -14,9 +14,21 @@ import streamlit.components.v1 as components
 from supabase import create_client
 
 # Seitanordnung
+import streamlit as st
+
+# ==========================================
+# 📊 IQBestandPro - Konfiguration & Setup
+# ==========================================
 st.set_page_config(
-    page_title="KaDeWe Lager — Iittala & Royal Copenhagen", layout="wide"
+    page_title="IQBestandPro",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
+
+# Hauptüberschrift der Anwendung
+st.title("📊 IQBestandPro")
+st.caption("Intelligentes Bestandsmanagement & Filialanalytik")
 # ==========================================
 # СТИЛИЗАЦИЯ ПОД СТИЛЬ FISKARS / IITTALA / ROYAL COPENHAGEN
 # ==========================================
