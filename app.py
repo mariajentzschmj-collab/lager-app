@@ -2354,17 +2354,30 @@ if supabase is not None:
             st.info("Noch keine Umsätze in der Datenbank gespeichert.")
     except Exception as fetch_err:
         st.warning(f"Konnte Historie nicht laden: {fetch_err}")
-            total_netto = total_brutto / 1.19
-            st.sidebar.markdown("---")
-            st.sidebar.metric(label="Brutto (Gesamt)", value=f"{total_brutto:,.2f} €")
-            st.sidebar.metric(label="Netto (exkl. 19% MwSt.)", value=f"{total_netto:,.2f} €")
-
-            # Вывод разбивки по брендам
-            if brand_revenue_tracking:
-                st.sidebar.markdown("**Umsatz nach Marken:**")
-                for brand_name, b_rev in sorted(brand_revenue_tracking.items(), key=lambda x: x[1], reverse=True):
-                    b_net = b_rev / 1.19
-                    st.sidebar.markdown(f"• *{brand_name}*: **{b_net:,.2f} €** Netto *(Brutto: {b_rev:,.2f} €)*")
-
-    except Exception as e:
-        st.sidebar.error(f"⚠ Fehler: {e}")
+    # ------------------------------------------
+# АВТОМАТИЧЕСКИЙ ВЫВОД СОХРАНЕННОЙ ИСТОРИИ ИЗ SUPABASE
+# ------------------------------------------
+st.markdown("---")
+st.markdown("### 📊 Gespeicherte Tagesumsätze (Aus Datenbank)")
+if supabase is not None:
+    try:
+        saved_sales_res = supabase.table("daily_sales").select("*").order("date", desc=True).limit(10).execute()
+        if saved_sales_res and saved_sales_res.data:
+            import pandas as pd
+            df_saved = pd.DataFrame(saved_sales_res.data)
+            df_saved["netto"] = df_saved["brutto"] / 1.19
+            
+            df_saved_display = df_saved[["date", "brutto", "netto"]].rename(columns={
+                "date": "Datum",
+                "brutto": "Brutto (€)",
+                "netto": "Netto (€)"
+            })
+            
+            df_saved_display["Brutto (€)"] = df_saved_display["Brutto (€)"].apply(lambda x: f"{x:,.2f} €")
+            df_saved_display["Netto (€)"] = df_saved_display["Netto (€)"].apply(lambda x: f"{x:,.2f} €")
+            
+            st.dataframe(df_saved_display, use_container_width=True)
+        else:
+            st.info("Noch keine Umsätze in der Datenbank gespeichert.")
+    except Exception as fetch_err:
+        st.warning(f"Konnte Historie nicht laden: {fetch_err}")
