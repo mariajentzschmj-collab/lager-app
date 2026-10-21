@@ -2351,36 +2351,7 @@ if sales_file is not None:
         st.error(f"⚠ Fehler: {e}")
 
 # ------------------------------------------
-# АВТОМАТИЧЕСКИЙ ВЫВОД СОХРАНЕННОЙ ИСТОРИИ ИЗ SUPABASE
-# ------------------------------------------
-st.markdown("---")
-st.markdown("### 📊 Gespeicherte Tagesumsätze (Aus Datenbank)")
-if supabase is not None:
-    try:
-        saved_sales_res = supabase.table("daily_sales").select("*").order("date", desc=True).limit(10).execute()
-        if saved_sales_res and saved_sales_res.data:
-            import pandas as pd
-            df_saved = pd.DataFrame(saved_sales_res.data)
-            df_saved["netto"] = df_saved["brutto"] / 1.19
-            
-            df_saved_display = df_saved[["date", "brutto", "netto"]].rename(columns={
-                "date": "Datum",
-                "brutto": "Brutto (€)",
-                "netto": "Netto (€)"
-            })
-            
-            # Форматирование чисел для красивого вывода
-            df_saved_display["Brutto (€)"] = df_saved_display["Brutto (€)"].apply(lambda x: f"{x:,.2f} €")
-            df_saved_display["Netto (€)"] = df_saved_display["Netto (€)"].apply(lambda x: f"{x:,.2f} €")
-            
-            st.dataframe(df_saved_display, use_container_width=True)
-        else:
-            st.info("Noch keine Umsätze in der Datenbank gespeichert.")
-    except Exception as fetch_err:
-        st.warning(f"Konnte Historie nicht laden: {fetch_err}")
-    # ------------------------------------------
-# ------------------------------------------
-# АВТОМАТИЧЕСКИЙ ВЫВОД СОХРАНЕННОЙ ИСТОРИИ ИЗ SUPABASE
+# АВТОМАТИЧЕСКИЙ ВЫВОД СОХРАНЕННОЙ ИСТОРИИ ИЗ SUPABASE (С БРЕНДАМИ)
 # ------------------------------------------
 st.markdown("---")
 st.markdown("### 📊 Gespeicherte Tagesumsätze (Aus Datenbank)")
@@ -2407,7 +2378,6 @@ if supabase is not None:
             st.info("Noch keine Umsätze in der Datenbank gespeichert.")
     except Exception as fetch_err:
         st.warning(f"Konnte Historie nicht laden: {fetch_err}")
-
         # ==========================================
 # FOOTER / COPYRIGHT
 # ==========================================
