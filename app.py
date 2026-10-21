@@ -1005,12 +1005,27 @@ elif action == "📥 Auto-Abverkauf per Bericht":
                                 item_db = existing.data[0]
                                 item_id = item_db["id"]
                                 item_name = item_db.get("name", "Unbekannt")
+                                item_brand = item_db.get("brand", "Unbekannt")
+                                item_price = float(item_db.get("preis", item_db.get("price", 0.0)))
                                 curr_q = int(item_db.get("quantity", 0))
                                 new_q = max(0, curr_q - sold_qty)
                                 
                                 res = supabase.table("inventory").update({"quantity": new_q}).eq("id", item_id).execute()
                                 if res.data:
                                     success_count += 1
+                                    
+                                    # 📌 Автоматическая запись продажи в таблицу sales для аналитики по брендам
+                                    try:
+                                        supabase.table("sales").insert({
+                                            "sap_number": str(code),
+                                            "brand": str(item_brand),
+                                            "quantity": int(sold_qty),
+                                            "revenue": sold_qty * item_price,
+                                            "sale_date": str(pd.Timestamp.today().date())
+                                        }).execute()
+                                    except Exception as db_err:
+                                        print(f"Sales insert error: {db_err}")
+
                                     updated_details.append({
                                         "Artikel": item_name,
                                         "Code": code,
@@ -1030,7 +1045,7 @@ elif action == "📥 Auto-Abverkauf per Bericht":
 
                         if not_found_codes:
                             missing_str = ", ".join(not_found_codes)
-                            st.warning(f"⚠️ **{len(not_found_codes)}** Position(en) wurden in der Datenbank nicht gefunden und übersprungen. **Fehlende SAP/Code(s):** {missing_str}")
+                            st.warning(f"⚠️ **{len(not_found_codes)}** Position(en) wurden in der Datenbank nicht gefunden und übersprunken. **Fehlende SAP/Code(s):** {missing_str}")
                     else:
                         st.error("Keine Verbindung zu Supabase.")
                 else:
