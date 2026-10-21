@@ -140,7 +140,38 @@ def check_authentication():
 if not check_authentication():
   st.stop()
 
+# ==========================================
+# DYNAMISCHES INFO-BANNER / AKTIONEN (Aus 'news' Tabelle)
+# ==========================================
+st.markdown("---")
 
+current_announcement = "Aktuelle Aktion: Keine aktiven Meldungen."
+
+# Загружаем последнюю новость из таблицы news
+if supabase is not None:
+    try:
+        res = supabase.table("news").select("message").order("created_at", desc=True).limit(1).execute()
+        if res and res.data and len(res.data) > 0:
+            current_announcement = res.data[0].get("message", current_announcement)
+    except Exception:
+        pass
+
+# Отображение баннера для всех сотрудников
+st.info(f"📢 **Wichtige Information / Aktion:**\n\n{current_announcement}")
+
+# Блок редактирования (только для роли Manager)
+if st.session_state.get("role") == "Manager (Maria)" or st.session_state.get("role") == "manager":
+    with st.expander("✏️ Text des Aktions-Banners bearbeiten (Nur für Manager)"):
+        new_announcement_text = st.text_area("Neuer Text für das Info-Banner:", value=current_announcement)
+        if st.button("💾 Banner aktualisieren"):
+            if supabase is not None:
+                try:
+                    supabase.table("news").insert({
+                        "message": new_announcement_text
+                    }).execute()
+                    st.success("✅ Banner erfolgreich aktualisiert! Bitte Seite neu laden.")
+                except Exception as e:
+                    st.error(f"Fehler beim Speichern: {e}")
 # Верхняя панель с информацией о текущем пользователе и кнопкой выхода
 st.sidebar.markdown(f"👤 **Angemeldet als:** {st.session_state.get('user_name')}")
 st.sidebar.markdown(f"🏷️ **Rolle:** {'Manager (Vollzugriff)' if st.session_state.get('role') == 'manager' else 'Agent (Freigabe in App)'}")
