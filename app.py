@@ -101,7 +101,7 @@ def check_authentication():
     st.session_state["last_active"] = time.time()
     return True
 
-  st.title("🔐 KaDeWe Lagerverwaltung - Login")
+  st.title("🔐 IQBestandPro")
   st.subheader("Bitte wählen Sie Ihre Rolle aus:")
 
   role_choice = st.radio("Ich bin ein(e):", ["👔 Manager (Maria)", "🧑‍‍💼 Agent / Mitarbeiter"])
