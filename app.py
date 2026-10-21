@@ -1,5 +1,3 @@
-# Copyright (c) 2026 Maria Jentzsch. All rights reserved.
-# IQBestandPro™ — Proprietary Software.
 import pandas as pd
 import plotly.express as px
 import hashlib
@@ -16,21 +14,9 @@ import streamlit.components.v1 as components
 from supabase import create_client
 
 # Seitanordnung
-import streamlit as st
-
-# ==========================================
-# 📊 IQBestandPro - Konfiguration & Setup
-# ==========================================
 st.set_page_config(
-    page_title="IQBestandPro",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    page_title="KaDeWe Lager — Iittala & Royal Copenhagen", layout="wide"
 )
-
-# Hauptüberschrift der Anwendung
-st.title("📊 IQBestandPro")
-st.caption("Intelligentes Bestandsmanagement & Filialanalytik")
 # ==========================================
 # СТИЛИЗАЦИЯ ПОД СТИЛЬ FISKARS / IITTALA / ROYAL COPENHAGEN
 # ==========================================
@@ -92,26 +78,7 @@ try:
 except Exception as e:
   pass
 
-# =========================================================
-# 📢 НОВОСТНОЙ / АКЦИОННЫЙ БАННЕР (NEWS BANNER)
-# =========================================================
-try:
-    # Запрашиваем последнюю новость из таблицы news
-    res_news = supabase.table("news").select("*").order("created_at", desc=True).limit(1).execute()
-    news_data = res_news.data if res_news and res_news.data else []
-    
-    if news_data:
-        banner_text = news_data[0].get("message", "")
-    else:
-        # Текст по умолчанию, если таблица пустая
-        banner_text = "🔥 **Aktuelle Aktion:** Royal Copenhagen & Iittala Sonderverkauf – Reduzierte Artikel bis zu -20%!"
-        
-    if banner_text:
-        st.warning(f"📢 **Wichtige Information / Aktion:** {banner_text}")
 
-except Exception:
-    # Запасной вариант на случай, если таблицы news нет в базе
-    st.warning("📢 **Wichtige Information / Aktion:** 🔥 **Aktuelle Aktion:** Royal Copenhagen & Iittala Sonderverkauf – Reduzierte Artikel bis zu -20%!")
 # --- СИСТЕМА АВТОРИЗАЦИИ (МЕНЕДЖЕР И АГЕНТЫ С ПИН-КОДОМ) ---
 def check_authentication():
   TIMEOUT_SECONDS = 300  # 5 минут неактивности
@@ -134,7 +101,7 @@ def check_authentication():
     st.session_state["last_active"] = time.time()
     return True
 
-  st.subheader("🔐 Anmeldung / Login")
+  st.title("🔐 KaDeWe Lagerverwaltung - Login")
   st.subheader("Bitte wählen Sie Ihre Rolle aus:")
 
   role_choice = st.radio("Ich bin ein(e):", ["👔 Manager (Maria)", "🧑‍‍💼 Agent / Mitarbeiter"])
@@ -172,156 +139,30 @@ def check_authentication():
 
 if not check_authentication():
   st.stop()
-# =========================================================
-# 🌐 МУЛЬТИЯЗЫЧНОСТЬ И ЕДИНОЕ МЕНЮ (LANGUAGE & NAVIGATION)
-# =========================================================
-lang = st.sidebar.selectbox(
-    "🌐 Sprache / Language / Язык",
-    ["DE", "EN", "RU"],
-    index=0
-)
 
-TEXTS = {
-    "DE": {
-        "header": "📊 Lagerbestand, Umsatz & Top-Seller",
-        "tab_inv": "🏷️ Bestände nach Marken (Stk.)",
-        "tab_rev": "💰 Umsatz nach Marken (€)",
-        "tab_top": "🔝 Bestseller / Top-Verkäufe",
-        "inv_title": "Gesamte Stückzahl im Lager nach Marken",
-        "inv_tbl_title": "Bestandsübersicht in Stück:",
-        "brand": "Marke",
-        "quantity": "Stückzahl (Stk.)",
-        "rev_title": "Monatlicher Umsatz nach Marken laut Barcode (€)",
-        "monat": "Monat",
-        "umsatz": "Umsatz (€)",
-        "top_title": "🔥 Top 10 meistverkaufte Artikel",
-        "top_col_art": "Artikel / Bezeichnung",
-        "top_col_qty": "Verkaufte Stk.",
-        "no_inv": "Keine Artikel in der Datenbank vorhanden.",
-        "no_sales": "Keine Verkaufsdaten vorhanden.",
-        "logged_as": "Angemeldet als",
-        "role": "Rolle",
-        "logout": "Abmelden",
-        "nav_header": "Lagersteuerung",
-        "nav_action_label": "Aktion auswählen:",
-        "opt_show": "📊 Bestände anzeigen",
-        "opt_add": "➕ Artikel hinzufügen",
-        "opt_reduce": "📉 Artikel reduzieren (Verkauf)",
-        "opt_intake": "📦 Massen-Wareneingang (Zuwachs)",
-        "opt_report": "📊 Auto-Abverkauf per Bericht",
-        "opt_catalog": "📁 Katalog aus Datei",
-        "opt_scanner": "📷 Live-Kamera-Scanner",
-        "opt_labels": "🖨️ Etiketten drucken",
-        "opt_inventur": "📋 Inventur-Schnelleingabe",
-        "opt_qr": "📲 QR-Code für Kollegen"
-    },
-    "EN": {
-        "header": "📊 Inventory, Revenue & Top Sellers",
-        "tab_inv": "🏷️ Stock by Brand (pcs)",
-        "tab_rev": "💰 Revenue by Brand (€)",
-        "tab_top": "🔝 Bestsellers / Top Sales",
-        "inv_title": "Total Quantity in Stock by Brand",
-        "inv_tbl_title": "Stock Overview in Pieces:",
-        "brand": "Brand",
-        "quantity": "Quantity (pcs)",
-        "rev_title": "Monthly Revenue by Brand via Barcode (€)",
-        "monat": "Month",
-        "umsatz": "Revenue (€)",
-        "top_title": "🔥 Top 10 Best-Selling Items",
-        "top_col_art": "Item / Description",
-        "top_col_qty": "Sold (pcs)",
-        "no_inv": "No items found in the database.",
-        "no_sales": "No sales data available.",
-        "logged_as": "Logged in as",
-        "role": "Role",
-        "logout": "Log out",
-        "nav_header": "Inventory Control",
-        "nav_action_label": "Select action:",
-        "opt_show": "📊 View inventory",
-        "opt_add": "➕ Add item",
-        "opt_reduce": "📉 Reduce item (Sale)",
-        "opt_intake": "📦 Bulk goods receipt",
-        "opt_report": "📊 Auto-sales report",
-        "opt_catalog": "📁 Catalog from file",
-        "opt_scanner": "📷 Live Camera Scanner",
-        "opt_labels": "🖨️ Print Labels",
-        "opt_inventur": "📋 Quick Inventory Entry",
-        "opt_qr": "📲 QR Code for Colleagues"
-    },
-    "RU": {
-        "header": "📊 Остатки, Выручка и Топ Продаж",
-        "tab_inv": "🏷️ Остатки по брендам (шт.)",
-        "tab_rev": "💰 Выручка по брендам (€)",
-        "tab_top": "🔝 Бестселлеры / Топ продаж",
-        "inv_title": "Общее количество на складе по брендам",
-        "inv_tbl_title": "Обзор остатков в штуках:",
-        "brand": "Бренд",
-        "quantity": "Количество (шт.)",
-        "rev_title": "Ежемесячная выручка по брендам по штрихкоду (€)",
-        "monat": "Месяц",
-        "umsatz": "Выручка (€)",
-        "top_title": "🔥 Топ-10 самых продаваемых товаров",
-        "top_col_art": "Товар / Наименование",
-        "top_col_qty": "Продано (шт.)",
-        "no_inv": "В базе данных нет товаров.",
-        "no_sales": "Нет данных о продажах.",
-        "logged_as": "Вы вошли как",
-        "role": "Роль",
-        "logout": "Выйти",
-        "nav_header": "Управление складом",
-        "nav_action_label": "Выберите действие:",
-        "opt_show": "📊 Показать остатки",
-        "opt_add": "➕ Добавить товар",
-        "opt_reduce": "📉 Списать товар (Продажа)",
-        "opt_intake": "📦 Массовый приход товара",
-        "opt_report": "📊 Авто-списание по отчету",
-        "opt_catalog": "📁 Каталог из файла",
-        "opt_scanner": "📷 Сканер штрихкодов",
-        "opt_labels": "🖨️ Печать этикеток",
-        "opt_inventur": "📋 Быстрый ввод инвентаризации",
-        "opt_qr": "📲 QR-код для коллег"
-    }
-}
 
-t = TEXTS.get(lang, TEXTS["DE"])
-# Подсчет незавершенных запросов от агентов
+# Верхняя панель с информацией о текущем пользователе и кнопкой выхода
+st.sidebar.markdown(f"👤 **Angemeldet als:** {st.session_state.get('user_name')}")
+st.sidebar.markdown(f"🏷️ **Rolle:** {'Manager (Vollzugriff)' if st.session_state.get('role') == 'manager' else 'Agent (Freigabe in App)'}")
+
+# Если менеджер — проверяем количество ожидающих запросов в базе данных
 pending_count = 0
 if st.session_state.get("role") == "manager" and supabase is not None:
-    try:
-        res = supabase.table("approvals").select("*", count="exact").eq("status", "pending").execute()
-        pending_count = res.count if res.count is not None else len(res.data)
-    except Exception:
-        pending_count = 0
+  try:
+    res = supabase.table("approvals").select("*", count="exact").eq("status", "pending").execute()
+    pending_count = res.count if res.count is not None else len(res.data)
+  except Exception:
+    pending_count = 0
 
 if pending_count > 0:
-    st.sidebar.error(f"🔔 **{pending_count}** {t.get('opt_pending', 'Anfragen von Agenten')}")
-# Вывод информации о пользователе с переводом
-st.sidebar.markdown(f"👤 **{t['logged_as']}:** {st.session_state.get('user_name', 'User')}")
-st.sidebar.markdown(f"🏷️ **{t['role']}:** {st.session_state.get('role', 'User')}")
+  st.sidebar.error(f"🔔 **Wartet auf Freigabe:** {pending_count} Anfrage(n)")
 
-if st.sidebar.button(f"🚪 {t['logout']}"):
-    st.session_state["logged_in"] = False
-    st.session_state["role"] = None
-    st.session_state["user_name"] = None
-    st.rerun()
+if st.sidebar.button("🚪 Abmelden"):
+  st.session_state["logged_in"] = False
+  st.session_state["role"] = None
+  st.session_state["user_name"] = None
+  st.rerun()
 
-# Единое переводимое меню управления складом
-st.sidebar.markdown(f"### ⚙️ {t['nav_header']}")
-
-menu_options = [
-    t["opt_show"],
-    t["opt_add"],
-    t["opt_reduce"],
-    t["opt_intake"],
-    t["opt_report"],
-    t["opt_catalog"],
-    t["opt_scanner"],
-    t["opt_labels"],
-    t["opt_inventur"],
-    t["opt_qr"]
-]
-
-action = st.sidebar.radio(t["nav_action_label"], menu_options)
 # --- HAUPTCODE DER ANWENDUNG ---
 st.title("📦 Lagerverwaltung (5. Etage)")
 st.subheader("Iittala & Royal Copenhagen")
@@ -922,138 +763,123 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
 
 # 5. AUTO-ABVERKAUF PER BERICHT (МАССОВЫЙ ВЫЧЕТ ПО ОТЧЕТУ О ПРОДАЖАХ — С ШАБЛОНОМ И ОТЧЕТОМ)
 elif action == "📥 Auto-Abverkauf per Bericht":
-    is_manager = st.session_state.get("role") == "manager"
-    st.header("📥 Automatischer Abverkauf per Verkaufsbericht" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
-    st.markdown("Laden Sie einen Verkaufsbericht (Excel/CSV) hoch, der verkaufte Mengen enthält. Die verkauften Mengen werden **automatisch vom Bestand abgezogen**.")
+  is_manager = st.session_state.get("role") == "manager"
+  st.header("📥 Automatischer Abverkauf per Verkaufsbericht" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
+  st.markdown("Laden Sie einen Verkaufsbericht (Excel/CSV) hoch, der verkaufte Mengen enthält. Die verkauften Mengen werden **automatisch vom Bestand abgezogen**.")
 
-    # 1. Кнопка скачивания шаблона Excel для продаж
-    template_sales_df = pd.DataFrame(columns=["article", "sap", "quantity"])
-    template_sales_df.loc[0] = ["4149", "1070438", 2]
+  # 1. Кнопка скачивания шаблона Excel для продаж
+  template_sales_df = pd.DataFrame(columns=["article", "sap", "quantity"])
+  template_sales_df.loc[0] = ["4149", "1070438", 2]
 
-    out_sales_tmpl = io.BytesIO()
-    with pd.ExcelWriter(out_sales_tmpl, engine="openpyxl") as writer:
-        template_sales_df.to_excel(writer, index=False, sheet_name="Verkäufe")
-    
-    st.download_button(
-        label="📥 Excel-Vorlage für Verkaufsbericht herunterladen",
-        data=out_sales_tmpl.getvalue(),
-        file_name="KaDeWe_Verkaufsbericht_Vorlage.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+  out_sales_tmpl = io.BytesIO()
+  with pd.ExcelWriter(out_sales_tmpl, engine="openpyxl") as writer:
+    template_sales_df.to_excel(writer, index=False, sheet_name="Verkäufe")
+  
+  st.download_button(
+      label="📥 Excel-Vorlage für Verkaufsbericht herunterladen",
+      data=out_sales_tmpl.getvalue(),
+      file_name="KaDeWe_Verkaufsbericht_Vorlage.xlsx",
+      mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  )
 
-    st.markdown("---")
-    sales_file = st.file_uploader("Verkaufsbericht auswählen", type=["xlsx", "csv"], key="sales_report_upload_v2")
+  st.markdown("---")
+  sales_file = st.file_uploader("Verkaufsbericht auswählen", type=["xlsx", "csv"], key="sales_report_upload_v2")
 
-    if sales_file is not None:
-        try:
-            if sales_file.name.endswith(".csv"):
-                report_df = pd.read_csv(sales_file)
-            else:
-                report_df = pd.read_excel(sales_file)
+  if sales_file is not None:
+    try:
+      if sales_file.name.endswith(".csv"):
+        report_df = pd.read_csv(sales_file)
+      else:
+        report_df = pd.read_excel(sales_file)
 
-            # Нормализуем названия колонок
-            report_df.columns = [str(c).strip().lower() for c in report_df.columns]
-            st.write("📋 Vorschau des Verkaufsberichts:", report_df.head())
+      # Нормализуем названия колонок
+      report_df.columns = [str(c).strip().lower() for c in report_df.columns]
+      st.write("📋 Vorschau des Verkaufsberichts:", report_df.head())
 
-            if st.button("🚀 Abverkauf buchen & Bestände reduzieren"):
-                items_sold = []
+      if st.button("🚀 Abverkauf buchen & Bestände reduzieren"):
+        items_sold = []
+        
+        def clean_val(val):
+          if pd.isna(val):
+            return ""
+          s = str(val).strip()
+          if s.endswith(".0"):
+            s = s[:-2]
+          return s
+
+        for _, row in report_df.iterrows():
+          art_val = clean_val(row.get("article", row.get("artikelnr", row.get("sku", ""))))
+          sap_val = clean_val(row.get("sap", ""))
+          
+          code_to_use = art_val if art_val else sap_val
+          if not code_to_use:
+            continue
+
+          q_raw = row.get("quantity", row.get("sold_qty", row.get("menge", 0)))
+          try:
+            sold_qty = int(float(str(q_raw).replace(',', '.'))) if not pd.isna(q_raw) else 0
+          except:
+            sold_qty = 0
+
+          if sold_qty > 0:
+            items_sold.append({
+                "code": code_to_use,
+                "sold_qty": sold_qty
+            })
+
+        if is_manager:
+          if supabase is not None:
+            success_count = 0
+            updated_details = []
+            not_found_count = 0
+
+            for item in items_sold:
+              code = item["code"]
+              sold_qty = item["sold_qty"]
+              
+              # Ищем сначала по article, затем по sap
+              existing = supabase.table("inventory").select("*").eq("article", code).execute()
+              if not existing or not existing.data:
+                existing = supabase.table("inventory").select("*").eq("sap", code).execute()
+
+              if existing and existing.data:
+                item_db = existing.data[0]
+                item_id = item_db["id"]
+                item_name = item_db.get("name", "Unbekannt")
+                curr_q = int(item_db.get("quantity", 0))
+                new_q = max(0, curr_q - sold_qty)
                 
-                def clean_val(val):
-                    if pd.isna(val):
-                        return ""
-                    s = str(val).strip()
-                    if s.endswith(".0"):
-                        s = s[:-2]
-                    return s
+                res = supabase.table("inventory").update({"quantity": new_q}).eq("id", item_id).execute()
+                if res.data:
+                  success_count += 1
+                  updated_details.append({
+                      "Artikel": item_name,
+                      "Code": code,
+                      "Verkauft": sold_qty,
+                      "Alter Bestand": curr_q,
+                      "Neuer Bestand": new_q
+                  })
+              else:
+                not_found_count += 1
 
-                for _, row in report_df.iterrows():
-                    art_val = clean_val(row.get("article", row.get("artikelnr", row.get("sku", ""))))
-                    sap_val = clean_val(row.get("sap", ""))
-                    
-                    code_to_use = art_val if art_val else sap_val
-                    if not code_to_use:
-                        continue
+            # Красивый блок подтверждения
+            st.success(f"✅ Verkaufsbericht erfolgreich verarbeitet! Bestände für **{success_count}** Artikel aktualisiert.")
+            
+            if updated_details:
+              st.markdown("### 📊 Details zur Bestandsreduzierung:")
+              st.dataframe(pd.DataFrame(updated_details), use_container_width=True)
 
-                    q_raw = row.get("quantity", row.get("sold_qty", row.get("menge", 0)))
-                    try:
-                        sold_qty = int(float(str(q_raw).replace(',', '.'))) if not pd.isna(q_raw) else 0
-                    except:
-                        sold_qty = 0
+            if not_found_count > 0:
+              st.warning(f"⚠ {not_found_count} Positionen aus dem Bericht wurden in der Datenbank nicht gefunden und übersprunken.")
+          else:
+            st.error("Keine Verbindung zu Supabase.")
+        else:
+          payload = {"items": items_sold}
+          request_manager_approval("bulk_sales_report", payload)
 
-                    if sold_qty > 0:
-                        items_sold.append({
-                            "code": code_to_use,
-                            "sold_qty": sold_qty
-                        })
+    except Exception as e:
+      st.error(f"Fehler beim Verarbeiten des Berichts: {e}")
 
-                if is_manager:
-                    if supabase is not None:
-                        success_count = 0
-                        updated_details = []
-                        not_found_codes = []
-
-                        for item in items_sold:
-                            code = item["code"]
-                            sold_qty = item["sold_qty"]
-                            
-                            # Ищем сначала по article, затем по sap
-                            existing = supabase.table("inventory").select("*").eq("article", code).execute()
-                            if not existing or not existing.data:
-                                existing = supabase.table("inventory").select("*").eq("sap", code).execute()
-
-                            if existing and existing.data:
-                                item_db = existing.data[0]
-                                item_id = item_db["id"]
-                                item_name = item_db.get("name", "Unbekannt")
-                                item_brand = item_db.get("brand", "Unbekannt")
-                                item_price = float(item_db.get("preis", item_db.get("price", 0.0)))
-                                curr_q = int(item_db.get("quantity", 0))
-                                new_q = max(0, curr_q - sold_qty)
-                                
-                                res = supabase.table("inventory").update({"quantity": new_q}).eq("id", item_id).execute()
-                                if res.data:
-                                    success_count += 1
-                                    
-                                    # 📌 Автоматическая запись продажи в таблицу sales для аналитики по брендам
-                                    try:
-                                        supabase.table("sales").insert({
-                                            "sap_number": str(code),
-                                            "brand": str(item_brand),
-                                            "quantity": int(sold_qty),
-                                            "revenue": sold_qty * item_price,
-                                            "sale_date": str(pd.Timestamp.today().date())
-                                        }).execute()
-                                    except Exception as db_err:
-                                        print(f"Sales insert error: {db_err}")
-
-                                    updated_details.append({
-                                        "Artikel": item_name,
-                                        "Code": code,
-                                        "Verkauft": sold_qty,
-                                        "Alter Bestand": curr_q,
-                                        "Neuer Bestand": new_q
-                                    })
-                            else:
-                                not_found_codes.append(code)
-
-                        # Красивый блок подтверждения
-                        st.success(f"✅ Verkaufsbericht erfolgreich verarbeitet! Bestände für **{success_count}** Artikel aktualisiert.")
-                        
-                        if updated_details:
-                            st.markdown("### 📊 Details zur Bestandsreduzierung:")
-                            st.dataframe(pd.DataFrame(updated_details), use_container_width=True)
-
-                        if not_found_codes:
-                            missing_str = ", ".join(not_found_codes)
-                            st.warning(f"⚠️ **{len(not_found_codes)}** Position(en) wurden in der Datenbank nicht gefunden und übersprunken. **Fehlende SAP/Code(s):** {missing_str}")
-                    else:
-                        st.error("Keine Verbindung zu Supabase.")
-                else:
-                    payload = {"items": items_sold}
-                    request_manager_approval("bulk_sales_report", payload)
-
-        except Exception as e:
-            st.error(f"Fehler beim Verarbeiten des Berichts: {e}")
 # 6. KATALOG AUS DATEI HOCHLADEN (ВКЛЮЧАЯ 0 ЗНАЧЕНИЯ)
 elif action == "📁 Katalog aus Datei hochladen":
   is_manager = st.session_state.get("role") == "manager"
@@ -1460,15 +1286,14 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("💶 Umsatz-Tracking (Tage & Monate)")
 
 st.sidebar.markdown(
-    "Laden Sie einen Verkaufsbericht hoch. Die Umsätze werden korrekt summiert, nach Marken aufgeschlüsselt und in Supabase gespeichert."
+    "Laden Sie einen Verkaufsbericht hoch. Die Umsätze werden korrekt summiert und in Supabase gespeichert."
 )
 
 with st.sidebar.expander("ℹ️ Format-Hinweis"):
     st.markdown("""
     Ihre Datei sollte folgende Spalten enthalten:
     1. **Datum** (z. B. `02.10.2026`)
-    2. **Barcode / Artikel / SAP** (zur Zuordnung der Marke)
-    3. **Gesamtpreis / Umsatz** (oder Preis pro Zeile)
+    2. **Gesamtpreis / Umsatz** (die fertige Summe pro Zeile)
     """)
 
 sales_file = st.sidebar.file_uploader(
@@ -1484,15 +1309,13 @@ if sales_file is not None:
         else:
             sales_report_df = pd.read_excel(sales_file)
 
-        # Нормализуем названия колонок для удобства поиска
-        sales_report_df.columns = [str(c).strip().lower() for c in sales_report_df.columns]
         st.sidebar.success("✅ Bericht erfolgreich geladen!")
 
         columns_list = list(sales_report_df.columns)
         date_col = st.sidebar.selectbox("Spalte für das Datum", columns_list, key="acc_date_col")
         price_col = st.sidebar.selectbox("Spalte für Gesamtpreis / Umsatz", columns_list, key="acc_price_col")
 
-        if st.sidebar.button("💾 Umsatz speichern & nach Marken aufteilen"):
+        if st.sidebar.button("💾 Umsatz speichern & kumulieren"):
             # Очищаем и суммируем общую сумму брутто
             cleaned_prices = (
                 sales_report_df[price_col]
@@ -1501,8 +1324,7 @@ if sales_file is not None:
                 .str.replace(' ', '', regex=False)
                 .str.replace(',', '.', regex=False)
             )
-            sales_report_df['cleaned_price'] = pd.to_numeric(cleaned_prices, errors='coerce').fillna(0)
-            total_brutto = sales_report_df['cleaned_price'].sum()
+            total_brutto = pd.to_numeric(cleaned_prices, errors='coerce').sum()
 
             sales_report_df[date_col] = pd.to_datetime(sales_report_df[date_col], errors='coerce')
             valid_dates = sales_report_df[date_col].dropna()
@@ -1514,32 +1336,7 @@ if sales_file is not None:
                 report_date = pd.Timestamp.today().strftime('%Y-%m-%d')
                 report_month = pd.Timestamp.today().strftime('%Y-%m')
 
-            # 🏷️ Автоматическое распределение по брендам на основе каталога в Supabase
-            brand_revenue_tracking = {}
-            if supabase is not None:
-                for _, row in sales_report_df.iterrows():
-                    b_code = str(row.get("barcode", row.get("gtin", row.get("ean", "")))).strip()
-                    a_code = str(row.get("article", row.get("artikelnr", row.get("sku", "")))).strip()
-                    s_code = str(row.get("sap", "")).strip()
-                    
-                    line_price = float(row.get("cleaned_price", 0))
-                    matched_brand = "Unbekannt"
-
-                    # Ищем бренд по очереди: по баркоду, затем по артикулу, затем по SAP
-                    inv_res = None
-                    if b_code and b_code != "nan":
-                        inv_res = supabase.table("inventory").select("brand").eq("barcode", b_code).execute()
-                    if (not inv_res or not inv_res.data) and a_code and a_code != "nan":
-                        inv_res = supabase.table("inventory").select("brand").eq("article", a_code).execute()
-                    if (not inv_res or not inv_res.data) and s_code and s_code != "nan":
-                        inv_res = supabase.table("inventory").select("brand").eq("sap", s_code).execute()
-
-                    if inv_res and inv_res.data:
-                        matched_brand = inv_res.data[0].get("brand", "Unbekannt")
-
-                    brand_revenue_tracking[matched_brand] = brand_revenue_tracking.get(matched_brand, 0.0) + line_price
-
-            # Сохранение общей суммы в Supabase (daily_sales)
+            # Сохранение в Supabase
             if supabase is not None:
                 try:
                     existing_day = supabase.table("daily_sales").select("*").eq("date", report_date).execute()
@@ -1564,13 +1361,6 @@ if sales_file is not None:
             st.sidebar.markdown("---")
             st.sidebar.metric(label="Brutto (dieser Bericht)", value=f"{total_brutto:,.2f} €")
             st.sidebar.metric(label="Netto (exkl. 19% MwSt.)", value=f"{total_netto:,.2f} €")
-
-            # 📊 Вывод распределения выручки по брендам прямо в боковой панели
-            if brand_revenue_tracking:
-                st.sidebar.markdown("**Umsatz nach Marken (dieser Bericht):**")
-                for brand_name, b_rev in sorted(brand_revenue_tracking.items(), key=lambda x: x[1], reverse=True):
-                    b_net = b_rev / 1.19
-                    st.sidebar.markdown(f"• *{brand_name}*: **{b_net:,.2f} €** Netto *(Brutto: {b_rev:,.2f} €)*")
 
     except Exception as e:
         st.sidebar.error(f"⚠ Fehler beim Verarbeiten: {e}")
@@ -1599,24 +1389,6 @@ if supabase is not None:
             st.sidebar.info("ℹ Noch keine kumulierten Daten in der Datenbank.")
     except Exception as hist_err:
         st.sidebar.caption("💡 Tipp: Stellen Sie sicher, dass die Tabelle `daily_sales` in Supabase existiert.")
-
-# --- ИСТОРИЯ ЗАГРУЖЕННЫХ ДАТ В UMSATZ-TRACKING ---
-if supabase is not None:
-    try:
-        res_hist = supabase.table("daily_sales").select("date, brutto").order("date", desc=True).execute()
-        if res_hist and res_hist.data:
-            hist_df = pd.DataFrame(res_hist.data)
-            with st.sidebar.expander("📅 Bereits geladene Tage anzeigen"):
-                if not hist_df.empty:
-                    for _, h_row in hist_df.iterrows():
-                        d_str = h_row.get("date", "-")
-                        b_val = float(h_row.get("brutto", 0) or 0)
-                        n_val = b_val / 1.19
-                        st.sidebar.markdown(f"• **{d_str}**: {n_val:,.2f} € Netto *(Brutto: {b_val:,.2f} €)*")
-                else:
-                    st.sidebar.info("Noch keine Tage erfasst.")
-    except Exception as e:
-        pass
 
 # --- ИСТОРИЯ ЗАГРУЖЕННЫХ ДАТ В UMSATZ-TRACKING ---
 if supabase is not None:
@@ -2442,146 +2214,3 @@ try:
 
 except Exception as e:
     st.error(f"❌ Fehler beim Laden der Lageranalyse: {e}")
-
-# =========================================================
-# 📊 ДОПОЛНИТЕЛЬНЫЙ БЛОК ФИНАНСОВОЙ АНАЛИТИКИ И ПРОДАЖ
-# =========================================================
-if action in ["📊 Bestände anzeigen", "📊 Показать остатки", "📊 View inventory"]:
-    st.markdown("---")
-    st.header(t.get("header_sales", "💰 Umsatz & Top-Seller Analytik"))
-
-    # Создаем 2 вкладки: Выручка и Бестселлеры
-    tab_rev, tab_top = st.tabs([
-        t.get("tab_rev", "💰 Umsatz nach Marken (€)"),
-        t.get("tab_top", "🔝 Bestseller / Top-Verkäufe")
-    ])
-
-    # --- Вкладка 1: Выручка по брендам (€) ---
-    with tab_rev:
-        st.subheader(t.get("rev_title", "Monatlicher Umsatz nach Marken laut Barcode (€)"))
-        try:
-            if supabase is not None:
-                sales_data = []
-                for tbl in ["daily_sales", "sales", "operations_log"]:
-                    try:
-                        res = supabase.table(tbl).select("*").execute()
-                        if res.data:
-                            sales_data.extend(res.data)
-                    except Exception:
-                        pass
-                
-                if sales_data:
-                    import pandas as pd
-                    df_sales = pd.DataFrame(sales_data)
-                    
-                    rev_col = None
-                    for c in ["revenue", "price", "amount", "umsatz", "summe", "total"]:
-                        if c in df_sales.columns:
-                            rev_col = c
-                            break
-                    
-                    brand_col = None
-                    for c in ["brand", "marke", "manufacturer", "category"]:
-                        if c in df_sales.columns:
-                            brand_col = c
-                            break
-
-                    if rev_col and brand_col:
-                        df_sales[brand_col] = df_sales[brand_col].astype(str).str.strip().str.title()
-                        df_rev_brand = df_sales.groupby(brand_col)[rev_col].sum().reset_index()
-                        df_rev_brand.columns = [t.get("brand", "Marke"), t.get("umsatz", "Umsatz (€)")]
-                        
-                        st.bar_chart(df_rev_brand.set_index(t.get("brand", "Marke")))
-                        st.dataframe(df_rev_brand, use_container_width=True)
-                    else:
-                        st.info(t.get("no_sales", "Keine Verkaufsdaten vorhanden."))
-                else:
-                    st.info(t.get("no_sales", "Keine Verkaufsdaten vorhanden."))
-            else:
-                st.warning("Supabase Connection Error")
-        except Exception as e:
-            st.info(t.get("no_sales", "Keine Verkaufsdaten vorhanden."))
-
-    # --- Вкладка 2: Бестселлеры (Топ-10) ---
-    with tab_top:
-        st.subheader(t.get("top_title", "🔥 Top 10 meistverkaufte Artikel"))
-        try:
-            if supabase is not None:
-                sales_data = []
-                for tbl in ["daily_sales", "sales", "operations_log"]:
-                    try:
-                        res = supabase.table(tbl).select("*").execute()
-                        if res.data:
-                            sales_data.extend(res.data)
-                    except Exception:
-                        pass
-
-                if sales_data:
-                    import pandas as pd
-                    df_top = pd.DataFrame(sales_data)
-                    
-                    name_col = None
-                    for c in ["article_name", "name", "title", "bezeichnung", "sap_number"]:
-                        if c in df_top.columns:
-                            name_col = c
-                            break
-                            
-                    qty_col = None
-                    for c in ["quantity", "anzahl", "stk", "count"]:
-                        if c in df_top.columns:
-                            qty_col = c
-                            break
-
-                    if name_col and qty_col:
-                        df_top_10 = df_top.groupby(name_col)[qty_col].sum().reset_index()
-                        df_top_10 = df_top_10.sort_values(by=qty_col, ascending=False).head(10)
-                        df_top_10.columns = [t.get("top_col_art", "Artikel"), t.get("top_col_qty", "Verkaufte Stk.")]
-                        
-                        st.dataframe(df_top_10, use_container_width=True)
-                    else:
-                        st.info(t.get("no_sales", "Keine Verkaufsdaten vorhanden."))
-                else:
-                    st.info(t.get("no_sales", "Keine Verkaufsdaten vorhanden."))
-            else:
-                st.warning("Supabase Connection Error")
-        except Exception as e:
-            st.info(t.get("no_sales", "Keine Verkaufsdaten vorhanden."))
-            # ==========================================
-# ==========================================
-# 📊 SEPARATER BLOCK: Tagesumsätze der Historie (Brutto)
-# ==========================================
-st.markdown("---")
-st.subheader("📊 Verlauf der hochgeladenen Tagesumsätze")
-
-try:
-    import pandas as pd
-    import streamlit as st
-
-    # Загружаем данные из daily_sales
-    daily_res = supabase.table("daily_sales").select("*").execute()
-
-    if daily_res.data:
-        df_daily = pd.DataFrame(daily_res.data)
-        
-        if not df_daily.empty and "date" in df_daily.columns and "brutto" in df_daily.columns:
-            # Преобразуем формат данных
-            df_daily["date"] = pd.to_datetime(df_daily["date"]).dt.strftime('%Y-%m-%d')
-            df_daily["brutto"] = pd.to_numeric(df_daily["brutto"], errors='coerce').fillna(0)
-            
-            # Группируем по датам
-            df_grouped = df_daily.groupby("date")["brutto"].sum().reset_index()
-            df_grouped = df_grouped.sort_values("date")
-            df_grouped.columns = ["Datum", "Brutto-Umsatz (€)"]
-            
-            # Строим график и таблицу
-            st.bar_chart(df_grouped.set_index("Datum"))
-            st.dataframe(df_grouped, use_container_width=True)
-        else:
-            st.info("Таблица пуста или в ней нет нужных колонок.")
-            st.write("Доступные колонки:", list(df_daily.columns))
-    else:
-        st.info("Нет данных в таблице daily_sales.")
-
-except Exception as e:
-    st.error(f"Fehler: {e}")
-st.caption("© 2026 Maria Jentzsch. Alle Rechte vorbehalten. IQBestandPro™")
