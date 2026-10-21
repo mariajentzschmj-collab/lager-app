@@ -15,7 +15,7 @@ from supabase import create_client
 
 # Seitanordnung
 st.set_page_config(
-    page_title="KaDeWe Lager — Iittala & Royal Copenhagen", layout="wide"
+    page_title="IQBestandPro", layout="wide"
 )
 # ==========================================
 # СТИЛИЗАЦИЯ ПОД СТИЛЬ FISKARS / IITTALA / ROYAL COPENHAGEN
