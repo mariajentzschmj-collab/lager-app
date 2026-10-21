@@ -2225,10 +2225,10 @@ st.markdown(
 # ==========================================
 # UMSATZ-TRACKING & MARKEN-VERTEILUNG
 # ==========================================
-st.sidebar.markdown("---")
-st.sidebar.subheader("💶 Umsatz-Tracking nach Marken")
+st.markdown("---")
+st.subheader("💶 Umsatz-Tracking nach Marken")
 
-sales_file = st.sidebar.file_uploader(
+sales_file = st.file_uploader(
     "Verkaufsbericht hochladen (Excel / CSV)", type=["xlsx", "csv"], key="sales_report_clean"
 )
 
@@ -2241,16 +2241,14 @@ if sales_file is not None:
         else:
             sales_report_df = pd.read_excel(sales_file)
 
-        # Нормализуем названия колонок для удобства
         sales_report_df.columns = [str(c).strip().lower() for c in sales_report_df.columns]
-        st.sidebar.success("✅ Bericht erfolgreich geladen!")
+        st.success("✅ Bericht erfolgreich geladen!")
 
         columns_list = list(sales_report_df.columns)
-        date_col = st.sidebar.selectbox("Spalte für das Datum", columns_list, key="clean_date_col")
-        price_col = st.sidebar.selectbox("Spalte für Gesamtpreis / Umsatz", columns_list, key="clean_price_col")
+        date_col = st.selectbox("Spalte für das Datum", columns_list, key="clean_date_col")
+        price_col = st.selectbox("Spalte für Gesamtpreis / Umsatz", columns_list, key="clean_price_col")
 
-        if st.sidebar.button("💾 Umsatz speichern & nach Marken aufteilen", key="btn_save_sales"):
-            # Очищаем цены
+        if st.button("💾 Umsatz speichern & nach Marken aufteilen", key="btn_save_sales"):
             cleaned_prices = (
                 sales_report_df[price_col]
                 .astype(str)
@@ -2271,7 +2269,7 @@ if sales_file is not None:
                 report_date = pd.Timestamp.today().strftime('%Y-%m-%d')
                 report_month = pd.Timestamp.today().strftime('%Y-%m')
 
-            # 🏷️ Автоматическое распределение по брендам через Supabase
+            # Автоматическое сопоставление с базой inventory
             brand_revenue_tracking = {}
             if supabase is not None:
                 for _, row in sales_report_df.iterrows():
@@ -2295,7 +2293,7 @@ if sales_file is not None:
 
                     brand_revenue_tracking[matched_brand] = brand_revenue_tracking.get(matched_brand, 0.0) + line_price
 
-            # Сохранение общей суммы в Supabase
+            # Сохранение в Supabase
             if supabase is not None:
                 try:
                     existing_day = supabase.table("daily_sales").select("*").eq("date", report_date).execute()
@@ -2310,10 +2308,52 @@ if sales_file is not None:
                             "brutto": float(total_brutto),
                             "month": report_month
                         }).execute()
-                    st.sidebar.success(f"✔ Umsatz für {report_date} gespeichert!")
+                    st.success(f"✓ Umsatz für {report_date} gespeichert!")
                 except Exception as db_err:
-                    st.sidebar.warning(f"⚠ DB-Hinweis: {db_err}")
+                    st.warning(f"⚠ DB-Hinweis: {db_err}")
 
+            total_netto = total_brutto / 1.19
+            st.markdown("---")
+            st.metric(label="Brutto (Gesamt)", value=f"{total_brutto:,.2f} €")
+            st.metric(label="Netto (exkl. 19% MwSt.)", value=f"{total_netto:,.2f} €")
+
+            if brand_revenue_tracking:
+                st.markdown("**Umsatz nach Marken:**")
+                for brand_name, b_rev in sorted(brand_revenue_tracking.items(), key=lambda x: x[1], reverse=True):
+                    b_net = b_rev / 1.19
+                    st.markdown(f"• *{brand_name}*: **{b_net:,.2f} €** Netto *(Brutto: {b_rev:,.2f} €)*")
+
+    except Exception as e:
+        st.error(f"⚠ Fehler: {e}")
+
+# ------------------------------------------
+# АВТОМАТИЧЕСКИЙ ВЫВОД СОХРАНЕННОЙ ИСТОРИИ ИЗ SUPABASE
+# ------------------------------------------
+st.markdown("---")
+st.markdown("### 📊 Gespeicherte Tagesumsätze (Aus Datenbank)")
+if supabase is not None:
+    try:
+        saved_sales_res = supabase.table("daily_sales").select("*").order("date", desc=True).limit(10).execute()
+        if saved_sales_res and saved_sales_res.data:
+            import pandas as pd
+            df_saved = pd.DataFrame(saved_sales_res.data)
+            df_saved["netto"] = df_saved["brutto"] / 1.19
+            
+            df_saved_display = df_saved[["date", "brutto", "netto"]].rename(columns={
+                "date": "Datum",
+                "brutto": "Brutto (€)",
+                "netto": "Netto (€)"
+            })
+            
+            # Форматирование чисел для красивого вывода
+            df_saved_display["Brutto (€)"] = df_saved_display["Brutto (€)"].apply(lambda x: f"{x:,.2f} €")
+            df_saved_display["Netto (€)"] = df_saved_display["Netto (€)"].apply(lambda x: f"{x:,.2f} €")
+            
+            st.dataframe(df_saved_display, use_container_width=True)
+        else:
+            st.info("Noch keine Umsätze in der Datenbank gespeichert.")
+    except Exception as fetch_err:
+        st.warning(f"Konnte Historie nicht laden: {fetch_err}")
             total_netto = total_brutto / 1.19
             st.sidebar.markdown("---")
             st.sidebar.metric(label="Brutto (Gesamt)", value=f"{total_brutto:,.2f} €")
