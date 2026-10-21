@@ -2347,8 +2347,8 @@ if sales_file is not None:
                 if brand_revenue_tracking:
                     st.markdown("**Umsatz nach Marken:**")
                     for brand_name, b_rev in sorted(brand_revenue_tracking.items(), key=lambda x: x[1], reverse=True):
-                    b_net = b_rev / 1.19
-                    st.markdown(f"• *{brand_name}*: **{b_net:,.2f} €** Netto *(Brutto: {b_rev:,.2f} €)*")
+                        b_net = b_rev / 1.19
+                        st.markdown(f"• *{brand_name}*: **{b_net:,.2f} €** Netto *(Brutto: {b_rev:,.2f} €)*")
 
     except Exception as e:
         st.error(f"⚠ Fehler: {e}")
