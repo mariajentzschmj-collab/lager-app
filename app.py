@@ -2317,7 +2317,13 @@ if sales_file is not None:
 
                     brand_revenue_tracking[matched_brand] = brand_revenue_tracking.get(matched_brand, 0.0) + line_price
 
-           # Сохранение в Supabase
+          
+            total_netto = total_brutto / 1.19
+            st.markdown("---")
+            st.metric(label="Brutto (Gesamt)", value=f"{total_brutto:,.2f} €")
+            st.metric(label="Netto (exkl. 19% MwSt.)", value=f"{total_netto:,.2f} €")
+
+            # Сохранение в Supabase (в правильном месте после расчетов)
         if supabase is not None:
             try:
                 b_data = brand_revenue_tracking if 'brand_revenue_tracking' in locals() else {}
@@ -2338,13 +2344,7 @@ if sales_file is not None:
                 st.success(f"✅ Umsatz für {report_date} inkl. Marken erfolgreich gespeichert!")
             except Exception as db_err:
                 st.warning(f"⚠ DB-Hinweis: {db_err}")
-
-            total_netto = total_brutto / 1.19
-            st.markdown("---")
-            st.metric(label="Brutto (Gesamt)", value=f"{total_brutto:,.2f} €")
-            st.metric(label="Netto (exkl. 19% MwSt.)", value=f"{total_netto:,.2f} €")
-
-            if brand_revenue_tracking:
+                if brand_revenue_tracking:
                 st.markdown("**Umsatz nach Marken:**")
                 for brand_name, b_rev in sorted(brand_revenue_tracking.items(), key=lambda x: x[1], reverse=True):
                     b_net = b_rev / 1.19
