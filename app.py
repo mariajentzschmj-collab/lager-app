@@ -2386,6 +2386,7 @@ if supabase is not None:
     except Exception as fetch_err:
         st.warning(f"Konnte Historie nicht laden: {fetch_err}")
     # ------------------------------------------
+# ------------------------------------------
 # АВТОМАТИЧЕСКИЙ ВЫВОД СОХРАНЕННОЙ ИСТОРИИ ИЗ SUPABASE
 # ------------------------------------------
 st.markdown("---")
@@ -2394,20 +2395,21 @@ if supabase is not None:
     try:
         saved_sales_res = supabase.table("daily_sales").select("*").order("date", desc=True).limit(10).execute()
         if saved_sales_res and saved_sales_res.data:
-            import pandas as pd
-            df_saved = pd.DataFrame(saved_sales_res.data)
-            df_saved["netto"] = df_saved["brutto"] / 1.19
-            
-            df_saved_display = df_saved[["date", "brutto", "netto"]].rename(columns={
-                "date": "Datum",
-                "brutto": "Brutto (€)",
-                "netto": "Netto (€)"
-            })
-            
-            df_saved_display["Brutto (€)"] = df_saved_display["Brutto (€)"].apply(lambda x: f"{x:,.2f} €")
-            df_saved_display["Netto (€)"] = df_saved_display["Netto (€)"].apply(lambda x: f"{x:,.2f} €")
-            
-            st.dataframe(df_saved_display, use_container_width=True)
+            for item in saved_sales_res.data:
+                day_date = item.get("date", "")
+                day_brutto = float(item.get("brutto", 0.0))
+                day_netto = day_brutto / 1.19
+                brands_dict = item.get("brand_data") or {}
+
+                # Показываем каждый день как выпадающий список
+                with st.expander(f"📅 {day_date} | Brutto: {day_brutto:,.2f} € | Netto: {day_netto:,.2f} €"):
+                    if brands_dict and isinstance(brands_dict, dict):
+                        st.markdown("**Umsatz nach Marken:**")
+                        for b_name, b_val in sorted(brands_dict.items(), key=lambda x: x[1], reverse=True):
+                            b_net_val = float(b_val) / 1.19
+                            st.markdown(f"• *{b_name}*: **{b_net_val:,.2f} €** Netto *(Brutto: {float(b_val):,.2f} €)*")
+                    else:
+                        st.caption("Keine Aufteilung nach Marken für diesen Tag vorhanden.")
         else:
             st.info("Noch keine Umsätze in der Datenbank gespeichert.")
     except Exception as fetch_err:
