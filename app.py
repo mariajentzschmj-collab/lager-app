@@ -2345,8 +2345,8 @@ if sales_file is not None:
             except Exception as db_err:
                 st.warning(f"⚠ DB-Hinweis: {db_err}")
                 if brand_revenue_tracking:
-                st.markdown("**Umsatz nach Marken:**")
-                for brand_name, b_rev in sorted(brand_revenue_tracking.items(), key=lambda x: x[1], reverse=True):
+                    st.markdown("**Umsatz nach Marken:**")
+                    for brand_name, b_rev in sorted(brand_revenue_tracking.items(), key=lambda x: x[1], reverse=True):
                     b_net = b_rev / 1.19
                     st.markdown(f"• *{brand_name}*: **{b_net:,.2f} €** Netto *(Brutto: {b_rev:,.2f} €)*")
 
