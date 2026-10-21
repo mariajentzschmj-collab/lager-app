@@ -2317,24 +2317,27 @@ if sales_file is not None:
 
                     brand_revenue_tracking[matched_brand] = brand_revenue_tracking.get(matched_brand, 0.0) + line_price
 
-            # Сохранение в Supabase
-            if supabase is not None:
-                try:
-                    existing_day = supabase.table("daily_sales").select("*").eq("date", report_date).execute()
-                    if existing_day and existing_day.data:
-                        supabase.table("daily_sales").update({
-                            "brutto": float(total_brutto),
-                            "month": report_month
-                        }).eq("date", report_date).execute()
-                    else:
-                        supabase.table("daily_sales").insert({
-                            "date": report_date,
-                            "brutto": float(total_brutto),
-                            "month": report_month
-                        }).execute()
-                    st.success(f"✓ Umsatz für {report_date} gespeichert!")
-                except Exception as db_err:
-                    st.warning(f"⚠ DB-Hinweis: {db_err}")
+           # Сохранение в Supabase
+        if supabase is not None:
+            try:
+                b_data = brand_revenue_tracking if 'brand_revenue_tracking' in locals() else {}
+                
+                payload = {
+                    "date": report_date,
+                    "brutto": float(total_brutto),
+                    "month": report_month,
+                    "brand_data": b_data
+                }
+                
+                existing_day = supabase.table("daily_sales").select("*").eq("date", report_date).execute()
+                if existing_day and existing_day.data:
+                    supabase.table("daily_sales").update(payload).eq("date", report_date).execute()
+                else:
+                    supabase.table("daily_sales").insert(payload).execute()
+                    
+                st.success(f"✅ Umsatz für {report_date} inkl. Marken erfolgreich gespeichert!")
+            except Exception as db_err:
+                st.warning(f"⚠ DB-Hinweis: {db_err}")
 
             total_netto = total_brutto / 1.19
             st.markdown("---")
