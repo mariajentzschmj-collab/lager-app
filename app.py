@@ -794,122 +794,128 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
 
 # 5. AUTO-ABVERKAUF PER BERICHT (МАССОВЫЙ ВЫЧЕТ ПО ОТЧЕТУ О ПРОДАЖАХ — С ШАБЛОНОМ И ОТЧЕТОМ)
 elif action == "📥 Auto-Abverkauf per Bericht":
-  is_manager = st.session_state.get("role") == "manager"
-  st.header("📥 Automatischer Abverkauf per Verkaufsbericht" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
-  st.markdown("Laden Sie einen Verkaufsbericht (Excel/CSV) hoch, der verkaufte Mengen enthält. Die verkauften Mengen werden **automatisch vom Bestand abgezogen**.")
+    is_manager = st.session_state.get("role") == "manager"
+    st.header("📥 Automatischer Abverkauf per Verkaufsbericht" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
+    st.markdown("Laden Sie einen Verkaufsbericht (Excel/CSV) hoch, der verkaufte Mengen enthält. Die verkauften Mengen werden **automatisch vom Bestand abgezogen**.")
 
-  # 1. Кнопка скачивания шаблона Excel для продаж
-  template_sales_df = pd.DataFrame(columns=["article", "sap", "quantity"])
-  template_sales_df.loc[0] = ["4149", "1070438", 2]
+    # 1. Кнопка скачивания шаблона Excel для продаж
+    template_sales_df = pd.DataFrame(columns=["article", "sap", "quantity"])
+    template_sales_df.loc[0] = ["4149", "1070438", 2]
 
-  out_sales_tmpl = io.BytesIO()
-  with pd.ExcelWriter(out_sales_tmpl, engine="openpyxl") as writer:
-    template_sales_df.to_excel(writer, index=False, sheet_name="Verkäufe")
-  
-  st.download_button(
-      label="📥 Excel-Vorlage für Verkaufsbericht herunterladen",
-      data=out_sales_tmpl.getvalue(),
-      file_name="KaDeWe_Verkaufsbericht_Vorlage.xlsx",
-      mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-  )
+    out_sales_tmpl = io.BytesIO()
+    with pd.ExcelWriter(out_sales_tmpl, engine="openpyxl") as writer:
+        template_sales_df.to_excel(writer, index=False, sheet_name="Verkäufe")
+      
+    st.download_button(
+        label="📥 Excel-Vorlage für Verkaufsbericht herunterladen",
+        data=out_sales_tmpl.getvalue(),
+        file_name="KaDeWe_Verkaufsbericht_Vorlage.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
-  st.markdown("---")
-  sales_file = st.file_uploader("Verkaufsbericht auswählen", type=["xlsx", "csv"], key="sales_report_upload_v2")
+    st.markdown("---")
+    sales_file = st.file_uploader("Verkaufsbericht auswählen", type=["xlsx", "csv"], key="sales_report_upload_v2")
 
-  if sales_file is not None:
-    try:
-      if sales_file.name.endswith(".csv"):
-        report_df = pd.read_csv(sales_file)
-      else:
-        report_df = pd.read_excel(sales_file)
+    if sales_file is not None:
+        try:
+            if sales_file.name.endswith(".csv"):
+                report_df = pd.read_csv(sales_file)
+            else:
+                report_df = pd.read_excel(sales_file)
 
-      # Нормализуем названия колонок
-      report_df.columns = [str(c).strip().lower() for c in report_df.columns]
-      st.write("📋 Vorschau des Verkaufsberichts:", report_df.head())
+            # Нормализуем названия колонок
+            report_df.columns = [str(c).strip().lower() for c in report_df.columns]
+            st.write("📋 Vorschau des Verkaufsberichts:", report_df.head())
 
-      if st.button("🚀 Abverkauf buchen & Bestände reduzieren"):
-        items_sold = []
-        
-        def clean_val(val):
-          if pd.isna(val):
-            return ""
-          s = str(val).strip()
-          if s.endswith(".0"):
-            s = s[:-2]
-          return s
-
-        for _, row in report_df.iterrows():
-          art_val = clean_val(row.get("article", row.get("artikelnr", row.get("sku", ""))))
-          sap_val = clean_val(row.get("sap", ""))
-          
-          code_to_use = art_val if art_val else sap_val
-          if not code_to_use:
-            continue
-
-          q_raw = row.get("quantity", row.get("sold_qty", row.get("menge", 0)))
-          try:
-            sold_qty = int(float(str(q_raw).replace(',', '.'))) if not pd.isna(q_raw) else 0
-          except:
-            sold_qty = 0
-
-          if sold_qty > 0:
-            items_sold.append({
-                "code": code_to_use,
-                "sold_qty": sold_qty
-            })
-
-        if is_manager:
-          if supabase is not None:
-            success_count = 0
-            updated_details = []
-            not_found_count = 0
-
-            for item in items_sold:
-              code = item["code"]
-              sold_qty = item["sold_qty"]
+            if st.button("🚀 Abverkauf buchen & Bestände reduzieren"):
+                items_sold = []
               
-              # Ищем сначала по article, затем по sap
-              existing = supabase.table("inventory").select("*").eq("article", code).execute()
-              if not existing or not existing.data:
-                existing = supabase.table("inventory").select("*").eq("sap", code).execute()
+                def clean_val(val):
+                    if pd.isna(val):
+                        return ""
+                    s = str(val).strip()
+                    if s.endswith(".0"):
+                        s = s[:-2]
+                    return s
 
-              if existing and existing.data:
-                item_db = existing.data[0]
-                item_id = item_db["id"]
-                item_name = item_db.get("name", "Unbekannt")
-                curr_q = int(item_db.get("quantity", 0))
-                new_q = max(0, curr_q - sold_qty)
-                
-                res = supabase.table("inventory").update({"quantity": new_q}).eq("id", item_id).execute()
-                if res.data:
-                  success_count += 1
-                  updated_details.append({
-                      "Artikel": item_name,
-                      "Code": code,
-                      "Verkauft": sold_qty,
-                      "Alter Bestand": curr_q,
-                      "Neuer Bestand": new_q
-                  })
-              else:
-                not_found_count += 1
+                for _, row in report_df.iterrows():
+                    art_val = clean_val(row.get("article", row.get("artikelnr", row.get("sku", ""))))
+                    sap_val = clean_val(row.get("sap", ""))
+                  
+                    code_to_use = art_val if art_val else sap_val
+                    if not code_to_use:
+                        continue
 
-            # Красивый блок подтверждения
-            st.success(f"✅ Verkaufsbericht erfolgreich verarbeitet! Bestände für **{success_count}** Artikel aktualisiert.")
-            
-            if updated_details:
-              st.markdown("### 📊 Details zur Bestandsreduzierung:")
-              st.dataframe(pd.DataFrame(updated_details), use_container_width=True)
+                    q_raw = row.get("quantity", row.get("sold_qty", row.get("menge", 0)))
+                    try:
+                        sold_qty = int(float(str(q_raw).replace(',', '.'))) if not pd.isna(q_raw) else 0
+                    except:
+                        sold_qty = 0
 
-            if not_found_count > 0:
-              st.warning(f"⚠ {not_found_count} Positionen aus dem Bericht wurden in der Datenbank nicht gefunden und übersprunken.")
-          else:
-            st.error("Keine Verbindung zu Supabase.")
-        else:
-          payload = {"items": items_sold}
-          request_manager_approval("bulk_sales_report", payload)
+                    if sold_qty > 0:
+                        items_sold.append({
+                            "code": code_to_use,
+                            "sold_qty": sold_qty
+                        })
 
-    except Exception as e:
-      st.error(f"Fehler beim Verarbeiten des Berichts: {e}")
+                if is_manager:
+                    if supabase is not None:
+                        success_count = 0
+                        updated_details = []
+                        not_found_items = []  # Список для неизвестных / ненайденных товаров с их SAP-номерами
+
+                        for item in items_sold:
+                            code = item["code"]
+                            sold_qty = item["sold_qty"]
+                          
+                            # Ищем сначала по article, затем по sap
+                            existing = supabase.table("inventory").select("*").eq("article", code).execute()
+                            if not existing or not existing.data:
+                                existing = supabase.table("inventory").select("*").eq("sap", code).execute()
+
+                            if existing and existing.data:
+                                item_db = existing.data[0]
+                                item_id = item_db["id"]
+                                item_name = item_db.get("name", "Unbekannt")
+                                curr_q = int(item_db.get("quantity", 0))
+                                new_q = max(0, curr_q - sold_qty)
+                              
+                                res = supabase.table("inventory").update({"quantity": new_q}).eq("id", item_id).execute()
+                                if res.data:
+                                    success_count += 1
+                                    updated_details.append({
+                                        "Artikel": item_name,
+                                        "Code": code,
+                                        "Verkauft": sold_qty,
+                                        "Alter Bestand": curr_q,
+                                        "Neuer Bestand": new_q
+                                    })
+                            else:
+                                # Сохраняем ненайденный код (SAP или Article) и проданное количество
+                                not_found_items.append({
+                                    "SAP / Article Code": code,
+                                    "Verkaufte Menge": sold_qty
+                                })
+
+                        # Красивый блок подтверждения
+                        st.success(f"✅ Verkaufsbericht erfolgreich verarbeitet! Bestände für **{success_count}** Artikel aktualisiert.")
+                      
+                        if updated_details:
+                            st.markdown("### 📊 Details zur Bestandsreduzierung:")
+                            st.dataframe(pd.DataFrame(updated_details), use_container_width=True)
+
+                        # Вывод таблицы с неизвестными / ненайденными SAP-номерами
+                        if not_found_items:
+                            st.warning(f"⚠ **{len(not_found_items)}** Positionen aus dem Bericht wurden in der Datenbank nicht gefunden:")
+                            st.dataframe(pd.DataFrame(not_found_items), use_container_width=True)
+                    else:
+                        st.error("Keine Verbindung zu Supabase.")
+                else:
+                    payload = {"items": items_sold}
+                    request_manager_approval("bulk_sales_report", payload)
+
+        except Exception as e:
+            st.error(f"Fehler beim Verarbeiten des Berichts: {e}")
 
 # 6. KATALOG AUS DATEI HOCHLADEN (ВКЛЮЧАЯ 0 ЗНАЧЕНИЯ)
 elif action == "📁 Katalog aus Datei hochladen":
