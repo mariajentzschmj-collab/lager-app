@@ -2381,6 +2381,110 @@ if supabase is not None:
             st.info("Noch keine Umsätze in der Datenbank gespeichert.")
     except Exception as fetch_err:
         st.warning(f"Konnte Historie nicht laden: {fetch_err}")
+        # Сохранение в Supabase (на правильном уровне отступов)
+            if supabase is not None:
+                try:
+                    b_data = brand_revenue_tracking if 'brand_revenue_tracking' in locals() else {}
+                    
+                    payload = {
+                        "date": report_date,
+                        "brutto": float(total_brutto),
+                        "month": report_month,
+                        "brand_data": b_data
+                    }
+                    
+                    existing_day = supabase.table("daily_sales").select("*").eq("date", report_date).execute()
+                    if existing_day and existing_day.data:
+                        supabase.table("daily_sales").update(payload).eq("date", report_date).execute()
+                    else:
+                        supabase.table("daily_sales").insert(payload).execute()
+                        
+                    st.success(f"✅ Umsatz für {report_date} inkl. Marken erfolgreich gespeichert!")
+                except Exception as db_err:
+                    st.warning(f"⚠ DB-Hinweis: {db_err}")
+
+            # Вывод разбивки по брендам на экран
+            if brand_revenue_tracking:
+                st.markdown("**Umsatz nach Marken:**")
+                for brand_name, b_rev in sorted(brand_revenue_tracking.items(), key=lambda x: x[1], reverse=True):
+                    b_net = b_rev / 1.19
+                    st.markdown(f"• *{brand_name}*: **{b_net:,.2f} €** Netto *(Brutto: {b_rev:,.2f} €)*")
+
+    except Exception as e:
+        st.error(f"⚠ Fehler: {e}")
+
+# ==========================================
+# MONATLICHE UMSATZZIELE & SOLL-IST-VERGLEICH
+# ==========================================
+st.markdown("---")
+st.subheader("🎯 Monatsziele & Umsatz-Vergleich")
+
+import datetime
+current_month_str = datetime.date.today().strftime('%Y-%m')
+
+# 1. Получаем текущую цель из базы или даем установить новую
+target_amount = 0.0
+if supabase is not None:
+    try:
+        res_target = supabase.table("monthly_targets").select("target_amount").eq("month", current_month_str).execute()
+        if res_target and res_target.data:
+            target_amount = float(res_target.data[0].get("target_amount", 0.0))
+    except Exception as e:
+        pass
+
+# Поле для ввода/обновления цели на текущий месяц
+col_t1, col_t2 = st.columns([2, 1])
+with col_t1:
+    new_target = st.number_input(
+        f"Umsatzziel für Monat ({current_month_str}) in €:",
+        min_value=0.0,
+        value=target_amount,
+        step=1000.0,
+        key="input_monthly_target"
+    )
+with col_t2:
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("💾 Ziel speichern", key="btn_save_target"):
+        if supabase is not None:
+            try:
+                target_payload = {"month": current_month_str, "target_amount": float(new_target)}
+                supabase.table("monthly_targets").upsert(target_payload).execute()
+                st.success("✅ Ziel erfolgreich gespeichert!")
+                target_amount = float(new_target)
+            except Exception as target_err:
+                st.warning(f"⚠ Fehler beim Speichern des Ziels: {target_err}")
+
+# 2. Считаем фактическую выручку за текущий месяц из таблицы daily_sales
+actual_month_brutto = 0.0
+if supabase is not None:
+    try:
+        res_month_sales = supabase.table("daily_sales").select("brutto").eq("month", current_month_str).execute()
+        if res_month_sales and res_month_sales.data:
+            actual_month_brutto = sum(float(row.get("brutto", 0.0)) for row in res_month_sales.data)
+    except Exception as sum_err:
+        pass
+
+actual_month_netto = actual_month_brutto / 1.19
+
+# 3. Выводим сравнение (План / Факт / Прогресс)
+if target_amount > 0:
+    progress_pct = min(actual_month_brutto / target_amount, 1.0)
+    st.metric(
+        label=f"Gesamt-Umsatz (Brutto) im {current_month_str} vs. Ziel",
+        value=f"{actual_month_brutto:,.2f} €",
+        delta=f"{actual_month_brutto - target_amount:,.2f} € zum Ziel"
+    )
+    st.progress(progress_pct, text=f"Zielerfüllung: {actual_month_brutto / target_amount * 100:.1f}% (Ziel: {target_amount:,.2f} €)")
+else:
+    st.metric(label=f"Gesamt-Umsatz (Brutto) im {current_month_str}", value=f"{actual_month_brutto:,.2f} €")
+    st.info("💡 Bitte legen Sie oben ein Umsatzziel für diesen Monat fest.")
+
+# ------------------------------------------
+# АВТОМАТИЧЕСКИЙ ВЫВОД СОХРАНЕННОЙ ИСТОРИИ ИЗ SUPABASE
+# ------------------------------------------
+st.markdown("---")
+st.markdown("### 📊 Gespeicherte Tagesumsätze (Aus Datenbank)")
+# ... (дальше идет ваш существующий код вывода истории через expander)
         # ==========================================
 # FOOTER / COPYRIGHT
 # ==========================================
