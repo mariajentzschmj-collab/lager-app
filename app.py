@@ -147,7 +147,7 @@ st.markdown("### 🎯 Monatsziele & Zielerreichung")
 # 1. Хранилище целей по месяцам
 if "monthly_targets_db" not in st.session_state:
     st.session_state["monthly_targets_db"] = {
-        "2026-10": {"Iittala": 15750.0, "Royal Copenhagen": 15605.0, "Arabia": 10000.0}
+        "2026-10": {"Iittala": 15750.0, "Royal Copenhagen": 15605.0, "Arabia": 1000.0}
     }
 
 # 2. Выбор периода
