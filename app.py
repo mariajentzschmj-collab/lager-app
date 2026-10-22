@@ -2300,6 +2300,7 @@ if sales_file is not None:
                 report_month = pd.Timestamp.today().strftime('%Y-%m')
 
             # ==========================================
+# ==========================================
 # UMSATZ-TRACKING & MARKEN-VERTEILUNG
 # ==========================================
 st.markdown("---")
