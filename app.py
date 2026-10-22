@@ -139,42 +139,7 @@ def check_authentication():
 
 if not check_authentication():
   st.stop()
-# ==========================================
-# 💾 ОБРАБОТКА И СОХРАНЕНИЕ ВЫРУЧКИ ПО БРЕНДАМ
-# ==========================================
 
-# 1. Заранее инициализируем переменные, чтобы избежать ошибок NameError
-unknown_unbekannt_items = []
-if "brand_revenue_tracking" not in locals():
-    brand_revenue_tracking = {}
-
-# 2. Кнопка сохранения и расчета
-if st.button("💾 Umsatz speichern & nach Marken aufteilen"):
-    try:
-        # Ваша существующая логика сохранения в Supabase / базу данных...
-        # (здесь выполняется ваш стандартный код обработки)
-        
-        # 3. Обновление верхнего блока целей (Ist / Прогресс-бары)
-        if brand_revenue_tracking:
-            for b_name, b_brutto in brand_revenue_tracking.items():
-                netto_val = float(b_brutto) / 1.19
-                
-                # Ищем бренд без учета регистра и лишних пробелов
-                for target_key in st.session_state["current_brand_sales_netto"].keys():
-                    if target_key.strip().lower() == str(b_name).strip().lower():
-                        st.session_state["current_brand_sales_netto"][target_key] = netto_val
-
-        st.success(f"Umsatz für {report_date if 'report_date' in locals() else 'heute'} inkl. Marken erfolgreich gespeichert!")
-
-    except Exception as e:
-        st.error(f"⚠️ Fehler: {e}")
-
-# 4. Вывод результатов по брендам под кнопкой (если данные есть)
-if brand_revenue_tracking:
-    st.markdown("**Umsatz nach Marken:**")
-    for brand_name, b_rev in sorted(brand_revenue_tracking.items(), key=lambda x: x[1], reverse=True):
-        b_net = b_rev / 1.19
-        st.markdown(f"* **{brand_name}**: **{b_net:,.2f} €** Netto *(Brutto: {b_rev:,.2f} €)*")
 # ==========================================
 # DYNAMISCHES INFO-BANNER / AKTIONEN (Aus 'news' Tabelle)
 # ==========================================
@@ -2380,28 +2345,7 @@ if sales_file is not None:
                     st.warning(f"⚠ DB-Hinweis: {db_err}")
 
             # Вывод разбивки по брендам на экран (вне блока ошибки)
-           # Суммируем выручку по брендам
-                brand_revenue_tracking[matched_brand] = brand_revenue_tracking.get(matched_brand, 0.0) + line_price
-
-                if matched_brand == "Unbekannt":
-                    unknown_unbekannt_items.append({
-                        "SAP": s_code if s_code and s_code != "nan" else "-",
-                        "Article": a_code if a_code and a_code != "nan" else "-",
-                        "Barcode": b_code if b_code and b_code != "nan" else "-",
-                        "Brutto (€)": line_price
-                    })
-
-        # 👇 ВОТ СЮДА ВСТАВЛЯЕМ НАШ ФРАГМЕНТ 👇
-        # Обновление данных для верхнего блока целей
-        if brand_revenue_tracking:
-            for b_name, b_brutto in brand_revenue_tracking.items():
-                if b_name in st.session_state["current_brand_sales_netto"]:
-                    netto_val = b_brutto / 1.19
-                    st.session_state["current_brand_sales_netto"][b_name] = netto_val
-        # 👆 --------------------------------- 👆
-
-        # Вывод результатов по брендам ниже...
-        if brand_revenue_tracking:
+            if brand_revenue_tracking:
                 st.markdown("**Umsatz nach Marken:**")
                 for brand_name, b_rev in sorted(brand_revenue_tracking.items(), key=lambda x: x[1], reverse=True):
                     b_net = b_rev / 1.19
