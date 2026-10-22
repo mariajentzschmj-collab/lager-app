@@ -794,128 +794,122 @@ elif action == "📥 Massen-Wareneingang (Zuwachs)":
 
 # 5. AUTO-ABVERKAUF PER BERICHT (МАССОВЫЙ ВЫЧЕТ ПО ОТЧЕТУ О ПРОДАЖАХ — С ШАБЛОНОМ И ОТЧЕТОМ)
 elif action == "📥 Auto-Abverkauf per Bericht":
-    is_manager = st.session_state.get("role") == "manager"
-    st.header("📥 Automatischer Abverkauf per Verkaufsbericht" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
-    st.markdown("Laden Sie einen Verkaufsbericht (Excel/CSV) hoch, der verkaufte Mengen enthält. Die verkauften Mengen werden **automatisch vom Bestand abgezogen**.")
+  is_manager = st.session_state.get("role") == "manager"
+  st.header("📥 Automatischer Abverkauf per Verkaufsbericht" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
+  st.markdown("Laden Sie einen Verkaufsbericht (Excel/CSV) hoch, der verkaufte Mengen enthält. Die verkauften Mengen werden **automatisch vom Bestand abgezogen**.")
 
-    # 1. Кнопка скачивания шаблона Excel для продаж
-    template_sales_df = pd.DataFrame(columns=["article", "sap", "quantity"])
-    template_sales_df.loc[0] = ["4149", "1070438", 2]
+  # 1. Кнопка скачивания шаблона Excel для продаж
+  template_sales_df = pd.DataFrame(columns=["article", "sap", "quantity"])
+  template_sales_df.loc[0] = ["4149", "1070438", 2]
 
-    out_sales_tmpl = io.BytesIO()
-    with pd.ExcelWriter(out_sales_tmpl, engine="openpyxl") as writer:
-        template_sales_df.to_excel(writer, index=False, sheet_name="Verkäufe")
-      
-    st.download_button(
-        label="📥 Excel-Vorlage für Verkaufsbericht herunterladen",
-        data=out_sales_tmpl.getvalue(),
-        file_name="KaDeWe_Verkaufsbericht_Vorlage.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+  out_sales_tmpl = io.BytesIO()
+  with pd.ExcelWriter(out_sales_tmpl, engine="openpyxl") as writer:
+    template_sales_df.to_excel(writer, index=False, sheet_name="Verkäufe")
+  
+  st.download_button(
+      label="📥 Excel-Vorlage für Verkaufsbericht herunterladen",
+      data=out_sales_tmpl.getvalue(),
+      file_name="KaDeWe_Verkaufsbericht_Vorlage.xlsx",
+      mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  )
 
-    st.markdown("---")
-    sales_file = st.file_uploader("Verkaufsbericht auswählen", type=["xlsx", "csv"], key="sales_report_upload_v2")
+  st.markdown("---")
+  sales_file = st.file_uploader("Verkaufsbericht auswählen", type=["xlsx", "csv"], key="sales_report_upload_v2")
 
-    if sales_file is not None:
-        try:
-            if sales_file.name.endswith(".csv"):
-                report_df = pd.read_csv(sales_file)
-            else:
-                report_df = pd.read_excel(sales_file)
+  if sales_file is not None:
+    try:
+      if sales_file.name.endswith(".csv"):
+        report_df = pd.read_csv(sales_file)
+      else:
+        report_df = pd.read_excel(sales_file)
 
-            # Нормализуем названия колонок
-            report_df.columns = [str(c).strip().lower() for c in report_df.columns]
-            st.write("📋 Vorschau des Verkaufsberichts:", report_df.head())
+      # Нормализуем названия колонок
+      report_df.columns = [str(c).strip().lower() for c in report_df.columns]
+      st.write("📋 Vorschau des Verkaufsberichts:", report_df.head())
 
-            if st.button("🚀 Abverkauf buchen & Bestände reduzieren"):
-                items_sold = []
+      if st.button("🚀 Abverkauf buchen & Bestände reduzieren"):
+        items_sold = []
+        
+        def clean_val(val):
+          if pd.isna(val):
+            return ""
+          s = str(val).strip()
+          if s.endswith(".0"):
+            s = s[:-2]
+          return s
+
+        for _, row in report_df.iterrows():
+          art_val = clean_val(row.get("article", row.get("artikelnr", row.get("sku", ""))))
+          sap_val = clean_val(row.get("sap", ""))
+          
+          code_to_use = art_val if art_val else sap_val
+          if not code_to_use:
+            continue
+
+          q_raw = row.get("quantity", row.get("sold_qty", row.get("menge", 0)))
+          try:
+            sold_qty = int(float(str(q_raw).replace(',', '.'))) if not pd.isna(q_raw) else 0
+          except:
+            sold_qty = 0
+
+          if sold_qty > 0:
+            items_sold.append({
+                "code": code_to_use,
+                "sold_qty": sold_qty
+            })
+
+        if is_manager:
+          if supabase is not None:
+            success_count = 0
+            updated_details = []
+            not_found_count = 0
+
+            for item in items_sold:
+              code = item["code"]
+              sold_qty = item["sold_qty"]
               
-                def clean_val(val):
-                    if pd.isna(val):
-                        return ""
-                    s = str(val).strip()
-                    if s.endswith(".0"):
-                        s = s[:-2]
-                    return s
+              # Ищем сначала по article, затем по sap
+              existing = supabase.table("inventory").select("*").eq("article", code).execute()
+              if not existing or not existing.data:
+                existing = supabase.table("inventory").select("*").eq("sap", code).execute()
 
-                for _, row in report_df.iterrows():
-                    art_val = clean_val(row.get("article", row.get("artikelnr", row.get("sku", ""))))
-                    sap_val = clean_val(row.get("sap", ""))
-                  
-                    code_to_use = art_val if art_val else sap_val
-                    if not code_to_use:
-                        continue
+              if existing and existing.data:
+                item_db = existing.data[0]
+                item_id = item_db["id"]
+                item_name = item_db.get("name", "Unbekannt")
+                curr_q = int(item_db.get("quantity", 0))
+                new_q = max(0, curr_q - sold_qty)
+                
+                res = supabase.table("inventory").update({"quantity": new_q}).eq("id", item_id).execute()
+                if res.data:
+                  success_count += 1
+                  updated_details.append({
+                      "Artikel": item_name,
+                      "Code": code,
+                      "Verkauft": sold_qty,
+                      "Alter Bestand": curr_q,
+                      "Neuer Bestand": new_q
+                  })
+              else:
+                not_found_count += 1
 
-                    q_raw = row.get("quantity", row.get("sold_qty", row.get("menge", 0)))
-                    try:
-                        sold_qty = int(float(str(q_raw).replace(',', '.'))) if not pd.isna(q_raw) else 0
-                    except:
-                        sold_qty = 0
+            # Красивый блок подтверждения
+            st.success(f"✅ Verkaufsbericht erfolgreich verarbeitet! Bestände für **{success_count}** Artikel aktualisiert.")
+            
+            if updated_details:
+              st.markdown("### 📊 Details zur Bestandsreduzierung:")
+              st.dataframe(pd.DataFrame(updated_details), use_container_width=True)
 
-                    if sold_qty > 0:
-                        items_sold.append({
-                            "code": code_to_use,
-                            "sold_qty": sold_qty
-                        })
+            if not_found_count > 0:
+              st.warning(f"⚠ {not_found_count} Positionen aus dem Bericht wurden in der Datenbank nicht gefunden und übersprunken.")
+          else:
+            st.error("Keine Verbindung zu Supabase.")
+        else:
+          payload = {"items": items_sold}
+          request_manager_approval("bulk_sales_report", payload)
 
-                if is_manager:
-                    if supabase is not None:
-                        success_count = 0
-                        updated_details = []
-                        not_found_items = []  # Список для неизвестных / ненайденных товаров с их SAP-номерами
-
-                        for item in items_sold:
-                            code = item["code"]
-                            sold_qty = item["sold_qty"]
-                          
-                            # Ищем сначала по article, затем по sap
-                            existing = supabase.table("inventory").select("*").eq("article", code).execute()
-                            if not existing or not existing.data:
-                                existing = supabase.table("inventory").select("*").eq("sap", code).execute()
-
-                            if existing and existing.data:
-                                item_db = existing.data[0]
-                                item_id = item_db["id"]
-                                item_name = item_db.get("name", "Unbekannt")
-                                curr_q = int(item_db.get("quantity", 0))
-                                new_q = max(0, curr_q - sold_qty)
-                              
-                                res = supabase.table("inventory").update({"quantity": new_q}).eq("id", item_id).execute()
-                                if res.data:
-                                    success_count += 1
-                                    updated_details.append({
-                                        "Artikel": item_name,
-                                        "Code": code,
-                                        "Verkauft": sold_qty,
-                                        "Alter Bestand": curr_q,
-                                        "Neuer Bestand": new_q
-                                    })
-                            else:
-                                # Сохраняем ненайденный код (SAP или Article) и проданное количество
-                                not_found_items.append({
-                                    "SAP / Article Code": code,
-                                    "Verkaufte Menge": sold_qty
-                                })
-
-                        # Красивый блок подтверждения
-                        st.success(f"✅ Verkaufsbericht erfolgreich verarbeitet! Bestände für **{success_count}** Artikel aktualisiert.")
-                      
-                        if updated_details:
-                            st.markdown("### 📊 Details zur Bestandsreduzierung:")
-                            st.dataframe(pd.DataFrame(updated_details), use_container_width=True)
-
-                        # Вывод таблицы с неизвестными / ненайденными SAP-номерами
-                        if not_found_items:
-                            st.warning(f"⚠ **{len(not_found_items)}** Positionen aus dem Bericht wurden in der Datenbank nicht gefunden:")
-                            st.dataframe(pd.DataFrame(not_found_items), use_container_width=True)
-                    else:
-                        st.error("Keine Verbindung zu Supabase.")
-                else:
-                    payload = {"items": items_sold}
-                    request_manager_approval("bulk_sales_report", payload)
-
-        except Exception as e:
-            st.error(f"Fehler beim Verarbeiten des Berichts: {e}")
+    except Exception as e:
+      st.error(f"Fehler beim Verarbeiten des Berichts: {e}")
 
 # 6. KATALOG AUS DATEI HOCHLADEN (ВКЛЮЧАЯ 0 ЗНАЧЕНИЯ)
 elif action == "📁 Katalog aus Datei hochladen":
@@ -2249,6 +2243,8 @@ try:
                     use_container_width=True
                 )
 
+except Exception as e:
+    st.error(f"❌ Fehler beim Laden der Lageranalyse: {e}")
 
 # ==========================================
 # UMSATZ-TRACKING & MARKEN-VERTEILUNG
@@ -2297,105 +2293,66 @@ if sales_file is not None:
                 report_date = pd.Timestamp.today().strftime('%Y-%m-%d')
                 report_month = pd.Timestamp.today().strftime('%Y-%m')
 
-         # ==========================================
-# UMSATZ-TRACKING & MARKEN-VERTEILUNG
-# ==========================================
-st.markdown("---")
-st.subheader("📊 Umsatz-Tracking nach Marken")
-
-sales_file = st.file_uploader(
-    "Verkaufsbericht hochladen (Excel / CSV)", type=["xlsx", "csv"], key="sales_report_upload"
-)
-
-if sales_file is not None:
-    try:
-        import pandas as pd
-
-        if sales_file.name.endswith(".csv"):
-            sales_report_df = pd.read_csv(sales_file)
-        else:
-            sales_report_df = pd.read_excel(sales_file)
-
-        # Нормализуем названия колонок
-        sales_report_df.columns = [str(c).strip().lower() for c in sales_report_df.columns]
-        st.write("📋 Vorschau des Berichts:", sales_report_df.head())
-
-        # Проверка и очистка цен
-        if "cleaned_price" not in sales_report_df.columns:
-            price_col = next((c for c in sales_report_df.columns if "preis" in c or "brutto" in c or "umsatz" in c or "betrag" in c or "total" in c), None)
-            if price_col:
-                sales_report_df["cleaned_price"] = pd.to_numeric(sales_report_df[price_col].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
-            else:
-                sales_report_df["cleaned_price"] = 0.0
-
-        total_brutto = sales_report_df['cleaned_price'].sum()
-
-        # Определение даты отчета
-        date_col = next((c for c in sales_report_df.columns if "date" in c or "datum" in c or "tag" in c), None)
-        if date_col:
-            sales_report_df[date_col] = pd.to_datetime(sales_report_df[date_col], errors='coerce')
-            valid_dates = sales_report_df[date_col].dropna()
-            if not valid_dates.empty:
-                report_date = valid_dates.iloc[0].strftime('%Y-%m-%d')
-                report_month = valid_dates.iloc[0].strftime('%Y-%m')
-            else:
-                report_date = datetime.date.today().strftime('%Y-%m-%d')
-                report_month = datetime.date.today().strftime('%Y-%m')
-        else:
-            report_date = datetime.date.today().strftime('%Y-%m-%d')
-            report_month = datetime.date.today().strftime('%Y-%m')
-
-        # Автоматическое сопоставление с базой inventory и сбор неизвестных
-        brand_revenue_tracking = {}
-        unknown_unbekannt_items = []
-
-        if supabase is not None:
-            for _, row in sales_report_df.iterrows():
-                b_code = str(row.get("barcode", row.get("gtin", ""))).strip()
-                a_code = str(row.get("article", row.get("artikelnr", ""))).strip()
-                s_code = str(row.get("sap", "")).strip()
-                
-                line_price = float(row.get("cleaned_price", 0))
-                matched_brand = "Unbekannt"
-                
-                code_to_check = a_code if a_code and a_code != "nan" else s_code
-                if code_to_check and code_to_check != "nan":
-                    inv_res = supabase.table("inventory").select("brand").eq("article", code_to_check).execute()
-                    if not inv_res or not inv_res.data:
-                        inv_res = supabase.table("inventory").select("brand").eq("sap", code_to_check).execute()
+            # Автоматическое сопоставление с базой inventory
+            brand_revenue_tracking = {}
+            if supabase is not None:
+                for _, row in sales_report_df.iterrows():
+                    b_code = str(row.get("barcode", row.get("gtin", row.get("ean", "")))).strip()
+                    a_code = str(row.get("article", row.get("artikelnr", row.get("sku", "")))).strip()
+                    s_code = str(row.get("sap", "")).strip()
                     
+                    line_price = float(row.get("cleaned_price", 0))
+                    matched_brand = "Unbekannt"
+
+                    inv_res = None
+                    if b_code and b_code != "nan":
+                        inv_res = supabase.table("inventory").select("brand").eq("barcode", b_code).execute()
+                    if (not inv_res or not inv_res.data) and a_code and a_code != "nan":
+                        inv_res = supabase.table("inventory").select("brand").eq("article", a_code).execute()
+                    if (not inv_res or not inv_res.data) and s_code and s_code != "nan":
+                        inv_res = supabase.table("inventory").select("brand").eq("sap", s_code).execute()
+
                     if inv_res and inv_res.data:
-                        db_brand = inv_res.data[0].get("brand")
-                        if db_brand:
-                            matched_brand = db_brand
+                        matched_brand = inv_res.data[0].get("brand", "Unbekannt")
 
-                # Суммируем выручку по брендам
-                brand_revenue_tracking[matched_brand] = brand_revenue_tracking.get(matched_brand, 0.0) + line_price
+                    brand_revenue_tracking[matched_brand] = brand_revenue_tracking.get(matched_brand, 0.0) + line_price
 
-                # Если бренд не распознался, фиксируем детали
-                if matched_brand == "Unbekannt":
-                    unknown_unbekannt_items.append({
-                        "Article": a_code if a_code and a_code != "nan" else "-",
-                        "SAP": s_code if s_code and s_code != "nan" else "-",
-                        "Barcode": b_code if b_code and b_code != "nan" else "-",
-                        "Brutto (€)": line_price
-                    })
-
-        # Вывод результатов по брендам
-        if brand_revenue_tracking:
-            st.markdown("**Umsatz nach Marken:**")
-            for brand_name, b_rev in sorted(brand_revenue_tracking.items(), key=lambda x: x[1], reverse=True):
-                b_net = b_rev / 1.19
-                st.markdown(f"• *{brand_name}*: **{b_net:,.2f} €** Netto *(Brutto: {b_rev:,.2f} €)*")
-
-        # Если есть неизвестные позиции, выводим таблицу с номерами
-        if unknown_unbekannt_items:
+            total_netto = total_brutto / 1.19
             st.markdown("---")
-            with st.expander("🔍 Details zu nicht zugeordneten Artikeln (Unbekannt - SAP/Artikelnr. anzeigen):"):
-                st.dataframe(pd.DataFrame(unknown_unbekannt_items), use_container_width=True)
+            st.metric(label="Brutto (Gesamt)", value=f"{total_brutto:,.2f} €")
+            st.metric(label="Netto (exkl. 19% MwSt.)", value=f"{total_netto:,.2f} €")
+
+            # Сохранение в Supabase (на правильном уровне отступов)
+            if supabase is not None:
+                try:
+                    b_data = brand_revenue_tracking if 'brand_revenue_tracking' in locals() else {}
+                    
+                    payload = {
+                        "date": report_date,
+                        "brutto": float(total_brutto),
+                        "month": report_month,
+                        "brand_data": b_data
+                    }
+                    
+                    existing_day = supabase.table("daily_sales").select("*").eq("date", report_date).execute()
+                    if existing_day and existing_day.data:
+                        supabase.table("daily_sales").update(payload).eq("date", report_date).execute()
+                    else:
+                        supabase.table("daily_sales").insert(payload).execute()
+                        
+                    st.success(f"✅ Umsatz für {report_date} inkl. Marken erfolgreich gespeichert!")
+                except Exception as db_err:
+                    st.warning(f"⚠ DB-Hinweis: {db_err}")
+
+            # Вывод разбивки по брендам на экран (вне блока ошибки)
+            if brand_revenue_tracking:
+                st.markdown("**Umsatz nach Marken:**")
+                for brand_name, b_rev in sorted(brand_revenue_tracking.items(), key=lambda x: x[1], reverse=True):
+                    b_net = b_rev / 1.19
+                    st.markdown(f"• *{brand_name}*: **{b_net:,.2f} €** Netto *(Brutto: {b_rev:,.2f} €)*")
 
     except Exception as e:
-        st.error(f"Fehler beim Laden der Lageranalyse: {e}")
+        st.error(f"⚠ Fehler: {e}")
 # ------------------------------------------
 # АВТОМАТИЧЕСКИЙ ВЫВОД СОХРАНЕННОЙ ИСТОРИИ ИЗ SUPABASE (С БРЕНДАМИ)
 # ------------------------------------------
