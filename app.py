@@ -139,7 +139,58 @@ def check_authentication():
 
 if not check_authentication():
   st.stop()
+# ==========================================
+# 🎯 ЗАКРЕПЛЕННЫЙ ВЕРХНИЙ БЛОК: ЦЕЛИ И ПРОГРЕСС
+# ==========================================
+st.markdown("### 🎯 Monatsziele & Zielerreichung")
 
+# 1. Инициализация целей по брендам в session_state
+if "brand_monthly_targets" not in st.session_state:
+    st.session_state["brand_monthly_targets"] = {
+        "Iittala": 15000.0,
+        "Royal Copenhagen": 12000.0,
+        "Arabia": 8000.0
+    }
+
+# 2. Инициализация фактических продаж (нетто) по брендам
+if "current_brand_sales_netto" not in st.session_state:
+    st.session_state["current_brand_sales_netto"] = {
+        "Iittala": 0.0,
+        "Royal Copenhagen": 0.0,
+        "Arabia": 0.0
+    }
+
+# 3. Настройка целей внутри аккуратного экспандера (значения не сбрасываются)
+with st.expander("⚙️ Monatsziele bearbeiten (Netto €)"):
+    for brand_key in list(st.session_state["brand_monthly_targets"].keys()):
+        input_key = f"target_input_{brand_key.lower().replace(' ', '_')}"
+        
+        if input_key not in st.session_state:
+            st.session_state[input_key] = float(st.session_state["brand_monthly_targets"][brand_key])
+            
+        new_val = st.number_input(
+            f"Ziel für {brand_key} (€ Netto)",
+            min_value=0.0,
+            step=500.0,
+            key=input_key
+        )
+        st.session_state["brand_monthly_targets"][brand_key] = new_val
+
+# 4. Визуализация прогресса в колонках по каждому бренду
+targets_dict = st.session_state["brand_monthly_targets"]
+cols = st.columns(len(targets_dict))
+
+for idx, (brand_name, target_val) in enumerate(targets_dict.items()):
+    actual_netto = st.session_state["current_brand_sales_netto"].get(brand_name, 0.0)
+    pct = (actual_netto / target_val) * 100 if target_val > 0 else 0.0
+    
+    with cols[idx]:
+        st.markdown(f"**{brand_name}**")
+        st.caption(f"Ist: **{actual_netto:,.2f} €** / Ziel: **{target_val:,.2f} €**")
+        st.progress(min(pct / 100.0, 1.0))
+        st.write(f"**{pct:.1f}%**")
+
+st.markdown("---")
 # ==========================================
 # DYNAMISCHES INFO-BANNER / AKTIONEN (Aus 'news' Tabelle)
 # ==========================================
