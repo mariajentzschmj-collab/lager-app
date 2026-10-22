@@ -12,6 +12,7 @@ import requests
 import streamlit as st
 import streamlit.components.v1 as components
 from supabase import create_client
+import datetime
 
 # Seitanordnung
 st.set_page_config(
