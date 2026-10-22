@@ -2299,8 +2299,7 @@ if sales_file is not None:
                 report_date = pd.Timestamp.today().strftime('%Y-%m-%d')
                 report_month = pd.Timestamp.today().strftime('%Y-%m')
 
-            # ==========================================
-# ==========================================
+         # ==========================================
 # UMSATZ-TRACKING & MARKEN-VERTEILUNG
 # ==========================================
 st.markdown("---")
@@ -2350,7 +2349,7 @@ if sales_file is not None:
 
         # Автоматическое сопоставление с базой inventory и сбор неизвестных
         brand_revenue_tracking = {}
-        unknown_unbekannt_items = []  # Список для сбора неизвестных позиций
+        unknown_unbekannt_items = []
 
         if supabase is not None:
             for _, row in sales_report_df.iterrows():
@@ -2375,7 +2374,7 @@ if sales_file is not None:
                 # Суммируем выручку по брендам
                 brand_revenue_tracking[matched_brand] = brand_revenue_tracking.get(matched_brand, 0.0) + line_price
 
-                # Если бренд не распознался, фиксируем его детали
+                # Если бренд не распознался, фиксируем детали
                 if matched_brand == "Unbekannt":
                     unknown_unbekannt_items.append({
                         "Article": a_code if a_code and a_code != "nan" else "-",
@@ -2391,7 +2390,7 @@ if sales_file is not None:
                 b_net = b_rev / 1.19
                 st.markdown(f"• *{brand_name}*: **{b_net:,.2f} €** Netto *(Brutto: {b_rev:,.2f} €)*")
 
-        # Если есть неизвестные позиции, выводим разворачиваемую таблицу с номерами
+        # Если есть неизвестные позиции, выводим таблицу с номерами
         if unknown_unbekannt_items:
             st.markdown("---")
             with st.expander("🔍 Details zu nicht zugeordneten Artikeln (Unbekannt - SAP/Artikelnr. anzeigen):"):
