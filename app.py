@@ -2394,7 +2394,26 @@ if sales_file is not None:
                     st.warning(f"⚠ DB-Hinweis: {db_err}")
 
             # Вывод разбивки по брендам на экран (вне блока ошибки)
-            if brand_revenue_tracking:
+           # Суммируем выручку по брендам
+                brand_revenue_tracking[matched_brand] = brand_revenue_tracking.get(matched_brand, 0.0) + line_price
+
+                if matched_brand == "Unbekannt":
+                    unknown_unbekannt_items.append({
+                        "SAP": s_code if s_code and s_code != "nan" else "-",
+                        "Article": a_code if a_code and a_code != "nan" else "-",
+                        "Barcode": b_code if b_code and b_code != "nan" else "-",
+                        "Brutto (€)": line_price
+                    })
+
+        # 👇 ВОТ СЮДА ВСТАВЛЯЕМ НАШ ФРАГМЕНТ 👇
+        if brand_revenue_tracking:
+            for b_name, b_brutto in brand_revenue_tracking.items():
+                if b_name in st.session_state["current_brand_sales_netto"]:
+                    st.session_state["current_brand_sales_netto"][b_name] = b_brutto / 1.19
+        # 👆 --------------------------------- 👆
+
+        # Вывод результатов по брендам ниже...
+        if brand_revenue_tracking:
                 st.markdown("**Umsatz nach Marken:**")
                 for brand_name, b_rev in sorted(brand_revenue_tracking.items(), key=lambda x: x[1], reverse=True):
                     b_net = b_rev / 1.19
