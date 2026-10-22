@@ -2249,8 +2249,6 @@ try:
                     use_container_width=True
                 )
 
-except Exception as e:
-    st.error(f"❌ Fehler beim Laden der Lageranalyse: {e}")
 
 # ==========================================
 # UMSATZ-TRACKING & MARKEN-VERTEILUNG
