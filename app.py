@@ -2407,10 +2407,12 @@ if sales_file is not None:
                     })
 
         # 👇 ВОТ СЮДА ВСТАВЛЯЕМ НАШ ФРАГМЕНТ 👇
+        # Обновление данных для верхнего блока целей
         if brand_revenue_tracking:
             for b_name, b_brutto in brand_revenue_tracking.items():
                 if b_name in st.session_state["current_brand_sales_netto"]:
-                    st.session_state["current_brand_sales_netto"][b_name] = b_brutto / 1.19
+                    netto_val = b_brutto / 1.19
+                    st.session_state["current_brand_sales_netto"][b_name] = netto_val
         # 👆 --------------------------------- 👆
 
         # Вывод результатов по брендам ниже...
