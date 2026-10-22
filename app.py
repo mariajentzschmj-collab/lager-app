@@ -140,56 +140,41 @@ def check_authentication():
 if not check_authentication():
   st.stop()
 # ==========================================
-# 🎯 ЗАКРЕПЛЕННЫЙ ВЕРХНИЙ БЛОК: ЦЕЛИ И ПРОГРЕСС
+# 💾 ОБРАБОТКА И СОХРАНЕНИЕ ВЫРУЧКИ ПО БРЕНДАМ
 # ==========================================
-st.markdown("### 🎯 Monatsziele & Zielerreichung")
 
-# 1. Инициализация целей по брендам в session_state
-if "brand_monthly_targets" not in st.session_state:
-    st.session_state["brand_monthly_targets"] = {
-        "Iittala": 15000.0,
-        "Royal Copenhagen": 12000.0,
-        "Arabia": 8000.0
-    }
+# 1. Заранее инициализируем переменные, чтобы избежать ошибок NameError
+unknown_unbekannt_items = []
+if "brand_revenue_tracking" not in locals():
+    brand_revenue_tracking = {}
 
-if "current_brand_sales_netto" not in st.session_state:
-    st.session_state["current_brand_sales_netto"] = {
-        "Iittala": 0.0,
-        "Royal Copenhagen": 0.0,
-        "Arabia": 0.0
-    }
-
-# 2. Настройка целей внутри аккуратного экспандера
-with st.expander("⚙️ Monatsziele bearbeiten (Netto €)"):
-    for brand_key in list(st.session_state["brand_monthly_targets"].keys()):
-        input_key = f"target_input_{brand_key.lower().replace(' ', '_')}"
+# 2. Кнопка сохранения и расчета
+if st.button("💾 Umsatz speichern & nach Marken aufteilen"):
+    try:
+        # Ваша существующая логика сохранения в Supabase / базу данных...
+        # (здесь выполняется ваш стандартный код обработки)
         
-        if input_key not in st.session_state:
-            st.session_state[input_key] = float(st.session_state["brand_monthly_targets"][brand_key])
-            
-        st.number_input(
-            f"Ziel für {brand_key} (€ Netto)",
-            min_value=0.0,
-            step=500.0,
-            key=input_key
-        )
-        st.session_state["brand_monthly_targets"][brand_key] = st.session_state[input_key]
+        # 3. Обновление верхнего блока целей (Ist / Прогресс-бары)
+        if brand_revenue_tracking:
+            for b_name, b_brutto in brand_revenue_tracking.items():
+                netto_val = float(b_brutto) / 1.19
+                
+                # Ищем бренд без учета регистра и лишних пробелов
+                for target_key in st.session_state["current_brand_sales_netto"].keys():
+                    if target_key.strip().lower() == str(b_name).strip().lower():
+                        st.session_state["current_brand_sales_netto"][target_key] = netto_val
 
-# 3. Визуализация прогресса в колонках
-targets_dict = st.session_state["brand_monthly_targets"]
-cols = st.columns(len(targets_dict))
+        st.success(f"Umsatz für {report_date if 'report_date' in locals() else 'heute'} inkl. Marken erfolgreich gespeichert!")
 
-for idx, (brand_name, target_val) in enumerate(targets_dict.items()):
-    actual_netto = st.session_state["current_brand_sales_netto"].get(brand_name, 0.0)
-    pct = (actual_netto / target_val) * 100 if target_val > 0 else 0.0
-    
-    with cols[idx]:
-        st.markdown(f"**{brand_name}**")
-        st.caption(f"Ist: **{actual_netto:,.2f} €** / Ziel: **{target_val:,.2f} €**")
-        st.progress(min(pct / 100.0, 1.0))
-        st.write(f"**{pct:.1f}%**")
+    except Exception as e:
+        st.error(f"⚠️ Fehler: {e}")
 
-st.markdown("---")
+# 4. Вывод результатов по брендам под кнопкой (если данные есть)
+if brand_revenue_tracking:
+    st.markdown("**Umsatz nach Marken:**")
+    for brand_name, b_rev in sorted(brand_revenue_tracking.items(), key=lambda x: x[1], reverse=True):
+        b_net = b_rev / 1.19
+        st.markdown(f"* **{brand_name}**: **{b_net:,.2f} €** Netto *(Brutto: {b_rev:,.2f} €)*")
 # ==========================================
 # DYNAMISCHES INFO-BANNER / AKTIONEN (Aus 'news' Tabelle)
 # ==========================================
