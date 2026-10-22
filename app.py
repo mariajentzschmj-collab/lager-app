@@ -140,11 +140,11 @@ def check_authentication():
 if not check_authentication():
   st.stop()
 # ==========================================
-# 🎯 ЗАКРЕПЛЕННЫЙ ВЕРХНИЙ БЛОК: ЦЕЛИ И ПРОГРЕСС
+# 🎯 УНИВЕРСАЛЬНЫЙ БЛОК: ЦЕЛИ И ПРОГРЕСС
 # ==========================================
 st.markdown("### 🎯 Monatsziele & Zielerreichung")
 
-# 1. Инициализация целей по брендам в session_state
+# 1. Надежная инициализация целей по брендам (сохраняется в памяти сессии)
 if "brand_monthly_targets" not in st.session_state:
     st.session_state["brand_monthly_targets"] = {
         "Iittala": 15000.0,
@@ -152,7 +152,7 @@ if "brand_monthly_targets" not in st.session_state:
         "Arabia": 8000.0
     }
 
-# 2. Инициализация фактических продаж (нетто) по брендам
+# 2. Надежная инициализация фактических продаж (Ist Netto), чтобы они не обнулялись
 if "current_brand_sales_netto" not in st.session_state:
     st.session_state["current_brand_sales_netto"] = {
         "Iittala": 0.0,
@@ -160,7 +160,7 @@ if "current_brand_sales_netto" not in st.session_state:
         "Arabia": 0.0
     }
 
-# 3. Настройка целей внутри аккуратного экспандера (значения не сбрасываются)
+# 3. Настройка целей через экспандер (значения фиксируются и не пропадают)
 with st.expander("⚙️ Monatsziele bearbeiten (Netto €)"):
     for brand_key in list(st.session_state["brand_monthly_targets"].keys()):
         input_key = f"target_input_{brand_key.lower().replace(' ', '_')}"
@@ -168,15 +168,17 @@ with st.expander("⚙️ Monatsziele bearbeiten (Netto €)"):
         if input_key not in st.session_state:
             st.session_state[input_key] = float(st.session_state["brand_monthly_targets"][brand_key])
             
-        new_val = st.number_input(
+        # Поле ввода связано напрямую с session_state через key
+        st.number_input(
             f"Ziel für {brand_key} (€ Netto)",
             min_value=0.0,
             step=500.0,
             key=input_key
         )
-        st.session_state["brand_monthly_targets"][brand_key] = new_val
+        # Сохраняем введенное значение в общие цели
+        st.session_state["brand_monthly_targets"][brand_key] = st.session_state[input_key]
 
-# 4. Визуализация прогресса в колонках по каждому бренду
+# 4. Расчет выполнения и визуализация прогресса по брендам
 targets_dict = st.session_state["brand_monthly_targets"]
 cols = st.columns(len(targets_dict))
 
@@ -2394,7 +2396,15 @@ if sales_file is not None:
                     st.success(f"✅ Umsatz für {report_date} inkl. Marken erfolgreich gespeichert!")
                 except Exception as db_err:
                     st.warning(f"⚠ DB-Hinweis: {db_err}")
-
+                    
+                # Сохраняем и запоминаем фактические продажи для верхнего блока
+                if 'brand_revenue_tracking' in locals() and brand_revenue_tracking:
+                    for b_name, b_brutto in brand_revenue_tracking.items():
+                        netto_val = float(b_brutto) / 1.19
+                        for target_key in st.session_state["current_brand_sales_netto"].keys():
+                            if target_key.strip().lower() == str(b_name).strip().lower():
+                                st.session_state["current_brand_sales_netto"][target_key] = netto_val
+                                
             # Вывод разбивки по брендам на экран (вне блока ошибки)
             if brand_revenue_tracking:
                 st.markdown("**Umsatz nach Marken:**")
