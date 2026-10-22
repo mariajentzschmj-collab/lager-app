@@ -140,17 +140,17 @@ def check_authentication():
 if not check_authentication():
   st.stop()
 # ==========================================
-# 🎯 ЗАКРЕПЛЕННЫЙ ВЕРХНИЙ БЛОК: ЦЕЛИ И АВТО-РАСЧЕТ ИЗ СУПАБЕЙЗ
+# 🎯 ЗАКРЕПЛЕННЫЙ ВЕРХНИЙ БЛОК: ЦЕЛИ И АВТО-СУММИРОВАНИЕ ИЗ БАЗЫ
 # ==========================================
 st.markdown("### 🎯 Monatsziele & Zielerreichung")
 
-# 1. Хранилище целей по месяцам в памяти сессии
+# 1. Хранилище целей по месяцам
 if "monthly_targets_db" not in st.session_state:
     st.session_state["monthly_targets_db"] = {
         "2026-10": {"Iittala": 15750.0, "Royal Copenhagen": 15605.0, "Arabia": 10000.0}
     }
 
-# 2. Выбор или добавление месяца
+# 2. Выбор периода
 col_m1, col_m2 = st.columns([2, 1])
 with col_m1:
     available_months = sorted(list(st.session_state["monthly_targets_db"].keys()), reverse=True)
@@ -166,7 +166,7 @@ with col_m2:
 
 current_targets = st.session_state["monthly_targets_db"][selected_month]
 
-# 3. Форма ввода целей
+# 3. Ручной ввод целей на немецком
 with st.expander(f"⚙️ Monatsziele manuell bearbeiten ({selected_month})"):
     st.info("Geben Sie die Monatsziele in Euro (Netto) für jede Marke ein:")
     
@@ -188,25 +188,32 @@ with st.expander(f"⚙️ Monatsziele manuell bearbeiten ({selected_month})"):
         st.success(f"Ziele für {selected_month} erfolgreich gespeichert!")
         st.rerun()
 
-# 4. АВТОМАТИЧЕСКАЯ ЗАГРУЗКА ФАКТИЧЕСКИХ ПРОДАЖ (IST NETTO) ИЗ BAZY SUPABASE
+# 4. РАСЧЕТ И СУММИРОВАНИЕ ПРОДАЖ ИЗ БАЗЫ DART/SUPABASE ЗА ВЕСЬ МЕСЯЦ
 actual_sales_netto = {"Iittala": 0.0, "Royal Copenhagen": 0.0, "Arabia": 0.0}
 
 try:
-    # Запрашиваем все данные за выбранный месяц из таблицы daily_sales
-    response = supabase.table("daily_sales").select("*").gte("date", f"{selected_month}-01").lte("date", f"{selected_month}-31").execute()
-    if response and response.data:
-        for row in response.data:
-            # Считываем сохраненные бренды из базы
-            for b_name in actual_sales_netto.keys():
-                # Ищем брутто выручку в записи базы
-                b_val_brutto = row.get(b_name, 0.0) or row.get(b_name.lower(), 0.0) or 0.0
-                actual_sales_netto[b_name] += (float(b_val_brutto) / 1.19)
+    if supabase is not None:
+        # Получаем все записи за выбранный месяц
+        res = supabase.table("daily_sales").select("*").gte("date", f"{selected_month}-01").lte("date", f"{selected_month}-31").execute()
+        if res and res.data:
+            for row in res.data:
+                # Читаем данные из brand_data (JSON)
+                b_data = row.get("brand_data") or {}
+                if isinstance(b_data, dict):
+                    for b_name, b_brutto in b_data.items():
+                        for target_k in actual_sales_netto.keys():
+                            if target_k.lower() in str(b_name).lower():
+                                actual_sales_netto[target_k] += (float(b_brutto) / 1.19)
 except Exception:
-    # Если за сессию загружен отчет локально — используем данные из session_state
-    if "current_brand_sales_netto" in st.session_state:
-        actual_sales_netto = st.session_state["current_brand_sales_netto"]
+    pass
 
-# 5. Вывод целей и автоматического расчета выполнения
+# Если в этой сессии сохранен новый день, который еще не перечитался — учитываем его
+if "current_brand_sales_netto" in st.session_state:
+    for k, v in st.session_state["current_brand_sales_netto"].items():
+        if v > 0 and actual_sales_netto[k] == 0.0:
+            actual_sales_netto[k] = v
+
+# 5. Отображение прогресса
 active_targets = st.session_state["monthly_targets_db"][selected_month]
 cols = st.columns(len(active_targets))
 
