@@ -140,19 +140,17 @@ def check_authentication():
 if not check_authentication():
   st.stop()
 # ==========================================
-# 🎯 УНИВЕРСАЛЬНЫЙ БЛОК: ЦЕЛИ И ПРОГРЕСС
+# 🎯 УНИВЕРСАЛЬНЫЙ БЛОК: РУЧНОЙ ВВОД ЦЕЛЕЙ И ПРОГРЕСС
 # ==========================================
 st.markdown("### 🎯 Monatsziele & Zielerreichung")
 
-# 1. Надежная инициализация целей по брендам (сохраняется в памяти сессии)
-if "brand_monthly_targets" not in st.session_state:
-    st.session_state["brand_monthly_targets"] = {
-        "Iittala": 15000.0,
-        "Royal Copenhagen": 12000.0,
-        "Arabia": 8000.0
+# 1. Хранилище целей по месяцам в памяти сессии
+if "monthly_targets_db" not in st.session_state:
+    st.session_state["monthly_targets_db"] = {
+        "2026-10": {"Iittala": 15750.0, "Royal Copenhagen": 15605.0, "Arabia": 10000.0}
     }
 
-# 2. Надежная инициализация фактических продаж (Ist Netto), чтобы они не обнулялись
+# 2. Инициализация фактических продаж (Ist Netto)
 if "current_brand_sales_netto" not in st.session_state:
     st.session_state["current_brand_sales_netto"] = {
         "Iittala": 0.0,
@@ -160,29 +158,53 @@ if "current_brand_sales_netto" not in st.session_state:
         "Arabia": 0.0
     }
 
-# 3. Настройка целей через экспандер (значения фиксируются и не пропадают)
-with st.expander("⚙️ Monatsziele bearbeiten (Netto €)"):
-    for brand_key in list(st.session_state["brand_monthly_targets"].keys()):
-        input_key = f"target_input_{brand_key.lower().replace(' ', '_')}"
+# 3. Выбор или добавление месяца для ручного ввода целей
+col_m1, col_m2 = st.columns([2, 1])
+with col_m1:
+    available_months = sorted(list(st.session_state["monthly_targets_db"].keys()), reverse=True)
+    selected_month = st.selectbox("📅 Период / Месяц для целей:", available_months, index=0)
+
+with col_m2:
+    st.write("")
+    # Кнопка для добавления нового месяца, если нужно
+    if st.button("➕ Новый месяц"):
+        new_m_key = "2026-11" # Можно изменить по умолчанию
+        if new_m_key not in st.session_state["monthly_targets_db"]:
+            st.session_state["monthly_targets_db"][new_m_key] = {"Iittala": 0.0, "Royal Copenhagen": 0.0, "Arabia": 0.0}
+            st.rerun()
+
+# Получаем текущие цели выбранного месяца
+current_targets = st.session_state["monthly_targets_db"][selected_month]
+
+# 4. Удобный экспандер для ручного внесения и сохранения целей
+with st.expander(f"⚙️ Внести / Изменить цели вручную для ({selected_month})"):
+    st.info("Введите полученные данные целей в евро (Netto) для каждого бренда:")
+    
+    updated_targets = {}
+    for brand_key in ["Iittala", "Royal Copenhagen", "Arabia"]:
+        current_val = float(current_targets.get(brand_key, 0.0))
         
-        if input_key not in st.session_state:
-            st.session_state[input_key] = float(st.session_state["brand_monthly_targets"][brand_key])
-            
-        # Поле ввода связано напрямую с session_state через key
-        st.number_input(
-            f"Ziel für {brand_key} (€ Netto)",
+        # Поле ручного ввода с сохранением введённого значения
+        val = st.number_input(
+            f"Цель для {brand_key} (€ Netto)",
             min_value=0.0,
-            step=500.0,
-            key=input_key
+            value=current_val,
+            step=100.0,
+            key=f"manual_target_{selected_month}_{brand_key}"
         )
-        # Сохраняем введенное значение в общие цели
-        st.session_state["brand_monthly_targets"][brand_key] = st.session_state[input_key]
+        updated_targets[brand_key] = val
+    
+    # Кнопка сохранения введенных вручную целей
+    if st.button("💾 Сохранить цели для этого месяца"):
+        st.session_state["monthly_targets_db"][selected_month] = updated_targets
+        st.success(f"Цели на {selected_month} успешно сохранены!")
+        st.rerun()
 
-# 4. Расчет выполнения и визуализация прогресса по брендам
-targets_dict = st.session_state["brand_monthly_targets"]
-cols = st.columns(len(targets_dict))
+# 5. Расчет выполнения и визуализация прогресса по брендам
+active_targets = st.session_state["monthly_targets_db"][selected_month]
+cols = st.columns(len(active_targets))
 
-for idx, (brand_name, target_val) in enumerate(targets_dict.items()):
+for idx, (brand_name, target_val) in enumerate(active_targets.items()):
     actual_netto = st.session_state["current_brand_sales_netto"].get(brand_name, 0.0)
     pct = (actual_netto / target_val) * 100 if target_val > 0 else 0.0
     
