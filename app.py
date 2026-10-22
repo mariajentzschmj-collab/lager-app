@@ -2250,10 +2250,10 @@ except Exception as e:
 # UMSATZ-TRACKING & MARKEN-VERTEILUNG
 # ==========================================
 st.markdown("---")
-st.subheader("💶 Umsatz-Tracking nach Marken")
+st.subheader("📊 Umsatz-Tracking nach Marken")
 
 sales_file = st.file_uploader(
-    "Verkaufsbericht hochladen (Excel / CSV)", type=["xlsx", "csv"], key="sales_report_clean"
+    "Verkaufsbericht hochladen (Excel / CSV)", type=["xlsx", "csv"], key="sales_report_upload"
 )
 
 if sales_file is not None:
@@ -2265,94 +2265,87 @@ if sales_file is not None:
         else:
             sales_report_df = pd.read_excel(sales_file)
 
+        # Нормализуем названия колонок
         sales_report_df.columns = [str(c).strip().lower() for c in sales_report_df.columns]
-        st.success("✅ Bericht erfolgreich geladen!")
+        st.write("📋 Vorschau des Berichts:", sales_report_df.head())
 
-        columns_list = list(sales_report_df.columns)
-        date_col = st.selectbox("Spalte für das Datum", columns_list, key="clean_date_col")
-        price_col = st.selectbox("Spalte für Gesamtpreis / Umsatz", columns_list, key="clean_price_col")
+        # Проверка и очистка цен
+        if "cleaned_price" not in sales_report_df.columns:
+            price_col = next((c for c in sales_report_df.columns if "preis" in c or "brutto" in c or "umsatz" in c or "betrag" in c or "total" in c), None)
+            if price_col:
+                sales_report_df["cleaned_price"] = pd.to_numeric(sales_report_df[price_col].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+            else:
+                sales_report_df["cleaned_price"] = 0.0
 
-        if st.button("💾 Umsatz speichern & nach Marken aufteilen", key="btn_save_sales"):
-            cleaned_prices = (
-                sales_report_df[price_col]
-                .astype(str)
-                .str.replace('€', '', regex=False)
-                .str.replace(' ', '', regex=False)
-                .str.replace(',', '.', regex=False)
-            )
-            sales_report_df['cleaned_price'] = pd.to_numeric(cleaned_prices, errors='coerce').fillna(0)
-            total_brutto = sales_report_df['cleaned_price'].sum()
+        total_brutto = sales_report_df['cleaned_price'].sum()
 
+        # Определение даты отчета
+        date_col = next((c for c in sales_report_df.columns if "date" in c or "datum" in c or "tag" in c), None)
+        if date_col:
             sales_report_df[date_col] = pd.to_datetime(sales_report_df[date_col], errors='coerce')
             valid_dates = sales_report_df[date_col].dropna()
-            
             if not valid_dates.empty:
                 report_date = valid_dates.iloc[0].strftime('%Y-%m-%d')
                 report_month = valid_dates.iloc[0].strftime('%Y-%m')
             else:
-                report_date = pd.Timestamp.today().strftime('%Y-%m-%d')
-                report_month = pd.Timestamp.today().strftime('%Y-%m')
+                report_date = datetime.date.today().strftime('%Y-%m-%d')
+                report_month = datetime.date.today().strftime('%Y-%m')
+        else:
+            report_date = datetime.date.today().strftime('%Y-%m-%d')
+            report_month = datetime.date.today().strftime('%Y-%m')
 
-            # Автоматическое сопоставление с базой inventory
-            brand_revenue_tracking = {}
-            if supabase is not None:
-                for _, row in sales_report_df.iterrows():
-                    b_code = str(row.get("barcode", row.get("gtin", row.get("ean", "")))).strip()
-                    a_code = str(row.get("article", row.get("artikelnr", row.get("sku", "")))).strip()
-                    s_code = str(row.get("sap", "")).strip()
+        # Автоматическое сопоставление с базой inventory и сбор неизвестных
+        brand_revenue_tracking = {}
+        unknown_unbekannt_items = []
+
+        if supabase is not None:
+            for _, row in sales_report_df.iterrows():
+                b_code = str(row.get("barcode", row.get("gtin", ""))).strip()
+                a_code = str(row.get("article", row.get("artikelnr", ""))).strip()
+                s_code = str(row.get("sap", "")).strip()
+                
+                line_price = float(row.get("cleaned_price", 0))
+                matched_brand = "Unbekannt"
+                
+                code_to_check = a_code if a_code and a_code != "nan" else s_code
+                if code_to_check and code_to_check != "nan":
+                    inv_res = supabase.table("inventory").select("brand").eq("article", code_to_check).execute()
+                    if not inv_res or not inv_res.data:
+                        inv_res = supabase.table("inventory").select("brand").eq("sap", code_to_check).execute()
                     
-                    line_price = float(row.get("cleaned_price", 0))
-                    matched_brand = "Unbekannt"
-
-                    inv_res = None
-                    if b_code and b_code != "nan":
-                        inv_res = supabase.table("inventory").select("brand").eq("barcode", b_code).execute()
-                    if (not inv_res or not inv_res.data) and a_code and a_code != "nan":
-                        inv_res = supabase.table("inventory").select("brand").eq("article", a_code).execute()
-                    if (not inv_res or not inv_res.data) and s_code and s_code != "nan":
-                        inv_res = supabase.table("inventory").select("brand").eq("sap", s_code).execute()
-
                     if inv_res and inv_res.data:
-                        matched_brand = inv_res.data[0].get("brand", "Unbekannt")
+                        db_brand = inv_res.data[0].get("brand")
+                        if db_brand:
+                            matched_brand = db_brand
 
-                    brand_revenue_tracking[matched_brand] = brand_revenue_tracking.get(matched_brand, 0.0) + line_price
+                # Суммируем выручку по брендам
+                brand_revenue_tracking[matched_brand] = brand_revenue_tracking.get(matched_brand, 0.0) + line_price
 
-            total_netto = total_brutto / 1.19
+                # Если бренд не распознался, собираем его данные для таблицы
+                if matched_brand == "Unbekannt":
+                    unknown_unbekannt_items.append({
+                        "SAP": s_code if s_code and s_code != "nan" else "-",
+                        "Article": a_code if a_code and a_code != "nan" else "-",
+                        "Barcode": b_code if b_code and b_code != "nan" else "-",
+                        "Brutto (€)": line_price
+                    })
+
+        # Вывод результатов по брендам
+        if brand_revenue_tracking:
+            st.markdown("**Umsatz nach Marken:**")
+            for brand_name, b_rev in sorted(brand_revenue_tracking.items(), key=lambda x: x[1], reverse=True):
+                b_net = b_rev / 1.19
+                st.markdown(f"• *{brand_name}*: **{b_net:,.2f} €** Netto *(Brutto: {b_rev:,.2f} €)*")
+
+        # Если есть позиции "Unbekannt", выводим для них отдельную разворачиваемую таблицу с SAP-номерами
+        if unknown_unbekannt_items:
             st.markdown("---")
-            st.metric(label="Brutto (Gesamt)", value=f"{total_brutto:,.2f} €")
-            st.metric(label="Netto (exkl. 19% MwSt.)", value=f"{total_netto:,.2f} €")
-
-            # Сохранение в Supabase (на правильном уровне отступов)
-            if supabase is not None:
-                try:
-                    b_data = brand_revenue_tracking if 'brand_revenue_tracking' in locals() else {}
-                    
-                    payload = {
-                        "date": report_date,
-                        "brutto": float(total_brutto),
-                        "month": report_month,
-                        "brand_data": b_data
-                    }
-                    
-                    existing_day = supabase.table("daily_sales").select("*").eq("date", report_date).execute()
-                    if existing_day and existing_day.data:
-                        supabase.table("daily_sales").update(payload).eq("date", report_date).execute()
-                    else:
-                        supabase.table("daily_sales").insert(payload).execute()
-                        
-                    st.success(f"✅ Umsatz für {report_date} inkl. Marken erfolgreich gespeichert!")
-                except Exception as db_err:
-                    st.warning(f"⚠ DB-Hinweis: {db_err}")
-
-            # Вывод разбивки по брендам на экран (вне блока ошибки)
-            if brand_revenue_tracking:
-                st.markdown("**Umsatz nach Marken:**")
-                for brand_name, b_rev in sorted(brand_revenue_tracking.items(), key=lambda x: x[1], reverse=True):
-                    b_net = b_rev / 1.19
-                    st.markdown(f"• *{brand_name}*: **{b_net:,.2f} €** Netto *(Brutto: {b_rev:,.2f} €)*")
+            st.warning(f"⚠️ Внимание: Обнаружено позиций со статусом 'Unbekannt': {len(unknown_unbekannt_items)}")
+            with st.expander("🔍 Показать SAP-номера и артикулы ненайденных позиций (Unbekannt):"):
+                st.dataframe(pd.DataFrame(unknown_unbekannt_items), use_container_width=True)
 
     except Exception as e:
-        st.error(f"⚠ Fehler: {e}")
+        st.error(f"Fehler beim Laden der Lageranalyse: {e}")
 # ------------------------------------------
 # АВТОМАТИЧЕСКИЙ ВЫВОД СОХРАНЕННОЙ ИСТОРИИ ИЗ SUPABASE (С БРЕНДАМИ)
 # ------------------------------------------
