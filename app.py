@@ -2425,13 +2425,17 @@ if sales_file is not None:
                 except Exception as db_err:
                     st.warning(f"⚠ DB-Hinweis: {db_err}")
                     
-                # Сохраняем и запоминаем фактические продажи для верхнего блока
+                # Безопасная инициализация и запись продаж для верхнего блока
+                if "current_brand_sales_netto" not in st.session_state:
+                    st.session_state["current_brand_sales_netto"] = {"Iittala": 0.0, "Royal Copenhagen": 0.0, "Arabia": 0.0}
+
                 if 'brand_revenue_tracking' in locals() and brand_revenue_tracking:
                     for b_name, b_brutto in brand_revenue_tracking.items():
                         netto_val = float(b_brutto) / 1.19
-                        for target_key in st.session_state["current_brand_sales_netto"].keys():
+                        for target_key in list(st.session_state["current_brand_sales_netto"].keys()):
                             if target_key.strip().lower() == str(b_name).strip().lower():
                                 st.session_state["current_brand_sales_netto"][target_key] = netto_val
+                               
                                 
             # Вывод разбивки по брендам на экран (вне блока ошибки)
             if brand_revenue_tracking:
