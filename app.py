@@ -160,6 +160,27 @@ if "current_brand_sales_netto" not in st.session_state:
         "Arabia": 0.0
     }
 
+# ==========================================
+# 🎯 ЗАКРЕПЛЕННЫЙ ВЕРХНИЙ БЛОК: ЦЕЛИ И ПРОГРЕСС
+# ==========================================
+st.markdown("### 🎯 Monatsziele & Zielerreichung")
+
+# 1. Инициализация целей по брендам в session_state (только если их там еще нет)
+if "brand_monthly_targets" not in st.session_state:
+    st.session_state["brand_monthly_targets"] = {
+        "Iittala": 15000.0,
+        "Royal Copenhagen": 12000.0,
+        "Arabia": 8000.0
+    }
+
+# Инициализация накопленных продаж
+if "current_brand_sales_netto" not in st.session_state:
+    st.session_state["current_brand_sales_netto"] = {
+        "Iittala": 0.0,
+        "Royal Copenhagen": 0.0,
+        "Arabia": 0.0
+    }
+
 # 2. Настройка целей для менеджера с надежным сохранением в session_state
 with st.expander("⚙️ Monatsziele bearbeiten (Netto €)"):
     for brand_key in list(st.session_state["brand_monthly_targets"].keys()):
@@ -175,6 +196,22 @@ with st.expander("⚙️ Monatsziele bearbeiten (Netto €)"):
         )
         # Сразу сохраняем изменения в session_state при вводе
         st.session_state["brand_monthly_targets"][brand_key] = new_val
+
+# 3. Визуализация прогресса в самом верху
+targets_dict = st.session_state["brand_monthly_targets"]
+cols = st.columns(len(targets_dict))
+
+for idx, (brand_name, target_val) in enumerate(targets_dict.items()):
+    actual_netto = st.session_state["current_brand_sales_netto"].get(brand_name, 0.0)
+    pct = (actual_netto / target_val) * 100 if target_val > 0 else 0.0
+    
+    with cols[idx]:
+        st.markdown(f"**{brand_name}**")
+        st.caption(f"Ist: **{actual_netto:,.2f} €** / Ziel: **{target_val:,.2f} €**")
+        st.progress(min(pct / 100.0, 1.0))
+        st.write(f"**{pct:.1f}%**")
+
+st.markdown("---")
 
 # 3. Визуализация прогресса в самом верху
 targets_dict = st.session_state["brand_monthly_targets"]
