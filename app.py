@@ -1484,26 +1484,39 @@ if sales_file is not None:
     except Exception as e:
         st.sidebar.error(f"⚠ Fehler beim Verarbeiten: {e}")
 
-# Блок отображения накопленной истории по месяцам
+# Блок отображения накопленной истории по месяцам с выпадающими списками (Expander)
 if supabase is not None:
     st.sidebar.markdown("---")
     st.sidebar.subheader("📈 Kumulierte Umsätze (Historie)")
     
     try:
-        history_res = supabase.table("daily_sales").select("*").execute()
+        history_res = supabase.table("daily_sales").select("*").order("date", desc=True).execute()
         if history_res and history_res.data:
             hist_df = pd.DataFrame(history_res.data)
             
             if not hist_df.empty and "month" in hist_df.columns and "brutto" in hist_df.columns:
-                monthly_summary = hist_df.groupby("month")["brutto"].sum().reset_index()
-                monthly_summary = monthly_summary.sort_values("month")
-
                 st.sidebar.markdown("**Nach Monaten:**")
-                for _, row in monthly_summary.iterrows():
-                    m_name = row["month"]
-                    m_brutto = row["brutto"]
+                
+                # Группируем по месяцам для получения общих сумм
+                monthly_summary = hist_df.groupby("month")["brutto"].sum().reset_index()
+                monthly_summary = monthly_summary.sort_values("month", ascending=False)
+
+                for _, m_row in monthly_summary.iterrows():
+                    m_name = m_row["month"]
+                    m_brutto = m_row["brutto"]
                     m_netto = m_brutto / 1.19
-                    st.sidebar.markdown(f"🗓 **{m_name}**: Netto **{m_netto:,.2f} €** *(Brutto: {m_brutto:,.2f} €)*")
+
+                    # Создаем аккуратный раскрывающийся блок (Expander) для каждого месяца
+                    with st.sidebar.expander(f"🗓 {m_name}: Netto {m_netto:,.2f} € (Brutto: {m_brutto:,.2f} €)"):
+                        st.markdown("##### Bereits geladene Tage:")
+                        
+                        # Выбираем дни, принадлежащие текущему месяцу
+                        month_days = hist_df[hist_df["month"] == m_name]
+                        for _, d_row in month_days.iterrows():
+                            d_date = d_row["date"]
+                            d_brutto = float(d_row["brutto"])
+                            d_netto = d_brutto / 1.19
+                            st.markdown(f"• **{d_date}**: {d_netto:,.2f} € Netto *(Brutto: {d_brutto:,.2f} €)*")
         else:
             st.sidebar.info("ℹ Noch keine kumulierten Daten in der Datenbank.")
     except Exception as hist_err:
