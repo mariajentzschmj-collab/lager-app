@@ -153,6 +153,81 @@ except Exception as e:
     pass
 
 
+import datetime
+import hashlib
+import io
+import json
+import random
+import time
+import urllib.parse
+import numpy as np
+import pandas as pd
+import requests
+import streamlit as st
+import streamlit.components.v1 as components
+from supabase import create_client
+
+# Seitanordnung
+st.set_page_config(
+    page_title="IQBestandPro", layout="wide"
+)
+# ==========================================
+# STYLING (FISKARS / IITTALA / ROYAL COPENHAGEN)
+# ==========================================
+st.markdown("""
+<style>
+    .stApp {
+        background-color: #F8F9FA;
+        color: #1A1A1A;
+    }
+    
+    h1, h2, h3 {
+        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        color: #0F2537;
+        font-weight: 500;
+    }
+    
+    div.stInfo {
+        background-color: #E8F1F5;
+        border-left: 4px solid #1B4965;
+        color: #1A1A1A;
+    }
+    
+    .stButton>button {
+        background-color: #1B4965;
+        color: white;
+        border-radius: 4px;
+        border: none;
+        font-weight: 500;
+        padding: 0.5rem 1rem;
+        transition: background-color 0.2s ease;
+    }
+    
+    .stButton>button:hover {
+        background-color: #112F41;
+        color: white;
+    }
+    
+    div[data-testid="stForm"] {
+        background-color: #FFFFFF;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        border: 1px solid #E2E8F0;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+SUPABASE_URL = "https://mtcbfvpjnxlkvvtuknyv.supabase.co"
+SUPABASE_KEY = "sb_publishable_wChGuVU2FeW23S2bqdYqOg_B9-oMoKs"
+
+supabase = None
+try:
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+except Exception as e:
+    pass
+
+
 # ==========================================
 # GERICHTS- UND SCHICHTPLAN-LOGIK (PEP 2026)
 # ==========================================
@@ -167,13 +242,12 @@ if "manual_override_users" not in st.session_state:
 def check_access_by_schedule(employee_name, user_role):
     """
     Prüft den Zugriff des Mitarbeiters basierend auf dem PEP-Schichtplan.
-    O = Urlaub, H = Homeoffice / Frei (keine Arbeitstage für Kasse/Lager).
+    Ziffern = Arbeitstag, O = Urlaub, H = Frei (keine Arbeitstage für Kasse/Lager).
     Manager und Admins haben immer vollen Zugriff.
     """
     if user_role in ["manager", "admin"]:
         return True, "✅ Manager-Modus: Voller Zugriff."
 
-    # Mancherseits manuell erteilter Zugriff (z.B. bei Vertretung)
     if employee_name in st.session_state["manual_override_users"]:
         return True, "✅ Zugriff manuell vom Manager erlaubt (Ausnahme)."
 
@@ -204,23 +278,20 @@ def check_access_by_schedule(employee_name, user_role):
 
         shift = str(emp_row.iloc[0, col_idx]).strip().upper()
 
-        non_working_shifts = ['O', 'H', 'FREI', 'OFFEN', 'URLAUB', 'NAN', 'NONE', '']
+        # Если значение содержит цифру — это рабочий день
+        is_numeric_shift = any(char.isdigit() for char in shift)
 
-        if shift in non_working_shifts:
-            status_text = "Urlaub" if shift == 'O' else ("Homeoffice / Frei" if shift == 'H' else "Frei")
-            return False, f"⛔ Heute (Tag {day_number}) haben Sie {status_text} (Status: '{shift}'). Zugriff auf Operationen ist gesperrt."
+        if is_numeric_shift:
+            return True, f"✅ Arbeitsschicht heute (Schicht {shift}). Zugriff erlaubt!"
         else:
-            return True, f"✅ Arbeitsschicht heute: '{shift}'. Zugriff erlaubt!"
+            status_text = "Urlaub" if shift in ['O', 'URLAUB'] else "Frei / Homeoffice"
+            return False, f"⛔ Heute (Tag {day_number}) haben Sie {status_text} (Status: '{shift}'). Zugriff auf Operationen ist gesperrt."
 
     except Exception as e:
         return False, f"⚠️ Fehler bei der Schichtprüfung: {e}"
 
 
 def render_pep_module(current_user_name, user_role):
-    """
-    Zeigt den Upload in der Sidebar (für Manager) und den Monats-Schichtplan für alle Mitarbeiter.
-    Gibt True/False zurück, je nach Arbeitsberechtigungen.
-    """
     st.sidebar.markdown("---")
     st.sidebar.subheader("📅 Schichtplan (PEP) & Zugänge")
 
@@ -272,18 +343,33 @@ def render_pep_module(current_user_name, user_role):
                 days_row = pep_df.iloc[1].tolist()
                 emp_shifts = emp_row.iloc[0].tolist()
 
+                # Выборка по конкретному дню (фильтр)
+                selected_day_filter = st.selectbox(
+                    "Nach Tag filtern (Alle Tage anzeigen):", 
+                    options=["Alle Tage"] + [str(h).replace('.0','') for h in header_row[1:] if str(h).replace('.0','').isdigit()],
+                    key="day_filter_select"
+                )
+
                 schedule_data = []
                 for idx in range(1, len(header_row)):
                     day_num = str(header_row[idx]).replace('.0', '')
                     if day_num.isdigit() and int(day_num) <= 31:
                         day_name = str(days_row[idx]) if idx < len(days_row) else ""
-                        shift_val = str(emp_shifts[idx]) if idx < len(emp_shifts) else "-"
+                        shift_val = str(emp_shifts[idx]).strip() if idx < len(emp_shifts) else "-"
                         
-                        status_label = "Arbeit (Schicht)"
-                        if shift_val.upper() in ['O', 'URLAUB']:
+                        if selected_day_filter != "Alle Tage" and day_num != selected_day_filter:
+                            continue
+
+                        is_numeric_shift = any(char.isdigit() for char in shift_val)
+
+                        if is_numeric_shift:
+                            status_label = f"Arbeit (Schicht {shift_val}) 🟢"
+                        elif shift_val.upper() in ['O', 'URLAUB']:
                             status_label = "Urlaub 🏖️"
                         elif shift_val.upper() in ['H', 'FREI']:
                             status_label = "Frei / Homeoffice 🏠"
+                        else:
+                            status_label = "Frei 🏠"
                         
                         schedule_data.append({
                             "Tag": f"{day_num} ({day_name})",
@@ -304,13 +390,100 @@ def render_pep_module(current_user_name, user_role):
 
     if not is_allowed and user_role not in ["manager", "admin"]:
         st.warning(access_msg)
-        st.info("ℹ️ **Ansichtsmodus:** Sie können den Dienstplan und allgemeine Daten einsehen, aber der Zugriff на Lageränderungen und Verkäufe ist heute eingeschränkt.")
+        st.info("ℹ️ **Ansichtsmodus:** Sie können den Dienstplan einsehen, aber der Zugriff auf Lageränderungen und Verkäufe ist heute eingeschränkt.")
         return False
     else:
         st.success(access_msg)
         return True
 
 
+# ==========================================
+# AUTHENTIFIZIERUNG
+# ==========================================
+def check_authentication():
+    TIMEOUT_SECONDS = 300
+
+    if "logged_in" not in st.session_state:
+        st.session_state["logged_in"] = False
+        st.session_state["role"] = None
+        st.session_state["user_name"] = None
+        st.session_state["last_active"] = time.time()
+
+    if st.session_state["logged_in"]:
+        if (
+            time.time() - st.session_state.get("last_active", time.time())
+            > TIMEOUT_SECONDS
+        ):
+            st.session_state["logged_in"] = False
+            st.warning("⏱️ Sitzung wegen Inaktivität abgelaufen (> 5 Min.). Bitte erneut anmelden.")
+
+    if st.session_state["logged_in"]:
+        st.session_state["last_active"] = time.time()
+        return True
+
+    st.title("🔐 IQBestandPro")
+    st.subheader("Bitte wählen Sie Ihre Rolle aus:")
+
+    role_choice = st.radio("Ich bin ein(e):", ["👔 Manager (Maria)", "🧑‍💼 Agent / Mitarbeiter"])
+
+    if role_choice == "👔 Manager (Maria)":
+        manager_password = st.text_input("Manager-Passwort", type="password")
+        if st.button("Als Manager anmelden"):
+            if manager_password == "KaDeWe2026!Mgr":
+                st.session_state["logged_in"] = True
+                st.session_state["role"] = "manager"
+                st.session_state["user_name"] = "Maria"
+                st.session_state["last_active"] = time.time()
+                st.rerun()
+            else:
+                st.error("❌ Falsches Manager-Passwort")
+    else:
+        agent_id = st.text_input("Agenten-Name (z.B. Peixia, Irina, Tiffany, Valeria):")
+        agent_pin = st.text_input("Persönlicher Agenten-PIN (z.B. 2026):", type="password")
+        
+        if st.button("Als Agent anmelden"):
+            if agent_id.strip() and agent_pin.strip():
+                if agent_pin == "2026":
+                    st.session_state["logged_in"] = True
+                    st.session_state["role"] = "agent"
+                    st.session_state["user_name"] = agent_id.strip()
+                    st.session_state["last_active"] = time.time()
+                    st.rerun()
+                else:
+                    st.error("❌ Falscher Agenten-PIN.")
+            else:
+                st.error("❌ Bitte geben Sie sowohl Ihren Namen als auch den PIN ein.")
+
+    return False
+
+
+if not check_authentication():
+    st.stop()
+
+
+# ==========================================
+# HAUPTBEREICH
+# ==========================================
+
+current_user_name = st.session_state.get("user_name", "Maria")
+user_role = st.session_state.get("role", "manager")
+
+st.sidebar.markdown(f"👤 **Eingeloggt als:** {current_user_name} ({user_role.capitalize()})")
+if st.sidebar.button("Abmelden", key="logout_button"):
+    st.session_state["logged_in"] = False
+    st.rerun()
+
+can_perform_work_actions = render_pep_module(current_user_name, user_role)
+
+st.markdown("---")
+st.title("🛒 IQBestandPro - Arbeitsbereich")
+
+if can_perform_work_actions:
+    st.success("✅ Sie haben vollen Zugriff auf Kasse, Bestand und Verkaufsfunktionen.")
+    st.info("Hier befindet sich die Hauptfunktionalität der App (Bestand, Scanner, Verkäufe).")
+else:
+    st.warning("🔒 Der Zugriff auf operative Verkaufs- und Lagerfunktionen ist für heute gesperrt (Urlaub / Frei).")
+    st.info("💡 Sie können den Schichtplan oben einsehen, aber operative Aktionen sind gesperrt.")
 # ==========================================
 # AUTHENTIFIZIERUNG
 # ==========================================
