@@ -172,7 +172,7 @@ def render_pep_module(current_user_name, user_role):
                 st.sidebar.error(f"⚠️ Fehler beim Laden: {err}")
 
         # Мануальный доступ (исключения для замен)
-        with st.sidebar.expander("🔓 Мануальный доступ вне графика"):
+        with st.sidebar.expander("🔓 Manueller Zugriff (Ausnahme)"):
             st.markdown("Разрешить доступ сотруднику на сегодня (замена):")
             all_employees = ["Maria", "Peixia", "Irina", "Tiffany", "Valeria"]
             
