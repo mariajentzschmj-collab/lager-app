@@ -400,7 +400,7 @@ current_user_name = st.session_state.get("user_name", "Maria")
 user_role = st.session_state.get("role", "manager")
 
 st.sidebar.markdown(f"👤 **Eingeloggt als:** {current_user_name} ({user_role.capitalize()})")
-if st.sidebar.button("Abmelden", key="logout_button_bottom"):
+if st.sidebar.button("Abmelden", key="logout_button_unique_final"):
     st.session_state["logged_in"] = False
     st.rerun()
 
