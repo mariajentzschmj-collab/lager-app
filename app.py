@@ -1,5 +1,4 @@
-import pandas as pd
-import plotly.express as px
+import datetime
 import hashlib
 import io
 import json
@@ -74,71 +73,268 @@ SUPABASE_KEY = "sb_publishable_wChGuVU2FeW23S2bqdYqOg_B9-oMoKs"
 
 supabase = None
 try:
-  supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
-  pass
+    pass
+
+
+# ==========================================
+# GERICHTS- UND SCHICHTPLAN-LOGIK (PEP 2026)
+# ==========================================
+
+# Инициализация состояния для графиков и исключений
+if "pep_df" not in st.session_state:
+    st.session_state["pep_df"] = None
+
+if "manual_override_users" not in st.session_state:
+    st.session_state["manual_override_users"] = []
+
+
+def check_access_by_schedule(employee_name, user_role):
+    """
+    Проверяет доступ сотрудника к рабочим функциям по файлу 2026_PEP.xlsx
+    O = Urlaub, H = Homeoffice / Выходной (нерабочие дни для продаж/склада)
+    Менеджеры и админы имеют полный доступ всегда.
+    """
+    if user_role in ["manager", "admin"]:
+        return True, "✅ Manager-Modus: Voller Zugriff."
+
+    # Если менеджер/админ дал доступ вручную (например, при замене)
+    if employee_name in st.session_state["manual_override_users"]:
+        return True, "✅ Доступ разрешен вручную менеджером (исключение)."
+
+    pep_df = st.session_state.get("pep_df")
+    
+    # Если график еще не загружен — разрешаем доступ по умолчанию
+    if pep_df is None:
+        return True, "ℹ️ График PEP не загружен. Доступ к рабочим функциям открыт."
+
+    today = datetime.datetime.now()
+    day_number = str(today.day)  # Текущее число месяца
+
+    try:
+        # Находим строку сотрудника (по первому столбцу)
+        emp_row = pep_df[pep_df.iloc[:, 0].astype(str).str.strip().str.lower() == employee_name.strip().lower()]
+
+        if emp_row.empty:
+            return False, f"⚠️ Сотрудник '{employee_name}' не найден в графике PEP."
+
+        # Ищем столбец с сегодняшним числом (в первой строке)
+        header_row = pep_df.iloc[0].astype(str).str.strip()
+
+        col_idx = None
+        for idx, val in enumerate(header_row):
+            if val == day_number or val == f"{day_number}.0":
+                col_idx = idx
+                break
+
+        if col_idx is None:
+            return False, f"⚠️ Столбец для {day_number}-го числа не найден в графике PEP."
+
+        # Получаем статус смены
+        shift = str(emp_row.iloc[0, col_idx]).strip().upper()
+
+        # O = Urlaub, H = Homeoffice / Выходной
+        non_working_shifts = ['O', 'H', 'FREI', 'OFFEN', 'URLAUB', 'NAN', 'NONE', '']
+
+        if shift in non_working_shifts:
+            status_text = "Urlaub (Отпуск)" if shift == 'O' else ("Homeoffice / Выходной" if shift == 'H' else "Выходной")
+            return False, f"⛔ Сегодня ({day_number}-е число) у вас {status_text} (Статус: '{shift}'). Доступ к операциям заблокирован."
+        else:
+            return True, f"✅ Рабочая смена на сегодня: '{shift}'. Доступ разрешен!"
+
+    except Exception as e:
+        return False, f"⚠️ Ошибка проверки графика: {e}"
+
+
+def render_pep_module(current_user_name, user_role):
+    """
+    Отрисовывает загрузку графика в боковой панели (для менеджера),
+    а также блок просмотра расписания на месяц для всех сотрудников.
+    Возвращает True/False в зависимости от доступа к рабочим функциям.
+    """
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("📅 Schichtplan (PEP) & Zugänge")
+
+    # Если менеджер/админ — даем возможность загрузить файл и управлять исключениями
+    if user_role in ["manager", "admin"]:
+        uploaded_pep = st.sidebar.file_uploader(
+            "PEP-Schichtplan hochladen (.xlsx)",
+            type=["xlsx"],
+            key="pep_file_uploader"
+        )
+
+        if uploaded_pep is not None:
+            try:
+                st.session_state["pep_df"] = pd.read_excel(uploaded_pep, header=None)
+                st.sidebar.success("✅ Schichtplan erfolgreich geladen!")
+            except Exception as err:
+                st.sidebar.error(f"⚠️ Fehler beim Laden: {err}")
+
+        # Мануальный доступ (исключения для замен)
+        with st.sidebar.expander("🔓 Мануальный доступ вне графика"):
+            st.markdown("Разрешить доступ сотруднику на сегодня (замена):")
+            all_employees = ["Maria", "Peixia", "Irina", "Tiffany", "Valeria"]
+            
+            selected_overrides = st.multiselect(
+                "Доступ разрешен для:",
+                options=all_employees,
+                default=st.session_state["manual_override_users"],
+                key="override_multiselect"
+            )
+            st.session_state["manual_override_users"] = selected_overrides
+
+    # --- Раздел просмотра графика (доступен ВСЕМ сотрудникам в любое время) ---
+    st.markdown("---")
+    st.subheader("📅 Monats-Schichtplan (Übersicht)")
+
+    pep_df = st.session_state.get("pep_df")
+
+    if pep_df is not None:
+        try:
+            employees = pep_df.iloc[2:, 0].dropna().astype(str).tolist()
+            
+            default_idx = 0
+            if current_user_name in employees:
+                default_idx = employees.index(current_user_name)
+
+            selected_emp_view = st.selectbox("Mitarbeiter-Schichtplan anzeigen:", employees, index=default_idx, key="view_emp_selectbox")
+
+            emp_row = pep_df[pep_df.iloc[:, 0].astype(str).str.strip().str.lower() == selected_emp_view.strip().lower()]
+
+            if not emp_row.empty:
+                header_row = pep_df.iloc[0].tolist()  # числа месяца
+                days_row = pep_df.iloc[1].tolist()    # дни недели
+                emp_shifts = emp_row.iloc[0].tolist()
+
+                schedule_data = []
+                for idx in range(1, len(header_row)):
+                    day_num = str(header_row[idx]).replace('.0', '')
+                    if day_num.isdigit() and int(day_num) <= 31:
+                        day_name = str(days_row[idx]) if idx < len(days_row) else ""
+                        shift_val = str(emp_shifts[idx]) if idx < len(emp_shifts) else "-"
+                        
+                        status_label = "Arbeit (Смена)"
+                        if shift_val.upper() in ['O', 'URLAUB']:
+                            status_label = "Urlaub 🏖️ (Отпуск)"
+                        elif shift_val.upper() in ['H', 'FREI']:
+                            status_label = "Frei / Homeoffice 🏠 (Выходной)"
+                        
+                        schedule_data.append({
+                            "Tag": f"{day_num} ({day_name})",
+                            "Schicht": shift_val,
+                            "Status": status_label
+                        })
+
+                sch_df = pd.DataFrame(schedule_data)
+                st.dataframe(sch_df, use_container_width=True, hide_index=True)
+
+        except Exception as view_err:
+            st.caption(f"Hinweis zur Anzeige: {view_err}")
+    else:
+        st.info("ℹ️ Schichtplan wurde noch nicht hochgeladen. Bitte laden Sie die PEP-Datei über die Seitenleiste hoch.")
+
+    # --- Проверка прав на рабочие операции для текущего пользователя ---
+    st.markdown("---")
+    is_allowed, access_msg = check_access_by_schedule(current_user_name, user_role)
+
+    if not is_allowed and user_role not in ["manager", "admin"]:
+        st.warning(access_msg)
+        st.info("ℹ️ **Режим просмотра:** вы можете изучать расписание и общие данные, но доступ к изменению склада и проведению продаж сегодня ограничен.")
+        return False  # Рабочие действия заблокированы, но график доступен для просмотра
+    else:
+        st.success(access_msg)
+        return True   # Полный рабочий доступ разрешен
 
 
 # --- СИСТЕМА АВТОРИЗАЦИИ (МЕНЕДЖЕР И АГЕНТЫ С ПИН-КОДОМ) ---
 def check_authentication():
-  TIMEOUT_SECONDS = 300  # 5 минут неактивности
+    TIMEOUT_SECONDS = 300  # 5 минут неактивности
 
-  if "logged_in" not in st.session_state:
-    st.session_state["logged_in"] = False
-    st.session_state["role"] = None
-    st.session_state["user_name"] = None
-    st.session_state["last_active"] = time.time()
-
-  if st.session_state["logged_in"]:
-    if (
-        time.time() - st.session_state.get("last_active", time.time())
-        > TIMEOUT_SECONDS
-    ):
-      st.session_state["logged_in"] = False
-      st.warning("⏱️ Sitzung wegen Inaktivität abgelaufen (> 5 Min.). Bitte erneut anmelden.")
-
-  if st.session_state["logged_in"]:
-    st.session_state["last_active"] = time.time()
-    return True
-
-  st.title("🔐 IQBestandPro")
-  st.subheader("Bitte wählen Sie Ihre Rolle aus:")
-
-  role_choice = st.radio("Ich bin ein(e):", ["👔 Manager (Maria)", "🧑‍‍💼 Agent / Mitarbeiter"])
-
-  if role_choice == "👔 Manager (Maria)":
-    manager_password = st.text_input("Manager-Passwort", type="password")
-    if st.button("Als Manager anmelden"):
-      if manager_password == "KaDeWe2026!Mgr":
-        st.session_state["logged_in"] = True
-        st.session_state["role"] = "manager"
-        st.session_state["user_name"] = "Maria Jentzsch"
+    if "logged_in" not in st.session_state:
+        st.session_state["logged_in"] = False
+        st.session_state["role"] = None
+        st.session_state["user_name"] = None
         st.session_state["last_active"] = time.time()
-        st.rerun()
-      else:
-        st.error("❌ Falsches Manager-Passwort")
-  else:
-    agent_id = st.text_input("Agenten-Nummer oder Name (z.B. Agent-01, Anna):")
-    agent_pin = st.text_input("Persönlicher Agenten-PIN (z.B. 2026):", type="password")
-    
-    if st.button("Als Agent anmelden"):
-      if agent_id.strip() and agent_pin.strip():
-        if agent_pin == "2026":
-          st.session_state["logged_in"] = True
-          st.session_state["role"] = "agent"
-          st.session_state["user_name"] = agent_id.strip()
-          st.session_state["last_active"] = time.time()
-          st.rerun()
-        else:
-          st.error("❌ Falscher Agenten-PIN.")
-      else:
-        st.error("❌ Bitte geben Sie sowohl Ihren Namen/Nummer als auch den PIN ein.")
 
-  return False
+    if st.session_state["logged_in"]:
+        if (
+            time.time() - st.session_state.get("last_active", time.time())
+            > TIMEOUT_SECONDS
+        ):
+            st.session_state["logged_in"] = False
+            st.warning("⏱️ Sitzung wegen Inaktivität abgelaufen (> 5 Min.). Bitte erneut anmelden.")
+
+    if st.session_state["logged_in"]:
+        st.session_state["last_active"] = time.time()
+        return True
+
+    st.title("🔐 IQBestandPro")
+    st.subheader("Bitte wählen Sie Ihre Rolle aus:")
+
+    role_choice = st.radio("Ich bin ein(e):", ["👔 Manager (Maria)", "🧑‍💼 Agent / Mitarbeiter"])
+
+    if role_choice == "👔 Manager (Maria)":
+        manager_password = st.text_input("Manager-Passwort", type="password")
+        if st.button("Als Manager anmelden"):
+            if manager_password == "KaDeWe2026!Mgr":
+                st.session_state["logged_in"] = True
+                st.session_state["role"] = "manager"
+                st.session_state["user_name"] = "Maria"
+                st.session_state["last_active"] = time.time()
+                st.rerun()
+            else:
+                st.error("❌ Falsches Manager-Passwort")
+    else:
+        agent_id = st.text_input("Agenten-Name (z.B. Peixia, Irina, Tiffany, Valeria):")
+        agent_pin = st.text_input("Persönlicher Agenten-PIN (z.B. 2026):", type="password")
+        
+        if st.button("Als Agent anmelden"):
+            if agent_id.strip() and agent_pin.strip():
+                if agent_pin == "2026":
+                    st.session_state["logged_in"] = True
+                    st.session_state["role"] = "agent"
+                    st.session_state["user_name"] = agent_id.strip()
+                    st.session_state["last_active"] = time.time()
+                    st.rerun()
+                else:
+                    st.error("❌ Falscher Agenten-PIN.")
+            else:
+                st.error("❌ Bitte geben Sie sowohl Ihren Namen als auch den PIN ein.")
+
+    return False
 
 
 if not check_authentication():
-  st.stop()
+    st.stop()
+
+
+# ==========================================
+# ГЛАВНЫЙ ЭКРАН И ИНТЕГРАЦИЯ ГРАФИКА
+# ==========================================
+
+current_user_name = st.session_state.get("user_name", "Maria")
+user_role = st.session_state.get("role", "manager")
+
+st.sidebar.markdown(f"👤 **Eingeloggt als:** {current_user_name} ({user_role.capitalize()})")
+if st.sidebar.button("Abmelden"):
+    st.session_state["logged_in"] = False
+    st.rerun()
+
+# Вызываем модуль графиков PEP и проверяем рабочие права
+can_perform_work_actions = render_pep_module(current_user_name, user_role)
+
+# Основной рабочий контент приложения
+st.markdown("---")
+st.title("🛒 IQBestandPro - Arbeitsbereich")
+
+if can_perform_work_actions:
+    st.success("✅ Sie haben vollen Zugriff auf die Kasse, den Bestand und die Verkaufsfunktionen.")
+    # Сюда вы можете добавлять ваши блоки продаж, склада и инвентаризации
+    st.info("Hier befindet sich die Hauptfunktionalität der App (Bestand, Scanner, Verkäufe).")
+else:
+    st.warning("🔒 Der Zugriff auf operative Verkaufs- und Lagerfunktionen ist für heute gesperrt (Urlaub / Frei).")
+    st.info("💡 Sie können jedoch den Dienstplan (Schichtplan) oben einsehen.")
 # ==========================================
 # 🎯 ЗАКРЕПЛЕННЫЙ ВЕРХНИЙ БЛОК: ЦЕЛИ И АВТО-СУММИРОВАНИЕ ИЗ БАЗЫ
 # ==========================================
