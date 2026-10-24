@@ -522,7 +522,8 @@ def render_pep_module(current_user_name, user_role):
     if user_role in ["manager", "admin"]:
         uploaded_pep = st.sidebar.file_uploader(
             "PEP-Schichtplan hochladen (.xlsx)",
-            type=["xlsx"]
+            type=["xlsx"],
+            key="pep_file_uploader_unique"
         )
 
         if uploaded_pep is not None:
