@@ -142,6 +142,9 @@ except Exception as e:
 # ==========================================
 # SCHICHTPLAN-LOGIK (PEP 2026) & ZUGÄNGE
 # ==========================================
+# Определяем текущего пользователя и роль
+current_role = st.session_state.get("user_role", "Agent")
+current_user_name = st.session_state.get("username", "Unbekannt")
 
 if "pep_df" not in st.session_state:
     st.session_state["pep_df"] = None
@@ -2142,9 +2145,6 @@ def clean_val(val, default, val_type=str):
     except:
         return default
 
-# Определяем текущего пользователя и роль
-current_role = st.session_state.get("user_role", "Agent")
-current_user_name = st.session_state.get("username", "Unbekannt")
 
 # =========================================================
 # БЛОК 1: ПРОВЕРКА ЗАКАЗА И ДОБАВЛЕНИЕ НЕДОСТАЮЩИХ ТОВАРОВ
