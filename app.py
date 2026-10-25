@@ -468,7 +468,7 @@ if st.sidebar.button("🚪 Abmelden"):
   st.session_state["role"] = None
   st.session_state["user_name"] = None
   st.rerun()
-    st.sidebar.markdown("---")
+st.sidebar.markdown("---")
 app_mode = st.sidebar.radio(
     "Navigation", 
     ["📦 Lager & Bestände", "📋 Kundenbestellungen (Sonderwünsche)"]
