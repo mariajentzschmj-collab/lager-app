@@ -214,25 +214,22 @@ def render_pep_module(current_user_name, user_role):
     import os
     SAVED_PEP_PATH = "pep_current.xlsx"
 
-if uploaded_pep is not None:
-    try:
-        # Сохраняем загруженный файл на диск
-        with open(SAVED_PEP_PATH, "wb") as f:
-            f.write(uploaded_pep.getbuffer())
-            
-        st.session_state["pep_df"] = pd.read_excel(SAVED_PEP_PATH, header=None)
-        st.sidebar.success("Schichtplan erfolgreich geladen!")
-    except Exception as err:
-        st.sidebar.error(f"⚠️ Fehler beim Laden: {err}")
+    if uploaded_pep is not None:
+        try:
+            # Сохраняем загруженный файл на диск
+            with open(SAVED_PEP_PATH, "wb") as f:
+                f.write(uploaded_pep.getbuffer())
 
-elif os.path.exists("pep 10.2026.xlsx"):
-    try:
-        st.session_state["pep_df"] = pd.read_excel("pep 10.2026.xlsx", header=None)
-    except Exception as err:
-        st.sidebar.error(f"⚠️ Fehler beim Laden der Standard-PEP: {err}")
-else:
-    if "pep_df" not in st.session_state:
-        st.session_state["pep_df"] = None
+            st.session_state["pep_df"] = pd.read_excel(SAVED_PEP_PATH, header=None)
+            st.sidebar.success("Schichtplan erfolgreich geladen!")
+        except Exception as err:
+            st.sidebar.error(f"⚠️ Fehler beim Laden: {err}")
+
+    elif os.path.exists("pep 10.2026.xlsx"):
+        try:
+            st.session_state["pep_df"] = pd.read_excel("pep 10.2026.xlsx", header=None)
+        except Exception as err:
+            st.sidebar.error(f"⚠️ Fehler beim Laden der Standard-PEP: {err}")
 
     if user_role in ["manager", "admin"]:
         with st.sidebar.expander("🔓 Manueller Zugriff (Ausnahme)"):
