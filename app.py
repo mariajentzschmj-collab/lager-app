@@ -1,4 +1,6 @@
+import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.express as px
 import hashlib
 import io
@@ -6,10 +8,7 @@ import json
 import random
 import time
 import urllib.parse
-import numpy as np
-import pandas as pd
 import requests
-import streamlit as sts
 import streamlit.components.v1 as components
 from supabase import create_client
 
