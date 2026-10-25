@@ -181,20 +181,24 @@ def render_pep_module(current_user_name, user_role):
                 key="override_multiselect"
             )
             st.session_state["manual_override_users"] = selected_overrides
-    st.markdown("---")
-    st.subheader("📅 Monats-Schichtplan (Übersicht)")
-
     pep_df = st.session_state.get("pep_df")
 
     if pep_df is not None:
         try:
             employees = pep_df.iloc[2:, 0].dropna().astype(str).tolist()
-            default_idx = 0
-            if current_user_name in employees:
-                default_idx = employees.index(current_user_name)
+            
+            # Убедимся, что выбранный сотрудник корректно сохраняется в session_state
+            if "view_emp_selectbox" not in st.session_state:
+                st.session_state["view_emp_selectbox"] = current_user_name if current_user_name in employees else (employees[0] if employees else "")
 
-            selected_emp_view = st.selectbox("Mitarbeiter-Schichtplan anzeigen:", employees, index=default_idx, key="view_emp_selectbox")
-            emp_row = pep_df[pep_df.iloc[:, 0].astype(str).str.strip().str.lower() == selected_emp_view.strip().lower()]
+            selected_emp_view = st.selectbox(
+                "Mitarbeiter-Schichtplan anzeigen:", 
+                options=employees, 
+                key="view_emp_selectbox"
+            )
+            
+            # Ищем строку строго по выбранному в селекторе имени
+            emp_row = pep_df[pep_df.iloc[:, 0].astype(str).str.strip().str.lower() == str(selected_emp_view).strip().lower()]
 
             if not emp_row.empty:
                 header_row = pep_df.iloc[0].tolist()
