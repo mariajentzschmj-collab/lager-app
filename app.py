@@ -76,7 +76,168 @@ try:
   supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 except Exception as e:
   pass
+# ==========================================
+# SCHICHTPLAN-LOGIK (PEP 2026) & ZUGÄNGE
+# ==========================================
 
+if "pep_df" not in st.session_state:
+    st.session_state["pep_df"] = None
+
+if "manual_override_users" not in st.session_state:
+    st.session_state["manual_override_users"] = []
+
+
+def check_access_by_schedule(employee_name, user_role):
+    """
+    Prüft den Zugriff des Mitarbeiters basierend auf dem PEP-Schichtplan.
+    Ziffern = Arbeitstag, O/О = Urlaub, H = Frei.
+    Manager und Admins haben immer vollen Zugriff.
+    """
+    if user_role in ["manager", "admin"]:
+        return True, "✅ Manager-Modus: Voller Zugriff."
+
+    if employee_name in st.session_state["manual_override_users"]:
+        return True, "✅ Zugriff manuell vom Manager erlaubt (Ausnahme)."
+
+    pep_df = st.session_state.get("pep_df")
+    
+    if pep_df is None:
+        return True, "ℹ️ PEP-Schichtplan wurde noch nicht hochgeladen. Zugriff ist standardmäßig erlaubt."
+
+    today = datetime.datetime.now()
+    day_number = str(today.day)
+
+    try:
+        emp_row = pep_df[pep_df.iloc[:, 0].astype(str).str.strip().str.lower() == employee_name.strip().lower()]
+
+        if emp_row.empty:
+            return False, f"⚠️ Mitarbeiter '{employee_name}' nicht im PEP-Schichtplan gefunden."
+
+        header_row = pep_df.iloc[0].astype(str).str.strip()
+
+        col_idx = None
+        for idx, val in enumerate(header_row):
+            if val == day_number or val == f"{day_number}.0":
+                col_idx = idx
+                break
+
+        if col_idx is None:
+            return False, f"⚠️ Spalte für den {day_number}. Tag nicht im PEP-Schichtplan gefunden."
+
+        shift = str(emp_row.iloc[0, col_idx]).strip().upper()
+        is_numeric_shift = any(char.isdigit() for char in shift)
+
+        if is_numeric_shift:
+            return True, f"✅ Arbeitsschicht heute (Schicht {shift}). Zugriff erlaubt!"
+        else:
+            status_text = "Urlaub" if shift in ['O', 'О', 'URLAUB'] else "Frei / Homeoffice"
+            return False, f"⛔ Heute (Tag {day_number}) haben Sie {status_text} (Status: '{shift}'). Zugriff auf Operationen ist gesperrt."
+
+    except Exception as e:
+        return False, f"⚠️ Fehler bei der Schichtprüfung: {e}"
+
+
+def render_pep_module(current_user_name, user_role):
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("📅 Schichtplan (PEP) & Zugänge")
+
+    if user_role in ["manager", "admin"]:
+        uploaded_pep = st.sidebar.file_uploader(
+            "PEP-Schichtplan hochladen (.xlsx)",
+            type=["xlsx"]
+        )
+
+        if uploaded_pep is not None:
+            try:
+                st.session_state["pep_df"] = pd.read_excel(uploaded_pep, header=None)
+                st.sidebar.success("✅ Schichtplan erfolgreich geladen!")
+            except Exception as err:
+                st.sidebar.error(f"⚠️ Fehler beim Laden: {err}")
+
+        with st.sidebar.expander("🔓 Manueller Zugriff (Ausnahme)"):
+            st.markdown("Zugriff für Mitarbeiter heute erlauben (Vertretung):")
+            all_employees = ["Maria", "Peixia", "Irina", "Tiffany", "Valeria"]
+            
+            selected_overrides = st.multiselect(
+                "Zugriff erlaubt für:",
+                options=all_employees,
+                default=st.session_state["manual_override_users"],
+                key="override_multiselect"
+            )
+            st.session_state["manual_override_users"] = selected_overrides
+
+    st.markdown("---")
+    st.subheader("📅 Monats-Schichtplan (Übersicht)")
+
+    pep_df = st.session_state.get("pep_df")
+
+    if pep_df is not None:
+        try:
+            employees = pep_df.iloc[2:, 0].dropna().astype(str).tolist()
+            default_idx = 0
+            if current_user_name in employees:
+                default_idx = employees.index(current_user_name)
+
+            selected_emp_view = st.selectbox("Mitarbeiter-Schichtplan anzeigen:", employees, index=default_idx, key="view_emp_selectbox")
+            emp_row = pep_df[pep_df.iloc[:, 0].astype(str).str.strip().str.lower() == selected_emp_view.strip().lower()]
+
+            if not emp_row.empty:
+                header_row = pep_df.iloc[0].tolist()
+                days_row = pep_df.iloc[1].tolist()
+                emp_shifts = emp_row.iloc[0].tolist()
+
+                selected_day_filter = st.selectbox(
+                    "Nach Tag filtern (Alle Tage anzeigen):", 
+                    options=["Alle Tage"] + [str(h).replace('.0','') for h in header_row[1:] if str(h).replace('.0','').isdigit()],
+                    key="day_filter_select"
+                )
+
+                schedule_data = []
+                for idx in range(1, len(header_row)):
+                    day_num = str(header_row[idx]).replace('.0', '')
+                    if day_num.isdigit() and int(day_num) <= 31:
+                        day_name = str(days_row[idx]) if idx < len(days_row) else ""
+                        shift_val = str(emp_shifts[idx]).strip() if idx < len(emp_shifts) else "-"
+                        
+                        if selected_day_filter != "Alle Tage" and day_num != selected_day_filter:
+                            continue
+
+                        clean_shift = shift_val.upper().strip()
+                        is_numeric_shift = any(char.isdigit() for char in clean_shift)
+
+                        if is_numeric_shift:
+                            status_label = f"Arbeit (Schicht {shift_val}) 🟢"
+                        elif clean_shift in ['O', 'О', 'URLAUB']:
+                            status_label = "Urlaub 🏖️"
+                        elif clean_shift in ['H', 'FREI']:
+                            status_label = "Frei / Homeoffice 🏠"
+                        else:
+                            status_label = "Frei 🏠"
+                        
+                        schedule_data.append({
+                            "Tag": f"{day_num} ({day_name})",
+                            "Schicht": shift_val,
+                            "Status": status_label
+                        })
+
+                sch_df = pd.DataFrame(schedule_data)
+                st.dataframe(sch_df, use_container_width=True, hide_index=True)
+
+        except Exception as view_err:
+            st.caption(f"Hinweis zur Anzeige: {view_err}")
+    else:
+        st.info("ℹ️ Schichtplan wurde noch nicht hochgeladen. Bitte laden Sie die PEP-Datei über die Seitenleiste hoch.")
+
+    st.markdown("---")
+    is_allowed, access_msg = check_access_by_schedule(current_user_name, user_role)
+
+    if not is_allowed and user_role not in ["manager", "admin"]:
+        st.warning(access_msg)
+        st.info("ℹ️ **Ansichtsmodus:** Sie können den Dienstplan einsehen, aber der Zugriff auf Lageränderungen und Verkäufe ist heute eingeschränkt.")
+        return False
+    else:
+        st.success(access_msg)
+        return True
 
 # --- СИСТЕМА АВТОРИЗАЦИИ (МЕНЕДЖЕР И АГЕНТЫ С ПИН-КОДОМ) ---
 def check_authentication():
