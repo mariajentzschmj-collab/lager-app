@@ -313,7 +313,7 @@ else:
         st.info("ℹ️ Schichtplan wurde noch nicht hochgeladen. Bitte laden Sie die PEP-Datei über die Seitenleiste hoch.")
 
     st.markdown("---")
-        is_allowed, access_msg = check_access_by_schedule(current_user_name, user_role)
+    is_allowed, access_msg = check_access_by_schedule(current_user_name, user_role)
 
         if not is_allowed and user_role not in ["manager", "admin"]:
         st.warning(access_msg)
