@@ -148,12 +148,26 @@ def render_pep_module(current_user_name, user_role):
             type=["xlsx"]
         )
 
-        if uploaded_pep is not None:
-            try:
-                st.session_state["pep_df"] = pd.read_excel(uploaded_pep, header=None)
-                st.sidebar.success("✅ Schichtplan erfolgreich geladen!")
-            except Exception as err:
-                st.sidebar.error(f"⚠️ Fehler beim Laden: {err}")
+       import os
+    
+    SAVED_PEP_PATH = "pep_current.xlsx"
+
+    if uploaded_pep is not None:
+        try:
+            # Сохраняем загруженный файл на диск
+            with open(SAVED_PEP_PATH, "wb") as f:
+                f.write(uploaded_pep.getbuffer())
+            
+            st.session_state["pep_df"] = pd.read_excel(SAVED_PEP_PATH, header=None)
+            st.sidebar.success("Schichtplan erfolgreich geladen!")
+        except Exception as err:
+            st.sidebar.error(f"⚠️ Fehler beim Laden: {err}")
+    elif os.path.exists(SAVED_PEP_PATH) and "pep_df" not in st.session_state:
+        try:
+            # Автоматически подгружаем сохраненный ранее файл при старте
+            st.session_state["pep_df"] = pd.read_excel(SAVED_PEP_PATH, header=None)
+        except Exception as err:
+            pass
 
         with st.sidebar.expander("🔓 Manueller Zugriff (Ausnahme)"):
             st.markdown("Zugriff für Mitarbeiter heute erlauben (Vertretung):")
