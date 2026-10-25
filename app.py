@@ -457,11 +457,11 @@ st.title("🛒 IQBestandPro - Arbeitsbereich")
 
 if can_perform_work_actions:
     # --- СЮДА ВСТАВЬТЕ ВСЮ ВАШУ ОСНОВНУЮ ПРОГРАММУ (СКЛАД, КАССА, КНОПКИ И Т.Д.) ---
-    st.success("✅ Вы имеете полный доступ к кассе, складу и функциям продаж.")
+    st.success("Sie haben vollen Zugriff auf Kasse, Lager und Verkaufsfunktionen.")
     # Ваш текущий код основного функционала...
 else:
     # Если сегодня отпуск или выходной, показываем только предупреждение
-    st.warning("🔒 Доступ к оперативным продажам и складу на сегодня заблокирован (Отпуск / Выходной).")
+    st.error("🔒 Der Zugriff auf operative Funktionen und das Lager ist heute gesperrt (Urlaub / Frei).")
     st.info("💡 Вы можете смотреть расписание выше, но рабочие действия недоступны.")
 st.title("📦 Lagerverwaltung (5. Etage)")
 st.subheader("Iittala & Royal Copenhagen")
