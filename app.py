@@ -313,15 +313,15 @@ else:
         st.info("ℹ️ Schichtplan wurde noch nicht hochgeladen. Bitte laden Sie die PEP-Datei über die Seitenleiste hoch.")
 
     st.markdown("---")
-    is_allowed, access_msg = check_access_by_schedule(current_user_name, user_role)
+   is_allowed, access_msg = check_access_by_schedule(current_user_name, user_role)
 
-        if not is_allowed and user_role not in ["manager", "admin"]:
-        st.warning(access_msg)
-        st.info("ℹ️ **Ansichtsmodus:** Sie können den Dienstplan einsehen, aber der Zugriff auf Lageränderungen ist eingeschränkt.")
-        return False  # Возвращаем False, если доступ запрещен
-    else:
-        st.success(access_msg)
-        return True   # Возвращаем True, если доступ разрешен
+if not is_allowed and user_role not in ["manager", "admin"]:
+    st.warning(access_msg)
+    st.info("ℹ️ **Ansichtsmodus:** Sie können den Dienstplan einsehen, aber der Zugriff auf Lageränderungen ist eingeschränkt.")
+    can_edit = False
+else:
+    st.success(access_msg)
+    can_edit = True
 
 # --- СИСТЕМА АВТОРИЗАЦИИ (МЕНЕДЖЕР И АГЕНТЫ С ПИН-КОДОМ) ---
 def check_authentication():
