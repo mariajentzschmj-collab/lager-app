@@ -2754,17 +2754,15 @@ else:
     st.warning("🔒 Доступ к оперативным функциям и складу на сегодня заблокирован (Отпуск / Выходной).")
     st.info("💡 Вы можете смотреть расписание выше, но рабочие действия недоступны.")
         # ==========================================
-# 1. Сначала вызываем модуль графика, чтобы инициализировать выбор сотрудника
+# 1. Сначала полностью отрисовываем боковую панель и селекторы (чтобы всё обновилось)
 current_role = st.session_state.get("user_role", "Agent")
 current_user_name = st.session_state.get("username", "Unbekannt")
 render_pep_module(current_user_name, current_role)
 
-# 2. Берем актуальное имя сотрудника из селектора или сессии
-active_user = st.session_state.get("username", "Unbekannt")
-if active_user == "Unbekannt" and "view_emp_selectbox" in st.session_state:
-    active_user = st.session_state["view_emp_selectbox"]
+# 2. Теперь безопасно считываем имя сотрудника, которое пользователь выбрал в интерфейсе
+active_user = st.session_state.get("view_emp_selectbox", current_user_name)
 
-# 3. Проверяем доступ для правильного сотрудника
+# 3. Передаем актуальное имя в проверку (она теперь увидит и Марию, и её ручной допуск)
 is_allowed, access_msg = check_access_by_schedule(active_user, current_role)
 
 if not is_allowed and current_role not in ["manager", "admin"]:
