@@ -2658,7 +2658,7 @@ if supabase is not None:
             st.info("Noch keine Umsätze in der Datenbank gespeichert.")
     except Exception as fetch_err:
         st.warning(f"Konnte Historie nicht laden: {fetch_err}")
-        else:
+    else:
     # --- А этот блок сработает, если сегодня у сотрудника выходной или отпуск ---
     st.warning("🔒 Доступ к оперативным функциям и складу на сегодня заблокирован (Отпуск / Выходной).")
     st.info("💡 Вы можете смотреть расписание выше, но рабочие действия недоступны.")
