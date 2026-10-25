@@ -299,7 +299,7 @@ def check_authentication():
 
 if not check_authentication():
   st.stop()
-    current_user_name = st.session_state.get("user_name", "Maria")
+current_user_name = st.session_state.get("user_name", "Maria")
 user_role = st.session_state.get("role", "manager")
 
 # ВСТАВЛЯЕМ ВЫЗОВ ПРОВЕРКИ ГРАФИКА ЗДЕСЬ:
@@ -307,7 +307,8 @@ can_perform_work_actions = render_pep_module(current_user_name, user_role)
 # ==========================================
 # 🎯 ЗАКРЕПЛЕННЫЙ ВЕРХНИЙ БЛОК: ЦЕЛИ И АВТО-СУММИРОВАНИЕ ИЗ БАЗЫ
 # ==========================================
-st.markdown("### 🎯 Monatsziele & Zielerreichung")
+if can_perform_work_actions:
+    st.markdown("### 🎯 Monatsziele & Zielerreichung")
 
 # 1. Хранилище целей по месяцам
 if "monthly_targets_db" not in st.session_state:
@@ -2657,6 +2658,10 @@ if supabase is not None:
             st.info("Noch keine Umsätze in der Datenbank gespeichert.")
     except Exception as fetch_err:
         st.warning(f"Konnte Historie nicht laden: {fetch_err}")
+        else:
+    # --- А этот блок сработает, если сегодня у сотрудника выходной или отпуск ---
+    st.warning("🔒 Доступ к оперативным функциям и складу на сегодня заблокирован (Отпуск / Выходной).")
+    st.info("💡 Вы можете смотреть расписание выше, но рабочие действия недоступны.")
         # ==========================================
 # FOOTER / COPYRIGHT
 # ==========================================
