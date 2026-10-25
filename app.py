@@ -143,8 +143,6 @@ except Exception as e:
 # SCHICHTPLAN-LOGIK (PEP 2026) & ZUGÄNGE
 # ==========================================
 # Определяем текущего пользователя и роль
-current_role = st.session_state.get("user_role", "Agent")
-current_user_name = st.session_state.get("username", "Unbekannt")
 
 if "pep_df" not in st.session_state:
     st.session_state["pep_df"] = None
@@ -2756,7 +2754,27 @@ else:
     st.warning("🔒 Доступ к оперативным функциям и складу на сегодня заблокирован (Отпуск / Выходной).")
     st.info("💡 Вы можете смотреть расписание выше, но рабочие действия недоступны.")
         # ==========================================
-# FOOTER / COPYRIGHT
+# Берем имя текущего пользователя из сессии, либо из выпадающего списка просмотра графика
+current_user = st.session_state.get("username", "Unbekannt")
+if current_user == "Unbekannt" and "view_emp_selectbox" in st.session_state:
+    current_user = st.session_state["view_emp_selectbox"]
+
+current_role = st.session_state.get("user_role", "Agent")
+
+# Вызываем отрисовку модуля графика и боковой панели с ручным доступом
+render_pep_module(current_user, current_role)
+
+# Проверяем доступ
+is_allowed, access_msg = check_access_by_schedule(current_user, current_role)
+
+if not is_allowed and current_role not in ["manager", "admin"]:
+    st.warning(access_msg)
+    st.info("ℹ️ **Ansichtsmodus:** Sie können den Dienstplan einsehen, aber der Zugriff auf Lageränderungen ist eingeschränkt.")
+    can_edit = False
+else:
+    st.success(access_msg)
+    can_edit = True
+    # FOOTER / COPYRIGHT
 # ==========================================
 st.markdown("---")
 st.markdown(
