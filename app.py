@@ -1397,43 +1397,138 @@ if st.sidebar.button("🚀 Automatische Neuberechnung starten", key="btn_neubere
         st.cache_data.clear()
         st.rerun()
 
-# Блок отображения накопленной истории по месяцам с выпадающими списками (Expander)
+# ==========================================
+# UMSATZBERECHNUNG & AKKUMULATION (TAG & MONAT)
+# ==========================================
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("💶 Umsatz-Tracking (Tage & Monate)")
+
+st.sidebar.markdown(
+    "Laden Sie einen Verkaufsbericht hoch. Die Umsätze werden korrekt summiert und in Supabase gespeichert."
+)
+
+with st.sidebar.expander("ℹ️ Format-Hinweis"):
+    st.markdown("""
+    Ihre Datei sollte folgende Spalten enthalten:
+    1. **Datum** (z. B. `02.10.2026`)
+    2. **Gesamtpreis / Umsatz** (die fertige Summe pro Zeile)
+    """)
+
+sales_file = st.sidebar.file_uploader(
+    "Verkaufsbericht hochladen (Excel / CSV)", type=["xlsx", "csv"], key="sales_report_accum"
+)
+
+if sales_file is not None:
+    try:
+        import pandas as pd
+
+        if sales_file.name.endswith(".csv"):
+            sales_report_df = pd.read_csv(sales_file)
+        else:
+            sales_report_df = pd.read_excel(sales_file)
+
+        st.sidebar.success("✅ Bericht erfolgreich geladen!")
+
+        columns_list = list(sales_report_df.columns)
+        date_col = st.sidebar.selectbox("Spalte für das Datum", columns_list, key="acc_date_col")
+        price_col = st.sidebar.selectbox("Spalte für Gesamtpreis / Umsatz", columns_list, key="acc_price_col")
+
+        if st.sidebar.button("💾 Umsatz speichern & kumulieren"):
+            # Очищаем и суммируем общую сумму брутто
+            cleaned_prices = (
+                sales_report_df[price_col]
+                .astype(str)
+                .str.replace('€', '', regex=False)
+                .str.replace(' ', '', regex=False)
+                .str.replace(',', '.', regex=False)
+            )
+            total_brutto = pd.to_numeric(cleaned_prices, errors='coerce').sum()
+
+            sales_report_df[date_col] = pd.to_datetime(sales_report_df[date_col], errors='coerce')
+            valid_dates = sales_report_df[date_col].dropna()
+            
+            if not valid_dates.empty:
+                report_date = valid_dates.iloc[0].strftime('%Y-%m-%d')
+                report_month = valid_dates.iloc[0].strftime('%Y-%m')
+            else:
+                report_date = pd.Timestamp.today().strftime('%Y-%m-%d')
+                report_month = pd.Timestamp.today().strftime('%Y-%m')
+
+            # Сохранение в Supabase
+            if supabase is not None:
+                try:
+                    existing_day = supabase.table("daily_sales").select("*").eq("date", report_date).execute()
+                    
+                    if existing_day and existing_day.data:
+                        supabase.table("daily_sales").update({
+                            "brutto": float(total_brutto),
+                            "month": report_month
+                        }).eq("date", report_date).execute()
+                    else:
+                        supabase.table("daily_sales").insert({
+                            "date": report_date,
+                            "brutto": float(total_brutto),
+                            "month": report_month
+                        }).execute()
+                    
+                    st.sidebar.success(f"✔ Umsatz für {report_date} ({total_brutto:,.2f} €) gespeichert!")
+                except Exception as db_err:
+                    st.sidebar.warning(f"⚠ DB-Hinweis: {db_err}")
+
+            total_netto = total_brutto / 1.19
+            st.sidebar.markdown("---")
+            st.sidebar.metric(label="Brutto (dieser Bericht)", value=f"{total_brutto:,.2f} €")
+            st.sidebar.metric(label="Netto (exkl. 19% MwSt.)", value=f"{total_netto:,.2f} €")
+
+    except Exception as e:
+        st.sidebar.error(f"⚠ Fehler beim Verarbeiten: {e}")
+
+# Блок отображения накопленной истории по месяцам
 if supabase is not None:
     st.sidebar.markdown("---")
     st.sidebar.subheader("📈 Kumulierte Umsätze (Historie)")
     
     try:
-        history_res = supabase.table("daily_sales").select("*").order("date", desc=True).execute()
+        history_res = supabase.table("daily_sales").select("*").execute()
         if history_res and history_res.data:
             hist_df = pd.DataFrame(history_res.data)
             
             if not hist_df.empty and "month" in hist_df.columns and "brutto" in hist_df.columns:
-                st.sidebar.markdown("**Nach Monaten:**")
-                
-                # Группируем по месяцам для получения общих сумм
                 monthly_summary = hist_df.groupby("month")["brutto"].sum().reset_index()
-                monthly_summary = monthly_summary.sort_values("month", ascending=False)
+                monthly_summary = monthly_summary.sort_values("month")
 
-                for _, m_row in monthly_summary.iterrows():
-                    m_name = m_row["month"]
-                    m_brutto = m_row["brutto"]
+                st.sidebar.markdown("**Nach Monaten:**")
+                for _, row in monthly_summary.iterrows():
+                    m_name = row["month"]
+                    m_brutto = row["brutto"]
                     m_netto = m_brutto / 1.19
-
-                    # Создаем аккуратный раскрывающийся блок (Expander) для каждого месяца
-                    with st.sidebar.expander(f"🗓 {m_name}: Netto {m_netto:,.2f} € (Brutto: {m_brutto:,.2f} €)"):
-                        st.markdown("##### Bereits geladene Tage:")
-                        
-                        # Выбираем дни, принадлежащие текущему месяцу
-                        month_days = hist_df[hist_df["month"] == m_name]
-                        for _, d_row in month_days.iterrows():
-                            d_date = d_row["date"]
-                            d_brutto = float(d_row["brutto"])
-                            d_netto = d_brutto / 1.19
-                            st.markdown(f"• **{d_date}**: {d_netto:,.2f} € Netto *(Brutto: {d_brutto:,.2f} €)*")
+                    st.sidebar.markdown(f"🗓 **{m_name}**: Netto **{m_netto:,.2f} €** *(Brutto: {m_brutto:,.2f} €)*")
         else:
             st.sidebar.info("ℹ Noch keine kumulierten Daten in der Datenbank.")
     except Exception as hist_err:
         st.sidebar.caption("💡 Tipp: Stellen Sie sicher, dass die Tabelle `daily_sales` in Supabase existiert.")
+
+# --- ИСТОРИЯ ЗАГРУЖЕННЫХ ДАТ В UMSATZ-TRACKING ---
+if supabase is not None:
+    try:
+        res_hist = supabase.table("daily_sales").select("date, brutto").order("date", desc=True).execute()
+        if res_hist and res_hist.data:
+            hist_df = pd.DataFrame(res_hist.data)
+            with st.sidebar.expander("📅 Bereits geladene Tage anzeigen"):
+                if not hist_df.empty:
+                    for _, h_row in hist_df.iterrows():
+                        d_str = h_row.get("date", "-")
+                        b_val = float(h_row.get("brutto", 0) or 0)
+                        n_val = b_val / 1.19
+                        st.sidebar.markdown(f"• **{d_str}**: {n_val:,.2f} € Netto *(Brutto: {b_val:,.2f} €)*")
+                else:
+                    st.sidebar.info("Noch keine Tage erfasst.")
+    except Exception as e:
+        pass
+
+import streamlit as st
+
 # ==========================================
 # INVENTUR-SCHNELLEINGABE (MULTI-USER)
 # ==========================================
