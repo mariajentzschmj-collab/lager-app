@@ -4,7 +4,6 @@ import numpy as np
 import plotly.express as px
 import hashlib
 import io
-import os
 import json
 import random
 import datetime
@@ -13,68 +12,7 @@ import urllib.parse
 import requests
 import streamlit.components.v1 as components
 from supabase import create_client
-def render_customer_orders_module():
-    st.markdown("---")
-    st.subheader("📦 Kundenbestellungen (Sonderbestellungen / Nicht auf Lager)")
 
-    ORDERS_FILE = "customer_orders.json"
-
-    orders = []
-    if os.path.exists(ORDERS_FILE):
-        try:
-            with open(ORDERS_FILE, "r", encoding="utf-8") as f:
-                orders = json.load(f)
-        except Exception:
-            orders = []
-
-    with st.form("new_customer_order_form", clear_on_submit=True):
-        st.markdown("**Neuen Kundenauftrag erfassen**")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            cust_name = st.text_input("Kundenname / Telefon / Kontakt")
-            brand_name = st.selectbox("Marke", ["Iittala", "Royal Copenhagen", "Georg Jensen", "Moomin", "Sonstige"])
-        
-        with col2:
-            item_desc = st.text_input("Artikel / Produktbezeichnung")
-            quantity = st.number_input("Menge", min_value=1, value=1)
-        
-        notes = st.text_area("Bemerkungen (z.B. Lieferwunsch, Anzahlung)")
-        submit_order = st.form_submit_button("Bestellung anlegen")
-
-        if submit_order:
-            if cust_name and item_desc:
-                new_order = {
-                    "Kunde": cust_name,
-                    "Marke": brand_name,
-                    "Artikel": item_desc,
-                    "Menge": quantity,
-                    "Status": "Bestellt (Nicht auf Lager)",
-                    "Bemerkung": notes
-                }
-                orders.append(new_order)
-                try:
-                    with open(ORDERS_FILE, "w", encoding="utf-8") as f:
-                        json.dump(orders, f, ensure_ascii=False, indent=4)
-                    st.success("Kundenbestellung erfolgreich gespeichert!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Fehler beim Speichern: {e}")
-            else:
-                st.warning("Bitte füllen Sie mindestens den Kundennamen und die Artikelbezeichnung aus.")
-
-    if orders:
-        st.markdown("### 📋 Aktuelle Kundenbestellungen")
-        df_orders = pd.DataFrame(orders)
-        st.dataframe(df_orders, use_container_width=True, hide_index=True)
-
-        if st.button("Alle Bestellungen löschen / Zurücksetzen"):
-            if os.path.exists(ORDERS_FILE):
-                os.remove(ORDERS_FILE)
-            st.success("Liste zurückgesetzt!")
-            st.rerun()
-    else:
-        st.info("ℹ️ Keine offenen Kundenbestellungen vorhanden.")
 # Seitanordnung
 st.set_page_config(
     page_title="IQBestandPro", layout="wide"
@@ -142,13 +80,13 @@ except Exception as e:
 # ==========================================
 # SCHICHTPLAN-LOGIK (PEP 2026) & ZUGÄNGE
 # ==========================================
-# Определяем текущего пользователя и роль
 
 if "pep_df" not in st.session_state:
     st.session_state["pep_df"] = None
 
 if "manual_override_users" not in st.session_state:
     st.session_state["manual_override_users"] = []
+
 
 def check_access_by_schedule(employee_name, user_role):
     """
@@ -219,17 +157,17 @@ def render_pep_module(current_user_name, user_role):
             # Сохраняем загруженный файл на диск
             with open(SAVED_PEP_PATH, "wb") as f:
                 f.write(uploaded_pep.getbuffer())
-
+            
             st.session_state["pep_df"] = pd.read_excel(SAVED_PEP_PATH, header=None)
             st.sidebar.success("Schichtplan erfolgreich geladen!")
         except Exception as err:
             st.sidebar.error(f"⚠️ Fehler beim Laden: {err}")
-
-    elif os.path.exists("pep 10.2026.xlsx"):
+    elif os.path.exists(SAVED_PEP_PATH) and "pep_df" not in st.session_state:
         try:
-            st.session_state["pep_df"] = pd.read_excel("pep 10.2026.xlsx", header=None)
+            # Автоматически подгружаем сохраненный ранее файл при старте
+            st.session_state["pep_df"] = pd.read_excel(SAVED_PEP_PATH, header=None)
         except Exception as err:
-            st.sidebar.error(f"⚠️ Fehler beim Laden der Standard-PEP: {err}")
+            pass
 
     if user_role in ["manager", "admin"]:
         with st.sidebar.expander("🔓 Manueller Zugriff (Ausnahme)"):
@@ -310,17 +248,15 @@ def render_pep_module(current_user_name, user_role):
         st.info("ℹ️ Schichtplan wurde noch nicht hochgeladen. Bitte laden Sie die PEP-Datei über die Seitenleiste hoch.")
 
     st.markdown("---")
-current_user = st.session_state.get("username", "Unbekannt")
-current_role = st.session_state.get("user_role", "Agent")
-is_allowed, access_msg = check_access_by_schedule(current_user, current_role)
+    is_allowed, access_msg = check_access_by_schedule(current_user_name, user_role)
 
-if not is_allowed and current_role not in ["manager", "admin"]:
-    st.warning(access_msg)
-    st.info("ℹ️ **Ansichtsmodus:** Sie können den Dienstplan einsehen, aber der Zugriff auf Lageränderungen ist eingeschränkt.")
-    can_edit = False
-else:
-    st.success(access_msg)
-    can_edit = True
+    if not is_allowed and user_role not in ["manager", "admin"]:
+        st.warning(access_msg)
+        st.info("ℹ️ **Ansichtsmodus:** Sie können den Dienstplan einsehen, aber der Zugriff auf Lageränderungen und Verkäufe ist heute eingeschränkt.")
+        return False
+    else:
+        st.success(access_msg)
+        return True
 
 # --- СИСТЕМА АВТОРИЗАЦИИ (МЕНЕДЖЕР И АГЕНТЫ С ПИН-КОДОМ) ---
 def check_authentication():
@@ -532,30 +468,21 @@ if st.sidebar.button("🚪 Abmelden"):
   st.session_state["role"] = None
   st.session_state["user_name"] = None
   st.rerun()
-st.sidebar.markdown("---")
-app_mode = st.sidebar.radio(
-    "Navigation", 
-    ["📦 Lager & Bestände", "📋 Kundenbestellungen (Sonderwünsche)"]
-)
 
 # --- HAUPTCODE DER ANWENDUNG ---
 st.markdown("---")
 st.title("🛒 IQBestandPro - Arbeitsbereich")
 
-if app_mode == "📦 Lager & Bestände":
-    if can_perform_work_actions:
-        # --- СЮДА ВСТАВЬТЕ ВСЮ ВАШУ ОСНОВНУЮ ПРОГРАММУ (СКЛАД, КАССА, КНОПКИ И Т.Д.) ---
-        st.success("Sie haben vollen Zugriff auf Kasse, Lager und Verkaufsfunktionen.")
-        # Ваш текущий код основного функционала...
-    else:
-        # Если сегодня отпуск или выходной, показываем только предупреждение
-        st.error("🚨 Der Zugriff auf operative Funktionen und das Lager ist heute gesperrt (Urlaub / Frei).")
-        st.info("💡 Вы можете смотреть расписание выше, но рабочие действия недоступны.")
-        st.title("🗄️ Lagerverwaltung (5. Etage)")
-        st.subheader("🏺 Tittala & Royal Copenhagen")
-
-elif app_mode == "📋 Kundenbestellungen (Sonderwünsche)":
-    render_customer_orders_module()
+if can_perform_work_actions:
+    # --- СЮДА ВСТАВЬТЕ ВСЮ ВАШУ ОСНОВНУЮ ПРОГРАММУ (СКЛАД, КАССА, КНОПКИ И Т.Д.) ---
+    st.success("Sie haben vollen Zugriff auf Kasse, Lager und Verkaufsfunktionen.")
+    # Ваш текущий код основного функционала...
+else:
+    # Если сегодня отпуск или выходной, показываем только предупреждение
+    st.error("🔒 Der Zugriff auf operative Funktionen und das Lager ist heute gesperrt (Urlaub / Frei).")
+    st.info("💡 Вы можете смотреть расписание выше, но рабочие действия недоступны.")
+st.title("📦 Lagerverwaltung (5. Etage)")
+st.subheader("Iittala & Royal Copenhagen")
 
 
 # --- ФУНКЦИЯ СОЗДАНИЯ ЗАПРОСА НА ПОДТВЕРЖДЕНИЕ В БАЗЕ ---
@@ -2145,6 +2072,9 @@ def clean_val(val, default, val_type=str):
     except:
         return default
 
+# Определяем текущего пользователя и роль
+current_role = st.session_state.get("user_role", "Agent")
+current_user_name = st.session_state.get("username", "Unbekannt")
 
 # =========================================================
 # БЛОК 1: ПРОВЕРКА ЗАКАЗА И ДОБАВЛЕНИЕ НЕДОСТАЮЩИХ ТОВАРОВ
@@ -2754,25 +2684,7 @@ else:
     st.warning("🔒 Доступ к оперативным функциям и складу на сегодня заблокирован (Отпуск / Выходной).")
     st.info("💡 Вы можете смотреть расписание выше, но рабочие действия недоступны.")
         # ==========================================
-# 1. Сначала полностью отрисовываем боковую панель и селекторы (чтобы всё обновилось)
-current_role = st.session_state.get("user_role", "Agent")
-current_user_name = st.session_state.get("username", "Unbekannt")
-render_pep_module(current_user_name, current_role)
-
-# 2. Теперь безопасно считываем имя сотрудника, которое пользователь выбрал в интерфейсе
-active_user = st.session_state.get("view_emp_selectbox", current_user_name)
-
-# 3. Передаем актуальное имя в проверку (она теперь увидит и Марию, и её ручной допуск)
-is_allowed, access_msg = check_access_by_schedule(active_user, current_role)
-
-if not is_allowed and current_role not in ["manager", "admin"]:
-    st.warning(access_msg)
-    st.info("ℹ️ **Ansichtsmodus:** Sie können den Dienstplan einsehen, aber der Zugriff auf Lageränderungen ist eingeschränkt.")
-    can_edit = False
-else:
-    st.success(access_msg)
-    can_edit = True
-    # FOOTER / COPYRIGHT
+# FOOTER / COPYRIGHT
 # ==========================================
 st.markdown("---")
 st.markdown(
@@ -2781,4 +2693,3 @@ st.markdown(
     "</div>",
     unsafe_allow_html=True
 )
-
