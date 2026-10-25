@@ -312,12 +312,11 @@ def render_pep_module(current_user_name, user_role):
         st.info("ℹ️ Schichtplan wurde noch nicht hochgeladen. Bitte laden Sie die PEP-Datei über die Seitenleiste hoch.")
 
     st.markdown("---")
-is_allowed, access_msg = check_access_by_schedule(
-    st.session_state.get("username", "Unbekannt"), 
-    st.session_state.get("user_role", "Agent")
-)
+current_user = st.session_state.get("username", "Unbekannt")
+current_role = st.session_state.get("user_role", "Agent")
+is_allowed, access_msg = check_access_by_schedule(current_user, current_role)
 
-if not is_allowed and user_role not in ["manager", "admin"]:
+if not is_allowed and current_role not in ["manager", "admin"]:
     st.warning(access_msg)
     st.info("ℹ️ **Ansichtsmodus:** Sie können den Dienstplan einsehen, aber der Zugriff auf Lageränderungen ist eingeschränkt.")
     can_edit = False
