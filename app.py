@@ -305,6 +305,8 @@ user_role = st.session_state.get("role", "manager")
 
 # ВСТАВЛЯЕМ ВЫЗОВ ПРОВЕРКИ ГРАФИКА ЗДЕСЬ:
 can_perform_work_actions = render_pep_module(current_user_name, user_role)
+if not can_perform_work_actions:
+    st.stop()
 # ==========================================
 # 🎯 ЗАКРЕПЛЕННЫЙ ВЕРХНИЙ БЛОК: ЦЕЛИ И АВТО-СУММИРОВАНИЕ ИЗ БАЗЫ
 # ==========================================
