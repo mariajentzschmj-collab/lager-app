@@ -122,9 +122,9 @@ return False
 if not check_authentication():
 st.stop()
 ==========================================
-🎯 ЗАКРЕПЛЕННЫЙ ВЕРХНИЙ БЛОК: ЦЕЛИ И АВТО-СУММИРОВАНИЕ ИЗ БАЗЫ
+ ЗАКРЕПЛЕННЫЙ ВЕРХНИЙ БЛОК: ЦЕЛИ И АВТО-СУММИРОВАНИЕ ИЗ БАЗЫ
 ==========================================
-st.markdown("### 🎯 Monatsziele & Zielerreichung")
+st.markdown("###  Monatsziele & Zielerreichung")
 1. Хранилище целей по месяцам
 if "monthly_targets_db" not in st.session_state:
 st.session_state["monthly_targets_db"] = {
@@ -134,7 +134,7 @@ st.session_state["monthly_targets_db"] = {
 col_m1, col_m2 = st.columns([2, 1])
 with col_m1:
 available_months = sorted(list(st.session_state["monthly_targets_db"].keys()), reverse=True)
-selected_month = st.selectbox("📅 Zeitraum / Monat wählen:", available_months, index=0)
+selected_month = st.selectbox(" Zeitraum / Monat wählen:", available_months, index=0)
 with col_m2:
 st.write("")
 if st.button("➕ Neuer Monat"):
@@ -144,7 +144,7 @@ st.session_state["monthly_targets_db"][new_m_key] = {"Iittala": 0.0, "Royal Cope
 st.rerun()
 current_targets = st.session_state["monthly_targets_db"][selected_month]
 3. Ручной ввод целей на немецком
-with st.expander(f"⚙️ Monatsziele manuell bearbeiten ({selected_month})"):
+with st.expander(f" Monatsziele manuell bearbeiten ({selected_month})"):
 st.info("Geben Sie die Monatsziele in Euro (Netto) für jede Marke ein:")
 updated_targets = {}
 for brand_key in ["Iittala", "Royal Copenhagen", "Arabia"]:
