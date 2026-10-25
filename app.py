@@ -299,6 +299,11 @@ def check_authentication():
 
 if not check_authentication():
   st.stop()
+    current_user_name = st.session_state.get("user_name", "Maria")
+user_role = st.session_state.get("role", "manager")
+
+# ВСТАВЛЯЕМ ВЫЗОВ ПРОВЕРКИ ГРАФИКА ЗДЕСЬ:
+can_perform_work_actions = render_pep_module(current_user_name, user_role)
 # ==========================================
 # 🎯 ЗАКРЕПЛЕННЫЙ ВЕРХНИЙ БЛОК: ЦЕЛИ И АВТО-СУММИРОВАНИЕ ИЗ БАЗЫ
 # ==========================================
@@ -443,6 +448,17 @@ if st.sidebar.button("🚪 Abmelden"):
   st.rerun()
 
 # --- HAUPTCODE DER ANWENDUNG ---
+st.markdown("---")
+st.title("🛒 IQBestandPro - Arbeitsbereich")
+
+if can_perform_work_actions:
+    # --- СЮДА ВСТАВЬТЕ ВСЮ ВАШУ ОСНОВНУЮ ПРОГРАММУ (СКЛАД, КАССА, КНОПКИ И Т.Д.) ---
+    st.success("✅ Вы имеете полный доступ к кассе, складу и функциям продаж.")
+    # Ваш текущий код основного функционала...
+else:
+    # Если сегодня отпуск или выходной, показываем только предупреждение
+    st.warning("🔒 Доступ к оперативным продажам и складу на сегодня заблокирован (Отпуск / Выходной).")
+    st.info("💡 Вы можете смотреть расписание выше, но рабочие действия недоступны.")
 st.title("📦 Lagerverwaltung (5. Etage)")
 st.subheader("Iittala & Royal Copenhagen")
 
