@@ -149,7 +149,6 @@ if "pep_df" not in st.session_state:
 if "manual_override_users" not in st.session_state:
     st.session_state["manual_override_users"] = []
 
-
 def check_access_by_schedule(employee_name, user_role):
     """
     Prüft den Zugriff des Mitarbeiters basierend auf dem PEP-Schichtplan.
