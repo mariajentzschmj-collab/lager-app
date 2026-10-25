@@ -142,6 +142,7 @@ def render_pep_module(current_user_name, user_role):
     st.sidebar.markdown("---")
     st.sidebar.subheader("📅 Schichtplan (PEP) & Zugänge")
 
+    uploaded_pep = None
     if user_role in ["manager", "admin"]:
         uploaded_pep = st.sidebar.file_uploader(
             "PEP-Schichtplan hochladen (.xlsx)",
@@ -149,7 +150,6 @@ def render_pep_module(current_user_name, user_role):
         )
 
     import os
-    
     SAVED_PEP_PATH = "pep_current.xlsx"
 
     if uploaded_pep is not None:
@@ -169,6 +169,7 @@ def render_pep_module(current_user_name, user_role):
         except Exception as err:
             pass
 
+    if user_role in ["manager", "admin"]:
         with st.sidebar.expander("🔓 Manueller Zugriff (Ausnahme)"):
             st.markdown("Zugriff für Mitarbeiter heute erlauben (Vertretung):")
             all_employees = ["Maria", "Peixia", "Irina", "Tiffany", "Valeria"]
@@ -176,11 +177,10 @@ def render_pep_module(current_user_name, user_role):
             selected_overrides = st.multiselect(
                 "Zugriff erlaubt für:",
                 options=all_employees,
-                default=st.session_state["manual_override_users"],
+                default=st.session_state.get("manual_override_users", []),
                 key="override_multiselect"
             )
             st.session_state["manual_override_users"] = selected_overrides
-
     st.markdown("---")
     st.subheader("📅 Monats-Schichtplan (Übersicht)")
 
