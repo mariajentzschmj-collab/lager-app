@@ -242,19 +242,12 @@ def render_pep_module(current_user_name, user_role):
 
                 sch_df = pd.DataFrame(schedule_data)
                 st.dataframe(sch_df, use_container_width=True, hide_index=True)
-
-    except Exception as view_err:
-    try:
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        pep_path = os.path.join(base_dir, "pep 10.2026.xlsx")
-        if not os.path.exists(pep_path):
-            pep_path = "pep 10.2026.xlsx"
-        pep_df = pd.read_excel(pep_path)
-    except Exception:
-        st.info("ℹ️ Schichtplan wird geladen...")
-    st.markdown("---")
-    is_allowed, access_msg = check_access_by_schedule(current_user_name, user_role)
-
+    # Автоматическая загрузка графика из репозитория
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    pep_path = os.path.join(base_dir, "pep 10.2026.xlsx")
+    if not os.path.exists(pep_path):
+        pep_path = "pep 10.2026.xlsx"
+    pep_df = pd.read_excel(pep_path)
     if not is_allowed and user_role not in ["manager", "admin"]:
         st.warning(access_msg)
         st.info("ℹ️ **Ansichtsmodus:** Sie können den Dienstplan einsehen, aber der Zugriff auf Lageränderungen und Verkäufe ist heute eingeschränkt.")
