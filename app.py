@@ -2686,7 +2686,9 @@ else:
     st.info("💡 Вы можете смотреть расписание выше, но рабочие действия недоступны.")
         # ==========================================
 # Запуск учета рабочего времени и загрузка графика из репозитория
-pep_df = init_time_tracker_widget(supabase, github_file_path="pep 10.2026.xlsx")
+import os
+pep_path = os.path.join(os.path.dirname(__file__), "pep 10.2026.xlsx")
+pep_df = init_time_tracker_widget(supabase, github_file_path=pep_path)
 # FOOTER / COPYRIGHT
 # ==========================================
 st.markdown("---")
