@@ -1,28 +1,22 @@
-import os
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date
 
 def init_time_tracker_widget(supabase_client, github_file_path="pep 10.2026.xlsx"):
     """
-    Универсальный модуль: читает график и выводит виджет Zeiterfassung внизу страницы.
+    Универсальный модуль: читает график с GitHub и выводит виджет Zeiterfassung внизу страницы.
+    Основной app.py менять не придется!
     """
     
-    # Надежный поиск файла в папке проекта
-    pep_df = None
+    # 1. Загрузка графика прямо из GitHub (или локальной папки проекта)
     try:
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        full_path = os.path.join(base_dir, github_file_path)
-        
-        if not os.path.exists(full_path):
-            full_path = github_file_path  # запасной вариант
-            
         if github_file_path.endswith('.csv'):
-            pep_df = pd.read_csv(full_path)
+            pep_df = pd.read_csv(github_file_path)
         else:
-            pep_df = pd.read_excel(full_path)
-    except Exception as e:
-        pep_df = None  # Приложение не упадет, но мы будем знать
+            pep_df = pd.read_excel(github_file_path)
+    except Exception:
+        pep_df = None  # Если файла нет под рукой, приложение не упадет
+
     st.markdown("---")
     st.markdown("### ⏱️ Zeiterfassung & Arbeitszeitkontrolle")
     
@@ -42,7 +36,7 @@ def init_time_tracker_widget(supabase_client, github_file_path="pep 10.2026.xlsx
         st.write(f"**Mitarbeiter:** {current_user}")
         st.write(f"**Datum:** {today.strftime('%d.%m.%Y')}")
         
-        # Получаем запись за сегодня из Supabase
+        # Получаем запись за сегодня из Supabase (таблица time_tracking уже создана)
         existing_record = None
         try:
             res = supabase_client.table("time_tracking")\
@@ -76,14 +70,12 @@ def init_time_tracker_widget(supabase_client, github_file_path="pep 10.2026.xlsx
             else:
                 duration_hours = 0.0
             
-            # Добавили точное время фиксации (submitted_at)
             data_to_save = {
                 "employee_name": current_user,
                 "work_date": str(today),
                 "time_in": t_in.strftime("%H:%M"),
                 "time_out": t_out.strftime("%H:%M"),
-                "total_hours": duration_hours,
-                "submitted_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                "total_hours": duration_hours
             }
             
             try:
@@ -115,20 +107,13 @@ def init_time_tracker_widget(supabase_client, github_file_path="pep 10.2026.xlsx
                 st.metric("Geleistete Stunden in diesem Monat", f"{total_worked_hours:.2f} Std.")
                 st.metric("Gearbeitete Tage", f"{days_worked}")
                 
-                # Показываем таблицу (если есть колонка submitted_at, её тоже можно будет вывести при желании)
-                display_cols = ["work_date", "time_in", "time_out", "total_hours"]
-                rename_cols = {
-                    "work_date": "Datum",
-                    "time_in": "Kommen",
-                    "time_out": "Gehen",
-                    "total_hours": "Stunden (netto)"
-                }
-                if "submitted_at" in df_month.columns:
-                    display_cols.append("submitted_at")
-                    rename_cols["submitted_at"] = "Eingetragen um"
-
                 st.dataframe(
-                    df_month[display_cols].rename(columns=rename_cols),
+                    df_month[["work_date", "time_in", "time_out", "total_hours"]].rename(columns={
+                        "work_date": "Datum",
+                        "time_in": "Kommen",
+                        "time_out": "Gehen",
+                        "total_hours": "Stunden (netto)"
+                    }),
                     use_container_width=True,
                     hide_index=True
                 )
