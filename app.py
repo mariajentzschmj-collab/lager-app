@@ -10,6 +10,7 @@ import datetime
 import time
 import urllib.parse
 import requests
+import os
 import streamlit.components.v1 as components
 from supabase import create_client
 from pep_github_tracker import init_time_tracker_widget
