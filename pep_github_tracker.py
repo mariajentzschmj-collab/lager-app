@@ -8,14 +8,31 @@ def init_time_tracker_widget(supabase_client, github_file_path="pep 10.2026.xlsx
     """
     
     # 1. Загрузка графика прямо из GitHub (или локальной папки проекта)
-    try:
-        if github_file_path.endswith('.csv'):
-            pep_df = pd.read_csv(github_file_path)
-        else:
-            pep_df = pd.read_excel(github_file_path)
-    except Exception:
-        pep_df = None  # Если файла нет под рукой, приложение не упадет
+    import os
+import streamlit as st
+import pandas as pd
+from datetime import datetime, date
 
+def init_time_tracker_widget(supabase_client, github_file_path="pep 10.2026.xlsx"):
+    """
+    Универсальный модуль: читает график и выводит виджет Zeiterfassung внизу страницы.
+    """
+    
+    # Надежный поиск файла в папке проекта
+    pep_df = None
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        full_path = os.path.join(base_dir, github_file_path)
+        
+        if not os.path.exists(full_path):
+            full_path = github_file_path  # запасной вариант
+            
+        if github_file_path.endswith('.csv'):
+            pep_df = pd.read_csv(full_path)
+        else:
+            pep_df = pd.read_excel(full_path)
+    except Exception as e:
+        pep_df = None  # Приложение не упадет, но мы будем знать
     st.markdown("---")
     st.markdown("### ⏱️ Zeiterfassung & Arbeitszeitkontrolle")
     
