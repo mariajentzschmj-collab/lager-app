@@ -2611,6 +2611,77 @@ else:
 import os
 pep_path = os.path.join(os.path.dirname(__file__), "pep 10.2026.xlsx")
 pep_df = init_time_tracker_widget(supabase, github_file_path=pep_path)
+# ==========================================
+# 📅 ВИЗУАЛИЗАЦИЯ ШИХТПЛАНА (ПРОСМОТР ИЗ GITHUB)
+# ==========================================
+st.markdown("---")
+st.subheader("📅 Aktueller Schichtplan (Monatsübersicht)")
+
+# Проверяем, загружен ли график в сессию
+pep_df_view = st.session_state.get("pep_df")
+
+if pep_df_view is not None:
+    try:
+        # Извлекаем список сотрудников из первой колонки (начиная с 3-й строки)
+        employees_list = pep_df_view.iloc[2:, 0].dropna().astype(str).tolist()
+        
+        # Селектор для выбора сотрудника для просмотра
+        selected_emp_display = st.selectbox(
+            "Mitarbeiter-Schichtplan anzeigen:", 
+            options=employees_list, 
+            key="display_emp_selectbox"
+        )
+        
+        # Находим строку выбранного сотрудника
+        emp_row_view = pep_df_view[pep_df_view.iloc[:, 0].astype(str).str.strip().str.lower() == str(selected_emp_display).strip().lower()]
+
+        if not emp_row_view.empty:
+            header_row_v = pep_df_view.iloc[0].tolist()
+            days_row_v = pep_df_view.iloc[1].tolist()
+            emp_shifts_v = emp_row_view.iloc[0].tolist()
+
+            # Фильтр по конкретному дню (по желанию)
+            selected_day_f = st.selectbox(
+                "Nach Tag filtern:", 
+                options=["Alle Tage"] + [str(h).replace('.0','') for h in header_row_v[1:] if str(h).replace('.0','').isdigit()],
+                key="display_day_filter"
+            )
+
+            schedule_table_data = []
+            for idx in range(1, len(header_row_v)):
+                d_num = str(header_row_v[idx]).replace('.0', '')
+                if d_num.isdigit() and int(d_num) <= 31:
+                    d_name = str(days_row_v[idx]) if idx < len(days_row_v) else ""
+                    s_val = str(emp_shifts_v[idx]).strip() if idx < len(emp_shifts_v) else "-"
+                    
+                    if selected_day_f != "Alle Tage" and d_num != selected_day_f:
+                        continue
+
+                    clean_s = s_val.upper().strip()
+                    is_num = any(char.isdigit() for char in clean_s)
+
+                    if is_num:
+                        st_label = f"Arbeit (Schicht {s_val}) 🟢"
+                    elif clean_s in ['O', 'О', 'URLAUB']:
+                        st_label = "Urlaub 🏖️"
+                    elif clean_s in ['H', 'FREI']:
+                        st_label = "Frei / Homeoffice 🏠"
+                    else:
+                        st_label = "Frei 🏠"
+                    
+                    schedule_table_data.append({
+                        "Tag": f"{d_num} ({d_name})",
+                        "Schicht": s_val,
+                        "Status": st_label
+                    })
+
+            # Выводим красивую табличку в самом низу
+            final_sch_df = pd.DataFrame(schedule_table_data)
+            st.dataframe(final_sch_df, use_container_width=True, hide_index=True)
+    except Exception as e:
+        st.info("ℹ️ Schichtplan konnte nicht im Detail dargestellt werden, aber die Zugriffsprüfung funktioniert.")
+else:
+    st.warning("⚠️ Schichtplan-Datei (pep 10.2026.xlsx) wurde im Repository nicht gefunden.")
 # FOOTER / COPYRIGHT
 # ==========================================
 st.markdown("---")
