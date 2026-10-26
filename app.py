@@ -1634,16 +1634,13 @@ if supabase is not None:
         res_hist = supabase.table("daily_sales").select("date, brutto").order("date", desc=True).execute()
         if res_hist and res_hist.data:
             hist_df = pd.DataFrame(res_hist.data)
-            
-            # Открывашка-спойлер в боковой панели
             with st.sidebar.expander("📅 Bereits geladene Tage anzeigen"):
                 if not hist_df.empty:
-                    # ВНИМАНИЕ: этот цикл находится ВНУТРИ expander (с отступом!), 
-                    # поэтому он спрячется, пока вы не нажмете на стрелочку.
                     for _, h_row in hist_df.iterrows():
                         d_str = h_row.get("date", "-")
                         b_val = float(h_row.get("brutto", 0) or 0)
                         n_val = b_val / 1.19
+                        # ВАЖНО: здесь обязательно должна быть приставка st.sidebar!
                         st.sidebar.markdown(f"• **{d_str}**: {n_val:,.2f} € Netto *(Brutto: {b_val:,.2f} €)*")
                 else:
                     st.sidebar.info("Noch keine Tage erfasst.")
