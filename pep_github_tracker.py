@@ -5,27 +5,6 @@ from datetime import datetime, date
 
 def init_time_tracker_widget(supabase_client, github_file_path="pep 10.2026.xlsx"):
     """
-    Универсальный модуль: читает график с GitHub и выводит виджет Zeiterfassung внизу страницы.
-    """
-    
-    # 1. Загрузка графика (абсолютно надежный поиск пути)
-    pep_df = None
-    try:
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        full_path = os.path.join(base_dir, github_file_path)
-        
-        if not os.path.exists(full_path):
-            full_path = github_file_path
-            
-        if github_file_path.endswith('.csv'):
-            pep_df = pd.read_csv(full_path)
-        else:
-            pep_df = pd.read_excel(full_path)
-    except Exception:
-        pep_df = None
-
-def init_time_tracker_widget(supabase_client, github_file_path="pep 10.2026.xlsx"):
-    """
     Универсальный модуль: читает график и выводит виджет Zeiterfassung внизу страницы.
     """
     
