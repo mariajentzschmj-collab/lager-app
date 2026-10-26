@@ -1556,7 +1556,6 @@ if sales_file is not None:
         price_col = st.sidebar.selectbox("Spalte für Gesamtpreis / Umsatz", columns_list, key="acc_price_col")
 
         if st.sidebar.button("💾 Umsatz speichern & kumulieren"):
-            # Очищаем и суммируем общую сумму брутто
             cleaned_prices = (
                 sales_report_df[price_col]
                 .astype(str)
@@ -1576,7 +1575,6 @@ if sales_file is not None:
                 report_date = pd.Timestamp.today().strftime('%Y-%m-%d')
                 report_month = pd.Timestamp.today().strftime('%Y-%m')
 
-            # Сохранение в Supabase
             if supabase is not None:
                 try:
                     existing_day = supabase.table("daily_sales").select("*").eq("date", report_date).execute()
@@ -1630,7 +1628,7 @@ if supabase is not None:
     except Exception as hist_err:
         st.sidebar.caption("💡 Tipp: Stellen Sie sicher, dass die Tabelle `daily_sales` in Supabase existiert.")
 
-# --- ИСТОРИЯ ЗАГРУЖЕННЫХ ДАТ В UMSATZ-TRACKING ---
+# --- ИСТОРИЯ ЗАГРУЖЕННЫХ ДАТ С EXPANDER (ОТКРЫВАШКА) ---
 if supabase is not None:
     try:
         res_hist = supabase.table("daily_sales").select("date, brutto").order("date", desc=True).execute()
@@ -1642,13 +1640,12 @@ if supabase is not None:
                         d_str = h_row.get("date", "-")
                         b_val = float(h_row.get("brutto", 0) or 0)
                         n_val = b_val / 1.19
+                        # Важно: внутри expander в sidebar используем st.sidebar.markdown или st.markdown
                         st.sidebar.markdown(f"• **{d_str}**: {n_val:,.2f} € Netto *(Brutto: {b_val:,.2f} €)*")
                 else:
                     st.sidebar.info("Noch keine Tage erfasst.")
     except Exception as e:
         pass
-
-import streamlit as st
 
 # ==========================================
 # INVENTUR-SCHNELLEINGABE (MULTI-USER)
