@@ -1628,19 +1628,22 @@ if supabase is not None:
     except Exception as hist_err:
         st.sidebar.caption("💡 Tipp: Stellen Sie sicher, dass die Tabelle `daily_sales` in Supabase existiert.")
 
-# --- ИСТОРИЯ ЗАГРУЖЕННЫХ ДАТ С EXPANDER (ОТКРЫВАШКА) ---
+# --- ИСТОРИЯ ЗАГРУЖЕННЫХ ДАТ С ПРАВИЛЬНЫМ EXPANDER ---
 if supabase is not None:
     try:
         res_hist = supabase.table("daily_sales").select("date, brutto").order("date", desc=True).execute()
         if res_hist and res_hist.data:
             hist_df = pd.DataFrame(res_hist.data)
+            
+            # Открывашка-спойлер в боковой панели
             with st.sidebar.expander("📅 Bereits geladene Tage anzeigen"):
                 if not hist_df.empty:
+                    # ВНИМАНИЕ: этот цикл находится ВНУТРИ expander (с отступом!), 
+                    # поэтому он спрячется, пока вы не нажмете на стрелочку.
                     for _, h_row in hist_df.iterrows():
                         d_str = h_row.get("date", "-")
                         b_val = float(h_row.get("brutto", 0) or 0)
                         n_val = b_val / 1.19
-                        # Важно: внутри expander в sidebar используем st.sidebar.markdown или st.markdown
                         st.sidebar.markdown(f"• **{d_str}**: {n_val:,.2f} € Netto *(Brutto: {b_val:,.2f} €)*")
                 else:
                     st.sidebar.info("Noch keine Tage erfasst.")
