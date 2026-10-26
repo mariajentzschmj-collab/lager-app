@@ -12,6 +12,7 @@ import urllib.parse
 import requests
 import streamlit.components.v1 as components
 from supabase import create_client
+from pep_github_tracker import init_time_tracker_widget
 
 # Seitanordnung
 st.set_page_config(
@@ -2684,6 +2685,8 @@ else:
     st.warning("🔒 Доступ к оперативным функциям и складу на сегодня заблокирован (Отпуск / Выходной).")
     st.info("💡 Вы можете смотреть расписание выше, но рабочие действия недоступны.")
         # ==========================================
+# Запуск учета рабочего времени и загрузка графика из репозитория
+pep_df = init_time_tracker_widget(supabase, github_file_path="pep 10.2026.xlsx")
 # FOOTER / COPYRIGHT
 # ==========================================
 st.markdown("---")
