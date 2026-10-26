@@ -73,7 +73,6 @@ st.markdown("""
 # ==========================================
 # КОМПАКТНЫЙ ЗАГОЛОВОК И БРЕНДИНГ САЙДБАРА
 # ==========================================
-st.sidebar.markdown("### 🎯 **IQBestandPro**")
 st.sidebar.markdown("*Retail Operations & Staff Management*")
 st.sidebar.markdown("---")
 SUPABASE_URL = "https://mtcbfvpjnxlkvvtuknyv.supabase.co"
