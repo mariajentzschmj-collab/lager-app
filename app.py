@@ -20,12 +20,11 @@ st.set_page_config(
     page_title="IQBestandPro", layout="wide"
 )
 
-# Брендинг и заголовок сайдбара
+# Брендинг сайдбара без повтора названия
 st.sidebar.markdown(
     """
     <div style="text-align: center; margin-bottom: 10px;">
-        <h2 style="margin: 0; padding: 0; font-size: 1.5rem; font-weight: bold;">🎯 IQBestandPro</h2>
-        <p style="margin: 4px 0 0 0; padding: 0; font-size: 0.8rem; color: #666; font-style: italic;">
+        <p style="margin: 0; padding: 0; font-size: 0.85rem; color: #555; font-style: italic; font-weight: 500;">
             Retail Operations & Staff Management
         </p>
     </div>
