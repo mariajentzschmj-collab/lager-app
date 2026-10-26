@@ -243,12 +243,7 @@ def render_pep_module(current_user_name, user_role):
                 sch_df = pd.DataFrame(schedule_data)
                 st.dataframe(sch_df, use_container_width=True, hide_index=True)
 
-        except Exception as view_err:
-            st.caption(f"Hinweis zur Anzeige: {view_err}")
-   except Exception as view_err:
-        st.caption(f"Hinweis zur Anzeige: {view_err}")
-else:
-    # Автоматическая загрузка из репозитория, если файл не загружен вручную
+    except Exception as view_err:
     try:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         pep_path = os.path.join(base_dir, "pep 10.2026.xlsx")
