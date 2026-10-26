@@ -5,7 +5,6 @@ from datetime import datetime, date
 def init_time_tracker_widget(supabase_client, github_file_path="pep 10.2026.xlsx"):
     """
     Универсальный модуль: читает график с GitHub и выводит виджет Zeiterfassung внизу страницы.
-    Основной app.py менять не придется!
     """
     
     # 1. Загрузка графика прямо из GitHub (или локальной папки проекта)
@@ -36,7 +35,7 @@ def init_time_tracker_widget(supabase_client, github_file_path="pep 10.2026.xlsx
         st.write(f"**Mitarbeiter:** {current_user}")
         st.write(f"**Datum:** {today.strftime('%d.%m.%Y')}")
         
-        # Получаем запись за сегодня из Supabase (таблица time_tracking уже создана)
+        # Получаем запись за сегодня из Supabase
         existing_record = None
         try:
             res = supabase_client.table("time_tracking")\
@@ -70,12 +69,14 @@ def init_time_tracker_widget(supabase_client, github_file_path="pep 10.2026.xlsx
             else:
                 duration_hours = 0.0
             
+            # Добавили точное время фиксации (submitted_at)
             data_to_save = {
                 "employee_name": current_user,
                 "work_date": str(today),
                 "time_in": t_in.strftime("%H:%M"),
                 "time_out": t_out.strftime("%H:%M"),
-                "total_hours": duration_hours
+                "total_hours": duration_hours,
+                "submitted_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
             
             try:
@@ -107,13 +108,20 @@ def init_time_tracker_widget(supabase_client, github_file_path="pep 10.2026.xlsx
                 st.metric("Geleistete Stunden in diesem Monat", f"{total_worked_hours:.2f} Std.")
                 st.metric("Gearbeitete Tage", f"{days_worked}")
                 
+                # Показываем таблицу (если есть колонка submitted_at, её тоже можно будет вывести при желании)
+                display_cols = ["work_date", "time_in", "time_out", "total_hours"]
+                rename_cols = {
+                    "work_date": "Datum",
+                    "time_in": "Kommen",
+                    "time_out": "Gehen",
+                    "total_hours": "Stunden (netto)"
+                }
+                if "submitted_at" in df_month.columns:
+                    display_cols.append("submitted_at")
+                    rename_cols["submitted_at"] = "Eingetragen um"
+
                 st.dataframe(
-                    df_month[["work_date", "time_in", "time_out", "total_hours"]].rename(columns={
-                        "work_date": "Datum",
-                        "time_in": "Kommen",
-                        "time_out": "Gehen",
-                        "total_hours": "Stunden (netto)"
-                    }),
+                    df_month[display_cols].rename(columns=rename_cols),
                     use_container_width=True,
                     hide_index=True
                 )
