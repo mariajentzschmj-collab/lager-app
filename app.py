@@ -19,11 +19,18 @@ from pep_github_tracker import init_time_tracker_widget
 st.set_page_config(
     page_title="IQBestandPro", layout="wide"
 )
+
+# Брендинг и заголовок сайдбара
+st.sidebar.markdown("### 🎯 **IQBestandPro**")
+st.sidebar.markdown("*Retail Operations & Staff Management*")
+st.sidebar.markdown("---")
+
 # ==========================================
 # СТИЛИЗАЦИЯ ПОД СТИЛЬ FISKARS / IITTALA / ROYAL COPENHAGEN
 # ==========================================
 st.markdown("""
 <style>
+...
     /* Общий фон приложения (светлый, чистый скандинавский стиль) */
     .stApp {
         background-color: #F8F9FA;
@@ -70,11 +77,7 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-# ==========================================
-# КОМПАКТНЫЙ ЗАГОЛОВОК И БРЕНДИНГ САЙДБАРА
-# ==========================================
-st.sidebar.markdown("*Retail Operations & Staff Management*")
-st.sidebar.markdown("---")
+
 SUPABASE_URL = "https://mtcbfvpjnxlkvvtuknyv.supabase.co"
 SUPABASE_KEY = "sb_publishable_wChGuVU2FeW23S2bqdYqOg_B9-oMoKs"
 
