@@ -21,8 +21,17 @@ st.set_page_config(
 )
 
 # Брендинг и заголовок сайдбара
-st.sidebar.markdown("### 🎯 **IQBestandPro**")
-st.sidebar.markdown("*Retail Operations & Staff Management*")
+st.sidebar.markdown(
+    """
+    <div style="text-align: center; margin-bottom: 10px;">
+        <h2 style="margin: 0; padding: 0; font-size: 1.5rem; font-weight: bold;">🎯 IQBestandPro</h2>
+        <p style="margin: 4px 0 0 0; padding: 0; font-size: 0.8rem; color: #666; font-style: italic;">
+            Retail Operations & Staff Management
+        </p>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 st.sidebar.markdown("---")
 
 # ==========================================
