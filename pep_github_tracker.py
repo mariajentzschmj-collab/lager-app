@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date
 
-def init_time_tracker_widget(supabase_client, github_file_path="2026_PEP.xlsx"):
+def init_time_tracker_widget(supabase_client, github_file_path="pep 10.2026.xlsx"):
     """
     Универсальный модуль: читает график с GitHub и выводит виджет Zeiterfassung внизу страницы.
     Основной app.py менять не придется!
