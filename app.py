@@ -1615,7 +1615,7 @@ if supabase is not None:
         if history_res and history_res.data:
             hist_df = pd.DataFrame(history_res.data)
             
-            # 1. Показываем итоги по месяцам
+            # 1. Показываем итоги по месяцам (остаются в сайдбаре)
             if not hist_df.empty and "month" in hist_df.columns and "brutto" in hist_df.columns:
                 monthly_summary = hist_df.groupby("month")["brutto"].sum().reset_index()
                 monthly_summary = monthly_summary.sort_values("month")
@@ -1627,16 +1627,17 @@ if supabase is not None:
                     m_netto = m_brutto / 1.19
                     st.sidebar.markdown(f"🗓 **{m_name}**: Netto **{m_netto:,.2f} €** *(Brutto: {m_brutto:,.2f} €)*")
             
-            # 2. Аккуратный экспандер для дней (теперь список гарантированно спрятан внутри)
+            # 2. Аккуратный экспандер для дней (теперь внутри строго без st.sidebar)
             with st.sidebar.expander("📅 Bereits geladene Tage anzeigen"):
                 if not hist_df.empty:
                     for _, h_row in hist_df.iterrows():
                         d_str = h_row.get("date", "-")
                         b_val = float(h_row.get("brutto", 0) or 0)
                         n_val = b_val / 1.19
-                        st.sidebar.markdown(f"• **{d_str}**: {n_val:,.2f} € Netto *(Brutto: {b_val:,.2f} €)*")
+                        # ВАЖНО: здесь используем просто st.markdown, чтобы текст подчинялся экспандеру
+                        st.markdown(f"• **{d_str}**: {n_val:,.2f} € Netto *(Brutto: {b_val:,.2f} €)*")
                 else:
-                    st.sidebar.info("Noch keine Tage erfasst.")
+                    st.info("Noch keine Tage erfasst.")
         else:
             st.sidebar.info("ℹ Noch keine kumulierten Daten in der Datenbank.")
     except Exception as hist_err:
