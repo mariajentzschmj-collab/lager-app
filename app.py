@@ -242,7 +242,7 @@ def render_pep_module(current_user_name, user_role):
 
                 sch_df = pd.DataFrame(schedule_data)
                 st.dataframe(sch_df, use_container_width=True, hide_index=True)
-    # Автоматическая загрузка графика с защитой от ошибок
+   # Автоматическая загрузка графика с защитой от ошибок
     try:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         pep_path = os.path.join(base_dir, "pep 10.2026.xlsx")
@@ -251,6 +251,10 @@ def render_pep_module(current_user_name, user_role):
         pep_df = pd.read_excel(pep_path)
     except Exception:
         pep_df = None
+
+    st.markdown("---")
+    is_allowed, access_msg = check_access_by_schedule(current_user_name, user_role)
+
     if not is_allowed and user_role not in ["manager", "admin"]:
         st.warning(access_msg)
         st.info("ℹ️ **Ansichtsmodus:** Sie können den Dienstplan einsehen, aber der Zugriff auf Lageränderungen und Verkäufe ist heute eingeschränkt.")
@@ -258,7 +262,6 @@ def render_pep_module(current_user_name, user_role):
     else:
         st.success(access_msg)
         return True
-
 # --- СИСТЕМА АВТОРИЗАЦИИ (МЕНЕДЖЕР И АГЕНТЫ С ПИН-КОДОМ) ---
 def check_authentication():
   TIMEOUT_SECONDS = 300  # 5 минут неактивности
