@@ -1603,16 +1603,19 @@ if sales_file is not None:
     except Exception as e:
         st.sidebar.error(f"⚠ Fehler beim Verarbeiten: {e}")
 
-# Блок отображения накопленной истории по месяцам
+# ==========================================
+# 📈 КУМУЛИРОВАННЫЕ УМСАТЗЫ И ИСТОРИЯ ДНЕЙ (В ЕДИНОМ БЛОКЕ)
+# ==========================================
 if supabase is not None:
     st.sidebar.markdown("---")
     st.sidebar.subheader("📈 Kumulierte Umsätze (Historie)")
     
     try:
-        history_res = supabase.table("daily_sales").select("*").execute()
+        history_res = supabase.table("daily_sales").select("*").order("date", desc=True).execute()
         if history_res and history_res.data:
             hist_df = pd.DataFrame(history_res.data)
             
+            # 1. Показываем итоги по месяцам
             if not hist_df.empty and "month" in hist_df.columns and "brutto" in hist_df.columns:
                 monthly_summary = hist_df.groupby("month")["brutto"].sum().reset_index()
                 monthly_summary = monthly_summary.sort_values("month")
@@ -1623,30 +1626,21 @@ if supabase is not None:
                     m_brutto = row["brutto"]
                     m_netto = m_brutto / 1.19
                     st.sidebar.markdown(f"🗓 **{m_name}**: Netto **{m_netto:,.2f} €** *(Brutto: {m_brutto:,.2f} €)*")
-        else:
-            st.sidebar.info("ℹ Noch keine kumulierten Daten in der Datenbank.")
-    except Exception as hist_err:
-        st.sidebar.caption("💡 Tipp: Stellen Sie sicher, dass die Tabelle `daily_sales` in Supabase existiert.")
-
-# --- ИСТОРИЯ ЗАГРУЖЕННЫХ ДАТ С ПРАВИЛЬНЫМ EXPANDER ---
-if supabase is not None:
-    try:
-        res_hist = supabase.table("daily_sales").select("date, brutto").order("date", desc=True).execute()
-        if res_hist and res_hist.data:
-            hist_df = pd.DataFrame(res_hist.data)
+            
+            # 2. Аккуратный экспандер для дней (теперь список гарантированно спрятан внутри)
             with st.sidebar.expander("📅 Bereits geladene Tage anzeigen"):
                 if not hist_df.empty:
                     for _, h_row in hist_df.iterrows():
                         d_str = h_row.get("date", "-")
                         b_val = float(h_row.get("brutto", 0) or 0)
                         n_val = b_val / 1.19
-                        # ВАЖНО: здесь обязательно должна быть приставка st.sidebar!
                         st.sidebar.markdown(f"• **{d_str}**: {n_val:,.2f} € Netto *(Brutto: {b_val:,.2f} €)*")
                 else:
                     st.sidebar.info("Noch keine Tage erfasst.")
-    except Exception as e:
-        pass
-
+        else:
+            st.sidebar.info("ℹ Noch keine kumulierten Daten in der Datenbank.")
+    except Exception as hist_err:
+        st.sidebar.caption("💡 Tipp: Stellen Sie sicher, dass die Tabelle `daily_sales` in Supabase existiert.")
 # ==========================================
 # INVENTUR-SCHNELLEINGABE (MULTI-USER)
 # ==========================================
