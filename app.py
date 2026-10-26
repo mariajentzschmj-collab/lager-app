@@ -70,7 +70,12 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
+# ==========================================
+# ЗАГОЛОВОК И БРЕНДИНГ САЙДБАРА
+# ==========================================
+st.sidebar.markdown("# **IQBestandPro**")
+st.sidebar.markdown("### *Retail Operations & Staff Management*")
+st.sidebar.markdown("---")
 SUPABASE_URL = "https://mtcbfvpjnxlkvvtuknyv.supabase.co"
 SUPABASE_KEY = "sb_publishable_wChGuVU2FeW23S2bqdYqOg_B9-oMoKs"
 
