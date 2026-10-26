@@ -20,10 +20,14 @@ def init_time_tracker_widget(supabase_client, github_file_path="2026_PEP.xlsx"):
     st.markdown("---")
     st.markdown("### ⏱️ Zeiterfassung & Arbeitszeitkontrolle")
     
-    # Определяем текущего активного пользователя из сессии Streamlit
-    current_user = st.session_state.get("username", "Unbekannt")
-    if current_user == "Unbekannt" and "view_emp_selectbox" in st.session_state:
-        current_user = st.session_state["view_emp_selectbox"]
+    # Определяем текущего вошедшего сотрудника из сессии Streamlit
+    current_user = (
+        st.session_state.get("user_fullname") or 
+        st.session_state.get("user_display_name") or 
+        st.session_state.get("username") or 
+        st.session_state.get("view_emp_selectbox") or 
+        "Unbekannt"
+    )
 
     today = date.today()
     col1, col2 = st.columns(2)
