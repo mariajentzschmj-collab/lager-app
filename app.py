@@ -245,9 +245,18 @@ def render_pep_module(current_user_name, user_role):
 
         except Exception as view_err:
             st.caption(f"Hinweis zur Anzeige: {view_err}")
-    else:
-        st.info("ℹ️ Schichtplan wurde noch nicht hochgeladen. Bitte laden Sie die PEP-Datei über die Seitenleiste hoch.")
-
+   except Exception as view_err:
+        st.caption(f"Hinweis zur Anzeige: {view_err}")
+else:
+    # Автоматическая загрузка из репозитория, если файл не загружен вручную
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        pep_path = os.path.join(base_dir, "pep 10.2026.xlsx")
+        if not os.path.exists(pep_path):
+            pep_path = "pep 10.2026.xlsx"
+        pep_df = pd.read_excel(pep_path)
+    except Exception:
+        st.info("ℹ️ Schichtplan wird geladen...")
     st.markdown("---")
     is_allowed, access_msg = check_access_by_schedule(current_user_name, user_role)
 
