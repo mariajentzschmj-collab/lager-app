@@ -143,21 +143,10 @@ def render_pep_module(current_user_name, user_role):
     st.sidebar.markdown("---")
     st.sidebar.subheader("📅 Schichtplan (PEP) & Zugänge")
 
-   # Автоматическая загрузка графика из репозитория по умолчанию
-    if "pep_df" not in st.session_state or st.session_state["pep_df"] is None:
-        try:
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            pep_path = os.path.join(base_dir, "pep 10.2026.xlsx")
-            if not os.path.exists(pep_path):
-                pep_path = "pep 10.2026.xlsx"
-            st.session_state["pep_df"] = pd.read_excel(pep_path, header=None)
-        except Exception:
-            pass
-
     uploaded_pep = None
     if user_role in ["manager", "admin"]:
         uploaded_pep = st.sidebar.file_uploader(
-            "PEP-Schichtplan hochladen (.xlsx) [Optional]",
+            "PEP-Schichtplan hochladen (.xlsx)",
             type=["xlsx"]
         )
 
@@ -253,15 +242,11 @@ def render_pep_module(current_user_name, user_role):
 
                 sch_df = pd.DataFrame(schedule_data)
                 st.dataframe(sch_df, use_container_width=True, hide_index=True)
-   # Автоматическая загрузка графика с защитой от ошибок
-    try:
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        pep_path = os.path.join(base_dir, "pep 10.2026.xlsx")
-        if not os.path.exists(pep_path):
-            pep_path = "pep 10.2026.xlsx"
-        pep_df = pd.read_excel(pep_path)
-    except Exception:
-        pep_df = None
+
+        except Exception as view_err:
+            st.caption(f"Hinweis zur Anzeige: {view_err}")
+    else:
+        st.info("ℹ️ Schichtplan wurde noch nicht hochgeladen. Bitte laden Sie die PEP-Datei über die Seitenleiste hoch.")
 
     st.markdown("---")
     is_allowed, access_msg = check_access_by_schedule(current_user_name, user_role)
@@ -273,6 +258,7 @@ def render_pep_module(current_user_name, user_role):
     else:
         st.success(access_msg)
         return True
+
 # --- СИСТЕМА АВТОРИЗАЦИИ (МЕНЕДЖЕР И АГЕНТЫ С ПИН-КОДОМ) ---
 def check_authentication():
   TIMEOUT_SECONDS = 300  # 5 минут неактивности
