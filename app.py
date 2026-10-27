@@ -233,7 +233,7 @@ if role_choice == "👔 Manager (Maria)":
         st.rerun()
       else:
         st.error("❌ Falsches Manager-Passwort")
-  else:
+else:
     agent_id = st.text_input("Agenten-Nummer oder Name (z.B. Agent-01, Anna):")
     agent_pin = st.text_input("Persönlicher Agenten-PIN (z.B. 2026):", type="password")
     
