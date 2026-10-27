@@ -103,8 +103,8 @@ def check_access_by_schedule(employee_name, user_role):
 
     pep_df = st.session_state.get("pep_df")
     
-    if pep_df is None:
-        return True, "ℹ️ PEP-Schichtplan wurde noch nicht hochgeladen. Zugriff ist standardmäßig erlaubt."
+   if pep_df is None:
+        return True, ""
 
     today = datetime.datetime.now()
     day_number = str(today.day)
