@@ -222,7 +222,7 @@ def check_authentication():
 st.subheader("Bitte wählen Sie Ihre Rolle aus:")
 role_choice = st.radio("Ich bin ein(e):", ["👔 Manager (Maria)", "🧑‍‍💼 Agent / Mitarbeiter"])
 
-  if role_choice == "👔 Manager (Maria)":
+if role_choice == "👔 Manager (Maria)":
     manager_password = st.text_input("Manager-Passwort", type="password")
     if st.button("Als Manager anmelden"):
       if manager_password == "KaDeWe2026!Mgr":
