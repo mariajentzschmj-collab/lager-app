@@ -231,9 +231,7 @@ if role_choice == "👔 Manager (Maria)":
         st.session_state["user_name"] = "Maria Jentzsch"
         st.session_state["last_active"] = time.time()
         st.rerun()
-      else:
-        st.error("❌ Falsches Manager-Passwort")
-else:
+      
     # 1. Скрываем форму авторизации, если пользователь уже вошел
 if not st.session_state.get("logged_in", False):
     agent_id = st.text_input("Agenten-Nummer oder Name (z.B. Agent-01, Anna):")
