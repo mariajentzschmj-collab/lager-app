@@ -226,13 +226,15 @@ if role_choice == "👔 Manager (Maria)":
     manager_password = st.text_input("Manager-Passwort", type="password")
     if st.button("Als Manager anmelden"):
       if manager_password == "KaDeWe2026!Mgr":
-        st.session_state["logged_in"] = True
-        st.session_state["role"] = "manager"
-        st.session_state["user_name"] = "Maria Jentzsch"
-        st.session_state["last_active"] = time.time()
-        st.rerun()
-      
-    # 1. Скрываем форму авторизации, если пользователь уже вошел
+            st.session_state["logged_in"] = True
+            st.session_state["role"] = "manager"
+            st.session_state["user_name"] = "Maria Jentzsch"
+            st.session_state["last_active"] = time.time()
+            st.rerun()
+        else:
+            st.error("❌ Falsches Manager-Passwort")
+
+# 1. Скрываем форму авторизации, если пользователь уже вошел
 if not st.session_state.get("logged_in", False):
     agent_id = st.text_input("Agenten-Nummer oder Name (z.B. Agent-01, Anna):")
     agent_pin = st.text_input("Persönlicher Agenten-PIN (z.B. 2026):", type="password")
@@ -250,25 +252,16 @@ if not st.session_state.get("logged_in", False):
         else:
             st.error("❌ Bitte geben Sie sowohl Ihren Namen/Nummer als auch den PIN ein.")
             
-    # Останавливаем выполниние дальше, если ещё не авторизовались
     st.stop()
 
-# 2. Код ниже выполняется ТОЛЬКО после успешного входа:
+# 2. Основная часть после успешного входа
 current_user_name = st.session_state.get("user_name", "Maria")
 user_role = st.session_state.get("role", "manager")
 
-# Запускаем модуль PEP, но УБИРАЕМ st.stop(), чтобы страница не блокировалась в выходной
 can_perform_work_actions = render_pep_module(current_user_name, user_role)
 
 if not can_perform_work_actions:
     st.info("ℹ️ Ansichtsmodus: Sie haben heute frei. Der Dienstplan unten ist weiterhin einsehbar.")
-current_user_name = st.session_state.get("user_name", "Maria")
-user_role = st.session_state.get("role", "manager")
-
-# ВСТАВЛЯЕМ ВЫЗОВ ПРОВЕРКИ ГРАФИКА ЗДЕСЬ:
-can_perform_work_actions = render_pep_module(current_user_name, user_role)
-if not can_perform_work_actions:
-    st.stop()
 # ==========================================
 # 🎯 ЗАКРЕПЛЕННЫЙ ВЕРХНИЙ БЛОК: ЦЕЛИ И АВТО-СУММИРОВАНИЕ ИЗ БАЗЫ
 # ==========================================
