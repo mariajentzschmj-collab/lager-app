@@ -20,19 +20,6 @@ st.set_page_config(
     page_title="IQBestandPro", layout="wide"
 )
 
-# Брендинг сайдбара без повтора названия
-st.sidebar.markdown(
-    """
-    <div style="text-align: center; margin-bottom: 10px;">
-        <p style="margin: 0; padding: 0; font-size: 0.85rem; color: #555; font-style: italic; font-weight: 500;">
-            Retail Operations & Staff Management
-        </p>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-st.sidebar.markdown("---")
-
 # ==========================================
 # СТИЛИЗАЦИЯ ПОД СТИЛЬ FISKARS / IITTALA / ROYAL COPENHAGEN
 # ==========================================
@@ -218,8 +205,21 @@ def check_authentication():
     st.session_state["last_active"] = time.time()
     return True
 
-  st.title("🔐 IQBestandPro")
-  st.subheader("Bitte wählen Sie Ihre Rolle aus:")
+  st.markdown(
+    """
+    <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="margin: 0; font-size: 2.2rem; font-weight: bold; color: #1A1A1A;">
+            🔐 IQBestandPro
+        </h1>
+        <p style="margin: 4px 0 0 0; font-size: 0.95rem; color: #555; font-style: italic; font-weight: 500;">
+            Retail Operations & Staff Management
+        </p>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+st.subheader("Bitte wählen Sie Ihre Rolle aus:")
 
   role_choice = st.radio("Ich bin ein(e):", ["👔 Manager (Maria)", "🧑‍‍💼 Agent / Mitarbeiter"])
 
