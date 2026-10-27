@@ -205,7 +205,7 @@ def check_authentication():
     st.session_state["last_active"] = time.time()
     return True
 
-  st.markdown(
+st.markdown(
     """
     <div style="text-align: center; margin-bottom: 20px;">
         <h1 style="margin: 0; font-size: 2.2rem; font-weight: bold; color: #1A1A1A;">
@@ -249,9 +249,6 @@ else:
           st.error("❌ Falscher Agenten-PIN.")
       else:
         st.error("❌ Bitte geben Sie sowohl Ihren Namen/Nummer als auch den PIN ein.")
-
-    return False
-
 
 if not check_authentication():
   st.stop()
