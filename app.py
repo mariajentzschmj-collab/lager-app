@@ -221,11 +221,15 @@ def check_authentication():
     )
 
     st.subheader("Bitte wählen Sie Ihre Rolle aus:")
-    role_choice = st.radio("Ich bin ein(e):", ["👔 Manager (Maria)", "🧑‍‍💼 Agent / Mitarbeiter"])
+    role_choice = st.radio(
+        "Ich bin ein(e):", 
+        ["👔 Manager (Maria)", "🧑‍‍💼 Agent / Mitarbeiter"],
+        key="auth_role_choice"
+    )
 
     if role_choice == "👔 Manager (Maria)":
-        manager_password = st.text_input("Manager-Passwort", type="password")
-        if st.button("Als Manager anmelden"):
+        manager_password = st.text_input("Manager-Passwort", type="password", key="auth_manager_password")
+        if st.button("Als Manager anmelden", key="auth_btn_manager"):
             if manager_password == "KaDeWe2026!Mgr":
                 st.session_state["logged_in"] = True
                 st.session_state["role"] = "manager"
@@ -235,10 +239,10 @@ def check_authentication():
             else:
                 st.error("❌ Falsches Manager-Passwort")
     else:
-        agent_id = st.text_input("Agenten-Nummer oder Name (z.B. Agent-01, Anna):")
-        agent_pin = st.text_input("Persönlicher Agenten-PIN (z.B. 2026):", type="password")
+        agent_id = st.text_input("Agenten-Nummer oder Name (z.B. Agent-01, Anna):", key="auth_agent_id")
+        agent_pin = st.text_input("Persönlicher Agenten-PIN (z.B. 2026):", type="password", key="auth_agent_pin")
         
-        if st.button("Als Agent anmelden"):
+        if st.button("Als Agent anmelden", key="auth_btn_agent"):
             if agent_id.strip() and agent_pin.strip():
                 if agent_pin == "2026":
                     st.session_state["logged_in"] = True
@@ -252,42 +256,6 @@ def check_authentication():
                 st.error("❌ Bitte geben Sie sowohl Ihren Namen/Nummer als auch den PIN ein.")
 
     return False
-st.subheader("Bitte wählen Sie Ihre Rolle aus:")
-role_choice = st.radio("Ich bin ein(e):", ["👔 Manager (Maria)", "🧑‍‍💼 Agent / Mitarbeiter"])
-
-if role_choice == "👔 Manager (Maria)":
-    manager_password = st.text_input("Manager-Passwort", type="password")
-    if st.button("Als Manager anmelden"):
-      if manager_password == "KaDeWe2026!Mgr":
-        st.session_state["logged_in"] = True
-        st.session_state["role"] = "manager"
-        st.session_state["user_name"] = "Maria Jentzsch"
-        st.session_state["last_active"] = time.time()
-        st.rerun()
-      else:
-        st.error("❌ Falsches Manager-Passwort")
-else:
-    agent_id = st.text_input("Agenten-Nummer oder Name (z.B. Agent-01, Anna):")
-    agent_pin = st.text_input("Persönlicher Agenten-PIN (z.B. 2026):", type="password")
-    
-    if st.button("Als Agent anmelden"):
-      if agent_id.strip() and agent_pin.strip():
-        if agent_pin == "2026":
-          st.session_state["logged_in"] = True
-          st.session_state["role"] = "agent"
-          st.session_state["user_name"] = agent_id.strip()
-          st.session_state["last_active"] = time.time()
-          st.rerun()
-        else:
-          st.error("❌ Falscher Agenten-PIN.")
-      else:
-        st.error("❌ Bitte geben Sie sowohl Ihren Namen/Nummer als auch den PIN ein.")
-
-if not check_authentication():
-  st.stop()
-current_user_name = st.session_state.get("user_name", "Maria")
-user_role = st.session_state.get("role", "manager")
-
 # ВСТАВЛЯЕМ ВЫЗОВ ПРОВЕРКИ ГРАФИКА ЗДЕСЬ:
 can_perform_work_actions = render_pep_module(current_user_name, user_role)
 if not can_perform_work_actions:
