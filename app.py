@@ -19,13 +19,7 @@ from pep_github_tracker import init_time_tracker_widget
 st.set_page_config(
     page_title="IQBestandPro", layout="wide"
 )
-# Безопасный режим просмотра графика в боковом меню
-if st.sidebar.checkbox("📅 Dienstplan ansehen (Ansichtsmodus)"):
-    st.sidebar.info("ℹ️ Ansichtsmodus aktiv")
-    try:
-        render_pep_module(st.session_state.get("user_name", "Mitarbeiter"), "agent")
-    except Exception:
-        pass
+
 # ==========================================
 # СТИЛИЗАЦИЯ ПОД СТИЛЬ FISKARS / IITTALA / ROYAL COPENHAGEN
 # ==========================================
