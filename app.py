@@ -226,42 +226,39 @@ if role_choice == "👔 Manager (Maria)":
     manager_password = st.text_input("Manager-Passwort", type="password")
     if st.button("Als Manager anmelden"):
       if manager_password == "KaDeWe2026!Mgr":
-            st.session_state["logged_in"] = True
-            st.session_state["role"] = "manager"
-            st.session_state["user_name"] = "Maria Jentzsch"
-            st.session_state["last_active"] = time.time()
-            st.rerun()
-        else:
-            st.error("❌ Falsches Manager-Passwort")
-
-# 1. Скрываем форму авторизации, если пользователь уже вошел
-if not st.session_state.get("logged_in", False):
+        st.session_state["logged_in"] = True
+        st.session_state["role"] = "manager"
+        st.session_state["user_name"] = "Maria Jentzsch"
+        st.session_state["last_active"] = time.time()
+        st.rerun()
+      else:
+        st.error("❌ Falsches Manager-Passwort")
+else:
     agent_id = st.text_input("Agenten-Nummer oder Name (z.B. Agent-01, Anna):")
     agent_pin = st.text_input("Persönlicher Agenten-PIN (z.B. 2026):", type="password")
     
     if st.button("Als Agent anmelden"):
-        if agent_id.strip() and agent_pin.strip():
-            if agent_pin == "2026":
-                st.session_state["logged_in"] = True
-                st.session_state["role"] = "agent"
-                st.session_state["user_name"] = agent_id.strip()
-                st.session_state["last_active"] = time.time()
-                st.rerun()
-            else:
-                st.error("❌ Falscher Agenten-PIN.")
+      if agent_id.strip() and agent_pin.strip():
+        if agent_pin == "2026":
+          st.session_state["logged_in"] = True
+          st.session_state["role"] = "agent"
+          st.session_state["user_name"] = agent_id.strip()
+          st.session_state["last_active"] = time.time()
+          st.rerun()
         else:
-            st.error("❌ Bitte geben Sie sowohl Ihren Namen/Nummer als auch den PIN ein.")
-            
-    st.stop()
+          st.error("❌ Falscher Agenten-PIN.")
+      else:
+        st.error("❌ Bitte geben Sie sowohl Ihren Namen/Nummer als auch den PIN ein.")
 
-# 2. Основная часть после успешного входа
+if not check_authentication():
+  st.stop()
 current_user_name = st.session_state.get("user_name", "Maria")
 user_role = st.session_state.get("role", "manager")
 
+# ВСТАВЛЯЕМ ВЫЗОВ ПРОВЕРКИ ГРАФИКА ЗДЕСЬ:
 can_perform_work_actions = render_pep_module(current_user_name, user_role)
-
 if not can_perform_work_actions:
-    st.info("ℹ️ Ansichtsmodus: Sie haben heute frei. Der Dienstplan unten ist weiterhin einsehbar.")
+    st.stop()
 # ==========================================
 # 🎯 ЗАКРЕПЛЕННЫЙ ВЕРХНИЙ БЛОК: ЦЕЛИ И АВТО-СУММИРОВАНИЕ ИЗ БАЗЫ
 # ==========================================
