@@ -99,13 +99,12 @@ def check_access_by_schedule(employee_name, user_role):
         return True, "✅ Manager-Modus: Voller Zugriff."
 
     if employee_name in st.session_state["manual_override_users"]:
-        return True, "✅ Zugriff manuell vom Manager erlaubt (Ausnahme)."
+        return True, "✔️ Zugriff manuell vom Manager erlaubt (Ausnahme)."
 
     pep_df = st.session_state.get("pep_df")
-    
-   if pep_df is None:
-        return True, ""
 
+    if pep_df is None:
+        return True, ""
     today = datetime.datetime.now()
     day_number = str(today.day)
 
