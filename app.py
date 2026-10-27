@@ -185,40 +185,73 @@ def render_pep_module(current_user_name, user_role):
 
 # --- СИСТЕМА АВТОРИЗАЦИИ (МЕНЕДЖЕР И АГЕНТЫ С ПИН-КОДОМ) ---
 def check_authentication():
-  TIMEOUT_SECONDS = 300  # 5 минут неактивности
+    TIMEOUT_SECONDS = 300  # 5 минут неактивности
 
-  if "logged_in" not in st.session_state:
-    st.session_state["logged_in"] = False
-    st.session_state["role"] = None
-    st.session_state["user_name"] = None
-    st.session_state["last_active"] = time.time()
+    if "logged_in" not in st.session_state:
+        st.session_state["logged_in"] = False
+        st.session_state["role"] = None
+        st.session_state["user_name"] = None
+        st.session_state["last_active"] = time.time()
 
-  if st.session_state["logged_in"]:
-    if (
-        time.time() - st.session_state.get("last_active", time.time())
-        > TIMEOUT_SECONDS
-    ):
-      st.session_state["logged_in"] = False
-      st.warning("⏱️ Sitzung wegen Inaktivität abgelaufen (> 5 Min.). Bitte erneut anmelden.")
+    if st.session_state["logged_in"]:
+        if (
+            time.time() - st.session_state.get("last_active", time.time())
+            > TIMEOUT_SECONDS
+        ):
+            st.session_state["logged_in"] = False
+            st.warning("⏱️ Sitzung wegen Inaktivität abgelaufen (> 5 Min.). Bitte erneut anmelden.")
 
-  if st.session_state["logged_in"]:
-    st.session_state["last_active"] = time.time()
-    return True
+    if st.session_state["logged_in"]:
+        st.session_state["last_active"] = time.time()
+        return True
 
-st.markdown(
-    """
-    <div style="text-align: center; margin-bottom: 20px;">
-        <h1 style="margin: 0; font-size: 2.2rem; font-weight: bold; color: #1A1A1A;">
-            🔐 IQBestandPro
-        </h1>
-        <p style="margin: 4px 0 0 0; font-size: 0.95rem; color: #555; font-style: italic; font-weight: 500;">
-            Retail Operations & Staff Management
-        </p>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+    # Экран входа (показывается только если пользователь НЕ вошел)
+    st.markdown(
+        """
+        <div style="text-align: center; margin-bottom: 20px;">
+            <h1 style="margin: 0; font-size: 2.2rem; font-weight: bold; color: #1A1A1A;">
+                🔐 IQBestandPro
+            </h1>
+            <p style="margin: 4px 0 0 0; font-size: 0.95rem; color: #555; font-style: italic; font-weight: 500;">
+                Retail Operations & Staff Management
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
+    st.subheader("Bitte wählen Sie Ihre Rolle aus:")
+    role_choice = st.radio("Ich bin ein(e):", ["👔 Manager (Maria)", "🧑‍‍💼 Agent / Mitarbeiter"])
+
+    if role_choice == "👔 Manager (Maria)":
+        manager_password = st.text_input("Manager-Passwort", type="password")
+        if st.button("Als Manager anmelden"):
+            if manager_password == "KaDeWe2026!Mgr":
+                st.session_state["logged_in"] = True
+                st.session_state["role"] = "manager"
+                st.session_state["user_name"] = "Maria Jentzsch"
+                st.session_state["last_active"] = time.time()
+                st.rerun()
+            else:
+                st.error("❌ Falsches Manager-Passwort")
+    else:
+        agent_id = st.text_input("Agenten-Nummer oder Name (z.B. Agent-01, Anna):")
+        agent_pin = st.text_input("Persönlicher Agenten-PIN (z.B. 2026):", type="password")
+        
+        if st.button("Als Agent anmelden"):
+            if agent_id.strip() and agent_pin.strip():
+                if agent_pin == "2026":
+                    st.session_state["logged_in"] = True
+                    st.session_state["role"] = "agent"
+                    st.session_state["user_name"] = agent_id.strip()
+                    st.session_state["last_active"] = time.time()
+                    st.rerun()
+                else:
+                    st.error("❌ Falscher Agenten-PIN.")
+            else:
+                st.error("❌ Bitte geben Sie sowohl Ihren Namen/Nummer als auch den PIN ein.")
+
+    return False
 st.subheader("Bitte wählen Sie Ihre Rolle aus:")
 role_choice = st.radio("Ich bin ein(e):", ["👔 Manager (Maria)", "🧑‍‍💼 Agent / Mitarbeiter"])
 
