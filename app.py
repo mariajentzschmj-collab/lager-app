@@ -10,7 +10,6 @@ import datetime
 import time
 import urllib.parse
 import requests
-import os
 import streamlit.components.v1 as components
 from supabase import create_client
 from pep_github_tracker import init_time_tracker_widget
@@ -19,13 +18,11 @@ from pep_github_tracker import init_time_tracker_widget
 st.set_page_config(
     page_title="IQBestandPro", layout="wide"
 )
-
 # ==========================================
 # СТИЛИЗАЦИЯ ПОД СТИЛЬ FISKARS / IITTALA / ROYAL COPENHAGEN
 # ==========================================
 st.markdown("""
 <style>
-...
     /* Общий фон приложения (светлый, чистый скандинавский стиль) */
     .stApp {
         background-color: #F8F9FA;
@@ -144,20 +141,35 @@ def check_access_by_schedule(employee_name, user_role):
 
 def render_pep_module(current_user_name, user_role):
     st.sidebar.markdown("---")
-    st.sidebar.subheader("📅 Schichtplan & Zugänge")
+    st.sidebar.subheader("📅 Schichtplan (PEP) & Zugänge")
 
-    # Автоматическая загрузка графика из репозитория GitHub без ручного ввода
-    if "pep_df" not in st.session_state or st.session_state["pep_df"] is None:
+    uploaded_pep = None
+    if user_role in ["manager", "admin"]:
+        uploaded_pep = st.sidebar.file_uploader(
+            "PEP-Schichtplan hochladen (.xlsx)",
+            type=["xlsx"]
+        )
+
+    import os
+    SAVED_PEP_PATH = "pep_current.xlsx"
+
+    if uploaded_pep is not None:
         try:
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            pep_path = os.path.join(base_dir, "pep 10.2026.xlsx")
-            if not os.path.exists(pep_path):
-                pep_path = "pep 10.2026.xlsx"
-            st.session_state["pep_df"] = pd.read_excel(pep_path, header=None)
+            # Сохраняем загруженный файл на диск
+            with open(SAVED_PEP_PATH, "wb") as f:
+                f.write(uploaded_pep.getbuffer())
+            
+            st.session_state["pep_df"] = pd.read_excel(SAVED_PEP_PATH, header=None)
+            st.sidebar.success("Schichtplan erfolgreich geladen!")
         except Exception as err:
-            st.sidebar.warning(f"⚠️ Авто-загрузка PEP: {err}")
+            st.sidebar.error(f"⚠️ Fehler beim Laden: {err}")
+    elif os.path.exists(SAVED_PEP_PATH) and "pep_df" not in st.session_state:
+        try:
+            # Автоматически подгружаем сохраненный ранее файл при старте
+            st.session_state["pep_df"] = pd.read_excel(SAVED_PEP_PATH, header=None)
+        except Exception as err:
+            pass
 
-    # Блок ручного разрешения доступа для менеджера (исключения)
     if user_role in ["manager", "admin"]:
         with st.sidebar.expander("🔓 Manueller Zugriff (Ausnahme)"):
             st.markdown("Zugriff für Mitarbeiter heute erlauben (Vertretung):")
@@ -170,8 +182,72 @@ def render_pep_module(current_user_name, user_role):
                 key="override_multiselect"
             )
             st.session_state["manual_override_users"] = selected_overrides
+    pep_df = st.session_state.get("pep_df")
 
-    # Проверка доступа через расписание
+    if pep_df is not None:
+        try:
+            employees = pep_df.iloc[2:, 0].dropna().astype(str).tolist()
+            
+            # Убедимся, что выбранный сотрудник корректно сохраняется в session_state
+            if "view_emp_selectbox" not in st.session_state:
+                st.session_state["view_emp_selectbox"] = current_user_name if current_user_name in employees else (employees[0] if employees else "")
+
+            selected_emp_view = st.selectbox(
+                "Mitarbeiter-Schichtplan anzeigen:", 
+                options=employees, 
+                key="view_emp_selectbox"
+            )
+            
+            # Ищем строку строго по выбранному в селекторе имени
+            emp_row = pep_df[pep_df.iloc[:, 0].astype(str).str.strip().str.lower() == str(selected_emp_view).strip().lower()]
+
+            if not emp_row.empty:
+                header_row = pep_df.iloc[0].tolist()
+                days_row = pep_df.iloc[1].tolist()
+                emp_shifts = emp_row.iloc[0].tolist()
+
+                selected_day_filter = st.selectbox(
+                    "Nach Tag filtern (Alle Tage anzeigen):", 
+                    options=["Alle Tage"] + [str(h).replace('.0','') for h in header_row[1:] if str(h).replace('.0','').isdigit()],
+                    key="day_filter_select"
+                )
+
+                schedule_data = []
+                for idx in range(1, len(header_row)):
+                    day_num = str(header_row[idx]).replace('.0', '')
+                    if day_num.isdigit() and int(day_num) <= 31:
+                        day_name = str(days_row[idx]) if idx < len(days_row) else ""
+                        shift_val = str(emp_shifts[idx]).strip() if idx < len(emp_shifts) else "-"
+                        
+                        if selected_day_filter != "Alle Tage" and day_num != selected_day_filter:
+                            continue
+
+                        clean_shift = shift_val.upper().strip()
+                        is_numeric_shift = any(char.isdigit() for char in clean_shift)
+
+                        if is_numeric_shift:
+                            status_label = f"Arbeit (Schicht {shift_val}) 🟢"
+                        elif clean_shift in ['O', 'О', 'URLAUB']:
+                            status_label = "Urlaub 🏖️"
+                        elif clean_shift in ['H', 'FREI']:
+                            status_label = "Frei / Homeoffice 🏠"
+                        else:
+                            status_label = "Frei 🏠"
+                        
+                        schedule_data.append({
+                            "Tag": f"{day_num} ({day_name})",
+                            "Schicht": shift_val,
+                            "Status": status_label
+                        })
+
+                sch_df = pd.DataFrame(schedule_data)
+                st.dataframe(sch_df, use_container_width=True, hide_index=True)
+
+        except Exception as view_err:
+            st.caption(f"Hinweis zur Anzeige: {view_err}")
+    else:
+        st.info("ℹ️ Schichtplan wurde noch nicht hochgeladen. Bitte laden Sie die PEP-Datei über die Seitenleiste hoch.")
+
     st.markdown("---")
     is_allowed, access_msg = check_access_by_schedule(current_user_name, user_role)
 
@@ -185,77 +261,67 @@ def render_pep_module(current_user_name, user_role):
 
 # --- СИСТЕМА АВТОРИЗАЦИИ (МЕНЕДЖЕР И АГЕНТЫ С ПИН-КОДОМ) ---
 def check_authentication():
-    TIMEOUT_SECONDS = 300  # 5 минут неактивности
+  TIMEOUT_SECONDS = 300  # 5 минут неактивности
 
-    if "logged_in" not in st.session_state:
-        st.session_state["logged_in"] = False
-        st.session_state["role"] = None
-        st.session_state["user_name"] = None
+  if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
+    st.session_state["role"] = None
+    st.session_state["user_name"] = None
+    st.session_state["last_active"] = time.time()
+
+  if st.session_state["logged_in"]:
+    if (
+        time.time() - st.session_state.get("last_active", time.time())
+        > TIMEOUT_SECONDS
+    ):
+      st.session_state["logged_in"] = False
+      st.warning("⏱️ Sitzung wegen Inaktivität abgelaufen (> 5 Min.). Bitte erneut anmelden.")
+
+  if st.session_state["logged_in"]:
+    st.session_state["last_active"] = time.time()
+    return True
+
+  st.title("🔐 IQBestandPro")
+  st.subheader("Bitte wählen Sie Ihre Rolle aus:")
+
+  role_choice = st.radio("Ich bin ein(e):", ["👔 Manager (Maria)", "🧑‍‍💼 Agent / Mitarbeiter"])
+
+  if role_choice == "👔 Manager (Maria)":
+    manager_password = st.text_input("Manager-Passwort", type="password")
+    if st.button("Als Manager anmelden"):
+      if manager_password == "KaDeWe2026!Mgr":
+        st.session_state["logged_in"] = True
+        st.session_state["role"] = "manager"
+        st.session_state["user_name"] = "Maria Jentzsch"
         st.session_state["last_active"] = time.time()
+        st.rerun()
+      else:
+        st.error("❌ Falsches Manager-Passwort")
+  else:
+    agent_id = st.text_input("Agenten-Nummer oder Name (z.B. Agent-01, Anna):")
+    agent_pin = st.text_input("Persönlicher Agenten-PIN (z.B. 2026):", type="password")
+    
+    if st.button("Als Agent anmelden"):
+      if agent_id.strip() and agent_pin.strip():
+        if agent_pin == "2026":
+          st.session_state["logged_in"] = True
+          st.session_state["role"] = "agent"
+          st.session_state["user_name"] = agent_id.strip()
+          st.session_state["last_active"] = time.time()
+          st.rerun()
+        else:
+          st.error("❌ Falscher Agenten-PIN.")
+      else:
+        st.error("❌ Bitte geben Sie sowohl Ihren Namen/Nummer als auch den PIN ein.")
 
-    if st.session_state["logged_in"]:
-        if (
-            time.time() - st.session_state.get("last_active", time.time())
-            > TIMEOUT_SECONDS
-        ):
-            st.session_state["logged_in"] = False
-            st.warning("⏱️ Sitzung wegen Inaktivität abgelaufen (> 5 Min.). Bitte erneut anmelden.")
+  return False
 
-    if st.session_state["logged_in"]:
-        st.session_state["last_active"] = time.time()
-        return True
 
-    # Экран входа (показывается только если пользователь НЕ вошел)
-    st.markdown(
-        """
-        <div style="text-align: center; margin-bottom: 20px;">
-            <h1 style="margin: 0; font-size: 2.2rem; font-weight: bold; color: #1A1A1A;">
-                🔐 IQBestandPro
-            </h1>
-            <p style="margin: 4px 0 0 0; font-size: 0.95rem; color: #555; font-style: italic; font-weight: 500;">
-                Retail Operations & Staff Management
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+if not check_authentication():
+  st.stop()
+current_user_name = st.session_state.get("user_name", "Maria")
+user_role = st.session_state.get("role", "manager")
 
-    st.subheader("Bitte wählen Sie Ihre Rolle aus:")
-    role_choice = st.radio(
-        "Ich bin ein(e):", 
-        ["👔 Manager (Maria)", "🧑‍‍💼 Agent / Mitarbeiter"],
-        key="auth_role_choice"
-    )
-
-    if role_choice == "👔 Manager (Maria)":
-        manager_password = st.text_input("Manager-Passwort", type="password", key="auth_manager_password")
-        if st.button("Als Manager anmelden", key="auth_btn_manager"):
-            if manager_password == "KaDeWe2026!Mgr":
-                st.session_state["logged_in"] = True
-                st.session_state["role"] = "manager"
-                st.session_state["user_name"] = "Maria Jentzsch"
-                st.session_state["last_active"] = time.time()
-                st.rerun()
-            else:
-                st.error("❌ Falsches Manager-Passwort")
-    else:
-        agent_id = st.text_input("Agenten-Nummer oder Name (z.B. Agent-01, Anna):", key="auth_agent_id")
-        agent_pin = st.text_input("Persönlicher Agenten-PIN (z.B. 2026):", type="password", key="auth_agent_pin")
-        
-        if st.button("Als Agent anmelden", key="auth_btn_agent"):
-            if agent_id.strip() and agent_pin.strip():
-                if agent_pin == "2026":
-                    st.session_state["logged_in"] = True
-                    st.session_state["role"] = "agent"
-                    st.session_state["user_name"] = agent_id.strip()
-                    st.session_state["last_active"] = time.time()
-                    st.rerun()
-                else:
-                    st.error("❌ Falscher Agenten-PIN.")
-            else:
-                st.error("❌ Bitte geben Sie sowohl Ihren Namen/Nummer als auch den PIN ein.")
-
-    return False
 # ВСТАВЛЯЕМ ВЫЗОВ ПРОВЕРКИ ГРАФИКА ЗДЕСЬ:
 can_perform_work_actions = render_pep_module(current_user_name, user_role)
 if not can_perform_work_actions:
@@ -1568,6 +1634,7 @@ if sales_file is not None:
         price_col = st.sidebar.selectbox("Spalte für Gesamtpreis / Umsatz", columns_list, key="acc_price_col")
 
         if st.sidebar.button("💾 Umsatz speichern & kumulieren"):
+            # Очищаем и суммируем общую сумму брутто
             cleaned_prices = (
                 sales_report_df[price_col]
                 .astype(str)
@@ -1587,6 +1654,7 @@ if sales_file is not None:
                 report_date = pd.Timestamp.today().strftime('%Y-%m-%d')
                 report_month = pd.Timestamp.today().strftime('%Y-%m')
 
+            # Сохранение в Supabase
             if supabase is not None:
                 try:
                     existing_day = supabase.table("daily_sales").select("*").eq("date", report_date).execute()
@@ -1615,19 +1683,16 @@ if sales_file is not None:
     except Exception as e:
         st.sidebar.error(f"⚠ Fehler beim Verarbeiten: {e}")
 
-# ==========================================
-# 📈 КУМУЛИРОВАННЫЕ УМСАТЗЫ И ИСТОРИЯ ДНЕЙ (В ЕДИНОМ БЛОКЕ)
-# ==========================================
+# Блок отображения накопленной истории по месяцам
 if supabase is not None:
     st.sidebar.markdown("---")
     st.sidebar.subheader("📈 Kumulierte Umsätze (Historie)")
     
     try:
-        history_res = supabase.table("daily_sales").select("*").order("date", desc=True).execute()
+        history_res = supabase.table("daily_sales").select("*").execute()
         if history_res and history_res.data:
             hist_df = pd.DataFrame(history_res.data)
             
-            # 1. Показываем итоги по месяцам (остаются в сайдбаре)
             if not hist_df.empty and "month" in hist_df.columns and "brutto" in hist_df.columns:
                 monthly_summary = hist_df.groupby("month")["brutto"].sum().reset_index()
                 monthly_summary = monthly_summary.sort_values("month")
@@ -1638,22 +1703,31 @@ if supabase is not None:
                     m_brutto = row["brutto"]
                     m_netto = m_brutto / 1.19
                     st.sidebar.markdown(f"🗓 **{m_name}**: Netto **{m_netto:,.2f} €** *(Brutto: {m_brutto:,.2f} €)*")
-            
-            # 2. Аккуратный экспандер для дней (теперь внутри строго без st.sidebar)
+        else:
+            st.sidebar.info("ℹ Noch keine kumulierten Daten in der Datenbank.")
+    except Exception as hist_err:
+        st.sidebar.caption("💡 Tipp: Stellen Sie sicher, dass die Tabelle `daily_sales` in Supabase existiert.")
+
+# --- ИСТОРИЯ ЗАГРУЖЕННЫХ ДАТ В UMSATZ-TRACKING ---
+if supabase is not None:
+    try:
+        res_hist = supabase.table("daily_sales").select("date, brutto").order("date", desc=True).execute()
+        if res_hist and res_hist.data:
+            hist_df = pd.DataFrame(res_hist.data)
             with st.sidebar.expander("📅 Bereits geladene Tage anzeigen"):
                 if not hist_df.empty:
                     for _, h_row in hist_df.iterrows():
                         d_str = h_row.get("date", "-")
                         b_val = float(h_row.get("brutto", 0) or 0)
                         n_val = b_val / 1.19
-                        # ВАЖНО: здесь используем просто st.markdown, чтобы текст подчинялся экспандеру
-                        st.markdown(f"• **{d_str}**: {n_val:,.2f} € Netto *(Brutto: {b_val:,.2f} €)*")
+                        st.sidebar.markdown(f"• **{d_str}**: {n_val:,.2f} € Netto *(Brutto: {b_val:,.2f} €)*")
                 else:
-                    st.info("Noch keine Tage erfasst.")
-        else:
-            st.sidebar.info("ℹ Noch keine kumulierten Daten in der Datenbank.")
-    except Exception as hist_err:
-        st.sidebar.caption("💡 Tipp: Stellen Sie sicher, dass die Tabelle `daily_sales` in Supabase existiert.")
+                    st.sidebar.info("Noch keine Tage erfasst.")
+    except Exception as e:
+        pass
+
+import streamlit as st
+
 # ==========================================
 # INVENTUR-SCHNELLEINGABE (MULTI-USER)
 # ==========================================
@@ -2615,77 +2689,6 @@ else:
 import os
 pep_path = os.path.join(os.path.dirname(__file__), "pep 10.2026.xlsx")
 pep_df = init_time_tracker_widget(supabase, github_file_path=pep_path)
-# ==========================================
-# 📅 ВИЗУАЛИЗАЦИЯ ШИХТПЛАНА (ПРОСМОТР ИЗ GITHUB)
-# ==========================================
-st.markdown("---")
-st.subheader("📅 Aktueller Schichtplan (Monatsübersicht)")
-
-# Проверяем, загружен ли график в сессию
-pep_df_view = st.session_state.get("pep_df")
-
-if pep_df_view is not None:
-    try:
-        # Извлекаем список сотрудников из первой колонки (начиная с 3-й строки)
-        employees_list = pep_df_view.iloc[2:, 0].dropna().astype(str).tolist()
-        
-        # Селектор для выбора сотрудника для просмотра
-        selected_emp_display = st.selectbox(
-            "Mitarbeiter-Schichtplan anzeigen:", 
-            options=employees_list, 
-            key="display_emp_selectbox"
-        )
-        
-        # Находим строку выбранного сотрудника
-        emp_row_view = pep_df_view[pep_df_view.iloc[:, 0].astype(str).str.strip().str.lower() == str(selected_emp_display).strip().lower()]
-
-        if not emp_row_view.empty:
-            header_row_v = pep_df_view.iloc[0].tolist()
-            days_row_v = pep_df_view.iloc[1].tolist()
-            emp_shifts_v = emp_row_view.iloc[0].tolist()
-
-            # Фильтр по конкретному дню (по желанию)
-            selected_day_f = st.selectbox(
-                "Nach Tag filtern:", 
-                options=["Alle Tage"] + [str(h).replace('.0','') for h in header_row_v[1:] if str(h).replace('.0','').isdigit()],
-                key="display_day_filter"
-            )
-
-            schedule_table_data = []
-            for idx in range(1, len(header_row_v)):
-                d_num = str(header_row_v[idx]).replace('.0', '')
-                if d_num.isdigit() and int(d_num) <= 31:
-                    d_name = str(days_row_v[idx]) if idx < len(days_row_v) else ""
-                    s_val = str(emp_shifts_v[idx]).strip() if idx < len(emp_shifts_v) else "-"
-                    
-                    if selected_day_f != "Alle Tage" and d_num != selected_day_f:
-                        continue
-
-                    clean_s = s_val.upper().strip()
-                    is_num = any(char.isdigit() for char in clean_s)
-
-                    if is_num:
-                        st_label = f"Arbeit (Schicht {s_val}) 🟢"
-                    elif clean_s in ['O', 'О', 'URLAUB']:
-                        st_label = "Urlaub 🏖️"
-                    elif clean_s in ['H', 'FREI']:
-                        st_label = "Frei / Homeoffice 🏠"
-                    else:
-                        st_label = "Frei 🏠"
-                    
-                    schedule_table_data.append({
-                        "Tag": f"{d_num} ({d_name})",
-                        "Schicht": s_val,
-                        "Status": st_label
-                    })
-
-            # Выводим красивую табличку в самом низу
-            final_sch_df = pd.DataFrame(schedule_table_data)
-            st.dataframe(final_sch_df, use_container_width=True, hide_index=True)
-    except Exception as e:
-        st.info("ℹ️ Schichtplan konnte nicht im Detail dargestellt werden, aber die Zugriffsprüfung funktioniert.")
-else:
-    st.warning("⚠️ Schichtplan-Datei (pep 10.2026.xlsx) wurde im Repository nicht gefunden.")
 # FOOTER / COPYRIGHT
 # ==========================================
 st.markdown("---")
