@@ -150,7 +150,7 @@ def render_pep_module(current_user_name, user_role):
     if "pep_df" not in st.session_state or st.session_state["pep_df"] is None:
         try:
             base_dir = os.path.dirname(os.path.abspath(__file__))
-            pep_path = os.path.join(base_dir, "pep 10.2026.xlsx")
+            pep_path = os.path.join(base_dir, "pep 11.2026.xlsx")
             if not os.path.exists(pep_path):
                 pep_path = "pep 10.2026.xlsx"
             st.session_state["pep_df"] = pd.read_excel(pep_path, header=None)
