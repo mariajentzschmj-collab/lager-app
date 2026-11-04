@@ -2,12 +2,16 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, date
 
-def init_time_tracker_widget(supabase_client, github_file_path="pep 11.2026.xlsx"):
+def init_time_tracker_widget(supabase_client, github_file_path=None):
     """
     Универсальный модуль: читает график с GitHub и выводит виджет Zeiterfassung внизу страницы.
-    Основной app.py менять не придется!
+    Имя файла для текущего месяца формируется автоматически!
     """
-    
+    # Если путь к файлу не передан явно, берем текущий месяц и год (например, pep 11.2026.xlsx)
+    if not github_file_path:
+        current_date = datetime.now()
+        github_file_path = f"pep {current_date.strftime('%m.%Y')}.xlsx"
+
     # 1. Загрузка графика прямо из GitHub (или локальной папки проекта)
     try:
         if github_file_path.endswith('.csv'):
@@ -16,7 +20,6 @@ def init_time_tracker_widget(supabase_client, github_file_path="pep 11.2026.xlsx
             pep_df = pd.read_excel(github_file_path)
     except Exception:
         pep_df = None  # Если файла нет под рукой, приложение не упадет
-
     st.markdown("---")
     st.markdown("### ⏱️ Zeiterfassung & Arbeitszeitkontrolle")
     
