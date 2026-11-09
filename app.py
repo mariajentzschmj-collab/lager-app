@@ -265,11 +265,28 @@ if not can_perform_work_actions:
 if can_perform_work_actions:
     st.markdown("### 🎯 Monatsziele & Zielerreichung")
 
-# 1. Хранилище целей по месяцам
+# 1. Хранилище целей по месяцам (инициализация в session_state)
 if "monthly_targets_db" not in st.session_state:
     st.session_state["monthly_targets_db"] = {
         "2026-10": {"Iittala": 15750.0, "Royal Copenhagen": 15605.0, "Arabia": 1000.0}
     }
+    
+    # Пытаемся подгрузить сохраненные цели из базы Supabase (раздельно по брендам)
+    try:
+        if supabase is not None:
+            res_targets = supabase.table("monthly_targets").select("*").execute()
+            if res_targets and res_targets.data:
+                for row in res_targets.data:
+                    m_key = row.get("month")
+                    b_name = row.get("brand")
+                    t_val = row.get("target_amount", 0.0)
+                    
+                    if m_key not in st.session_state["monthly_targets_db"]:
+                        st.session_state["monthly_targets_db"][m_key] = {"Iittala": 0.0, "Royal Copenhagen": 0.0, "Arabia": 0.0}
+                    if b_name:
+                        st.session_state["monthly_targets_db"][m_key][b_name] = float(t_val)
+    except Exception:
+        pass
 
 # 2. Выбор периода
 col_m1, col_m2 = st.columns([2, 1])
@@ -280,14 +297,19 @@ with col_m1:
 with col_m2:
     st.write("")
     if st.button("➕ Neuer Monat"):
-        new_m_key = "2026-11"
-        if new_m_key not in st.session_state["monthly_targets_db"]:
-            st.session_state["monthly_targets_db"][new_m_key] = {"Iittala": 0.0, "Royal Copenhagen": 0.0, "Arabia": 0.0}
-            st.rerun()
+        # Автоматически определяем следующий месяц или берем по умолчанию текущий
+        current_date_str = datetime.now().strftime("%Y-%m")
+        if current_date_str not in st.session_state["monthly_targets_db"]:
+            st.session_state["monthly_targets_db"][current_date_str] = {"Iittala": 0.0, "Royal Copenhagen": 0.0, "Arabia": 0.0}
+        st.rerun()
+
+# Убедимся, что для выбранного месяца есть словарь брендов
+if selected_month not in st.session_state["monthly_targets_db"]:
+    st.session_state["monthly_targets_db"][selected_month] = {"Iittala": 0.0, "Royal Copenhagen": 0.0, "Arabia": 0.0}
 
 current_targets = st.session_state["monthly_targets_db"][selected_month]
 
-# 3. Ручной ввод целей на немецком
+# 3. Ручной ввод целей на немецком (с сохранением в Supabase раздельно по брендам)
 with st.expander(f"⚙️ Monatsziele manuell bearbeiten ({selected_month})"):
     st.info("Geben Sie die Monatsziele in Euro (Netto) für jede Marke ein:")
     
@@ -306,7 +328,23 @@ with st.expander(f"⚙️ Monatsziele manuell bearbeiten ({selected_month})"):
     
     if st.button("💾 Ziele für diesen Monat speichern"):
         st.session_state["monthly_targets_db"][selected_month] = updated_targets
-        st.success(f"Ziele für {selected_month} erfolgreich gespeichert!")
+        
+        # Сохраняем каждый бренд отдельной строкой в таблицу monthly_targets в Supabase
+        try:
+            if supabase is not None:
+                for brand_key, val in updated_targets.items():
+                    supabase.table("monthly_targets").upsert({
+                        "month": selected_month,
+                        "brand": brand_key,
+                        "target_amount": val
+                    }, on_conflict=["month", "brand"]).execute()
+                
+                st.success(f"Ziele für {selected_month} erfolgreich in der Datenbank gespeichert!")
+            else:
+                st.success(f"Ziele für {selected_month} erfolgreich gespeichert!")
+        except Exception as err:
+            st.error(f"Fehler beim Speichern in Supabase: {err}")
+            
         st.rerun()
 
 # 4. РАСЧЕТ И СУММИРОВАНИЕ ПРОДАЖ ИЗ БАЗЫ DART/SUPABASE ЗА ВЕСЬ МЕСЯЦ
