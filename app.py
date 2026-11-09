@@ -297,8 +297,8 @@ with col_m1:
 with col_m2:
     st.write("")
     if st.button("➕ Neuer Monat"):
-        # Используем безопасный вызов date.today() вместо datetime.now()
-        current_date_str = date.today().strftime("%Y-%m")
+        # Используем правильный вызов через datetime.date.today()
+        current_date_str = datetime.date.today().strftime("%Y-%m")
         if current_date_str not in st.session_state["monthly_targets_db"]:
             st.session_state["monthly_targets_db"][current_date_str] = {"Iittala": 0.0, "Royal Copenhagen": 0.0, "Arabia": 0.0}
         st.rerun()
