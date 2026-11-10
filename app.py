@@ -388,13 +388,13 @@ for idx, (brand_name, target_val) in enumerate(active_targets.items()):
 
 st.markdown("---")
 
-    # ==========================================
+# ==========================================
 # 📈 АНАЛИТИКА ПРОДАЖ ПО ДАННЫМ SUPABASE (DAILY_SALES)
 # ==========================================
 st.markdown("### 📈 Detaillierte Verkaufsanalytik")
 
 try:
-    if supabase is not None:
+    if 'supabase' in globals() and supabase is not None:
         res_analytics = supabase.table("daily_sales").select("*").execute()
         sales_rows = res_analytics.data if res_analytics and res_analytics.data else []
         
@@ -451,10 +451,12 @@ try:
                 st.metric(label="Umsatz Gesamt (Brutto über alle Tage)", value=f"{float(total_all_time):,.2f} €")
                 
         else:
-            st.info("Noch keine Verkaufsdaten in der Datenbank vorhanden.")
-            
+            st.warning("Noch keine Verkaufsdaten in der Tabelle 'daily_sales' gefunden.")
+    else:
+                st.error("Verbindung zu Supabase ist nicht initialisiert.")
+                
 except Exception as err:
-    st.info("Analytik wird geladen...")
+    st.error(f"Fehler beim Laden der Analytik: {err}")
 # ==========================================
 # DYNAMISCHES INFO-BANNER / AKTIONEN (Aus 'news' Tabelle)
 # ==========================================
