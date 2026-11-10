@@ -457,6 +457,64 @@ try:
                 
 except Exception as err:
     st.error(f"Fehler beim Laden der Analytik: {err}")
+    # ==========================================
+# 📦 СТАТИСТИКА ПРОДАЖ ПО SAP-НОМЕРУ И ШТУКАМ
+# ==========================================
+st.markdown("### 📦 Artikel-Verkaufsstatistik nach SAP-Nummer")
+
+search_sap = st.text_input("Geben Sie die SAP-Nummer oder den Artikelnamen ein:", key="search_sap_input")
+
+if search_sap:
+    total_qty = 0
+    qty_today = 0
+    qty_month = 0
+    
+    today_str = datetime.date.today().strftime("%Y-%m-%d")
+    current_month_str = datetime.date.today().strftime("%Y-%m")
+    
+    try:
+        if 'supabase' in globals() and supabase is not None:
+            # Запрашиваем данные из новой таблицы sale_items
+            res_items = supabase.table("sale_items").select("*").execute()
+            items_rows = res_items.data if res_items and res_items.data else []
+            
+            found_records = []
+            for row in items_rows:
+                item_sap = str(row.get("sap_number", ""))
+                item_name = str(row.get("product_name", ""))
+                sale_date = str(row.get("date", ""))
+                
+                # Ищем совпадение по SAP-номеру или названию товара
+                if search_sap.lower() in item_sap.lower() or search_sap.lower() in item_name.lower():
+                    q = float(row.get("quantity", 0))
+                    total_qty += q
+                    
+                    if sale_date == today_str:
+                        qty_today += q
+                    if sale_date.startswith(current_month_str):
+                        qty_month += q
+                        
+                    found_records.append(row)
+            
+            # Выводим метрики по найденному товару
+            st.success(f"Ergebnisse für Suche: **{search_sap}**")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Heute verkauft", f"{int(qty_today)} Stk.")
+            with col2:
+                st.metric("Diesen Monat", f"{int(qty_month)} Stk.")
+            with col3:
+                st.metric("Gesamt (Historie)", f"{int(total_qty)} Stk.")
+                
+            # Показываем детальную историю продаж этого артикула, если записи нашлись
+            if found_records:
+                with st.expander("Details zu den Verkäufen anzeigen"):
+                    st.dataframe(found_records)
+            else:
+                st.info("Keine Verkäufe für diesen Artikel gefunden.")
+                
+    except Exception as err:
+        st.error(f"Fehler bei der Artikelsuche: {err}")
 # ==========================================
 # DYNAMISCHES INFO-BANNER / AKTIONEN (Aus 'news' Tabelle)
 # ==========================================
