@@ -515,7 +515,7 @@ if search_sap:
                 
     except Exception as err:
         st.error(f"Fehler bei der Artikelsuche: {err}")
-      # ==========================================
+     # ==========================================
 # 📊 ЗАГРУЗКА ДАННЫХ ИЗ EXCEL / CSV ФАЙЛА
 # ==========================================
 st.markdown("### 📥 Excel-Tabelle mit Verkäufen hochladen")
@@ -542,12 +542,11 @@ if uploaded_file is not None:
                 
                 with st.spinner("Importiere Daten..."):
                     for index, row in df_upload.iterrows():
-                        # Преобразуем строчку из DataFrame в словарь для Supabase
-                        # (Убедитесь, что названия колонок в файле совпадают с вашими или настройте их ниже)
+                        # Преобразуем строчку из DataFrame в словарь под названия в базе
                         item_record = {
-                            "date": str(row.get("date", datetime.date.today().strftime("%Y-%m-%d"))),
-                            "sap_number": str(row.get("sap_number", "")),
-                            "product_name": str(row.get("product_name", "")),
+                            "date": str(row.get("data", datetime.date.today().strftime("%Y-%m-%d"))),
+                            "sap_number": str(row.get("sap", "")),
+                            "product_name": str(row.get("name", "")),
                             "quantity": int(row.get("quantity", 1)),
                             "brand": str(row.get("brand", "Sonstige"))
                         }
