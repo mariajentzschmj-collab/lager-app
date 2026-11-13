@@ -520,7 +520,7 @@ if search_sap:
 # ==========================================
 st.markdown("### 📥 Excel-Tabelle mit Verkäufen hochladen")
 
-uploaded_file = st.file_uploader("Wählen Sie eine Excel- oder CSV-Datei aus", type=["xlsx", "csv"], key="excel_uploader_v2")
+uploaded_file = st.file_uploader("Wählen Sie eine Excel- oder CSV-Datei aus", type=["xlsx", "csv"], key="excel_uploader_v3")
 
 if uploaded_file is not None:
     try:
@@ -536,16 +536,16 @@ if uploaded_file is not None:
         st.dataframe(df_upload.head())
         
         # Кнопка для импорта данных в Supabase
-        if st.button("Daten in Datenbank importieren", key="btn_import_v2"):
+        if st.button("Daten in Datenbank importieren", key="btn_import_v3"):
             if 'supabase' in globals() and supabase is not None:
                 success_count = 0
                 
                 with st.spinner("Importiere Daten..."):
                     for index, row in df_upload.iterrows():
-                        # Формируем запись строго по полям таблицы в базе
+                        # Ключи словаря строго соответствуют колонкам в Supabase: date, sap, name, quantity, brand
                         item_record = {
                             "date": str(row.get("data", datetime.date.today().strftime("%Y-%m-%d"))),
-                            "sap_number": str(row.get("sap", "")),
+                            "sap": str(row.get("sap", "")),
                             "name": str(row.get("name", "")),
                             "quantity": int(row.get("quantity", 1)),
                             "brand": str(row.get("brand", "Sonstige"))
