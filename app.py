@@ -515,12 +515,12 @@ if search_sap:
                 
     except Exception as err:
         st.error(f"Fehler bei der Artikelsuche: {err}")
-     # ==========================================
+    # ==========================================
 # 📊 ЗАГРУЗКА ДАННЫХ ИЗ EXCEL / CSV ФАЙЛА
 # ==========================================
 st.markdown("### 📥 Excel-Tabelle mit Verkäufen hochladen")
 
-uploaded_file = st.file_uploader("Wählen Sie eine Excel- oder CSV-Datei aus", type=["xlsx", "csv"])
+uploaded_file = st.file_uploader("Wählen Sie eine Excel- oder CSV-Datei aus", type=["xlsx", "csv"], key="excel_uploader_v2")
 
 if uploaded_file is not None:
     try:
@@ -536,17 +536,17 @@ if uploaded_file is not None:
         st.dataframe(df_upload.head())
         
         # Кнопка для импорта данных в Supabase
-        if st.button("Daten in Datenbank importieren"):
+        if st.button("Daten in Datenbank importieren", key="btn_import_v2"):
             if 'supabase' in globals() and supabase is not None:
                 success_count = 0
                 
                 with st.spinner("Importiere Daten..."):
                     for index, row in df_upload.iterrows():
-                        # Преобразуем строчку из DataFrame в словарь под названия в базе
+                        # Формируем запись строго по полям таблицы в базе
                         item_record = {
                             "date": str(row.get("data", datetime.date.today().strftime("%Y-%m-%d"))),
                             "sap_number": str(row.get("sap", "")),
-                            "product_name": str(row.get("name", "")),
+                            "name": str(row.get("name", "")),
                             "quantity": int(row.get("quantity", 1)),
                             "brand": str(row.get("brand", "Sonstige"))
                         }
