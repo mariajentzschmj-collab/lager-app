@@ -515,48 +515,55 @@ if search_sap:
                 
     except Exception as err:
         st.error(f"Fehler bei der Artikelsuche: {err}")
-        # ==========================================
-# 📝 ФОРМА ДЛЯ ВВОДА ПРОДАННЫХ ТОВАРОВ (ПО ШТУКАМ И SAP)
+      # ==========================================
+# 📊 ЗАГРУЗКА ДАННЫХ ИЗ EXCEL / CSV ФАЙЛА
 # ==========================================
-st.markdown("### ✍️ Artikelverkauf erfassen (nach SAP)")
+st.markdown("### 📥 Excel-Tabelle mit Verkäufen hochladen")
 
-with st.form("sale_item_form"):
-    col_f1, col_f2 = st.columns(2)
-    with col_f1:
-        sale_date_input = st.date_input("Verkaufsdatum", datetime.date.today())
-        sap_input = st.text_input("SAP-Nummer")
-    with col_f2:
-        brand_input = st.selectbox("Marke", ["Iittala", "Royal Copenhagen", "Arabia", "Georg Jensen", "Sonstige"])
-        qty_input = st.number_input("Menge (Stück)", min_value=1, value=1, step=1)
-    
-    product_name_input = st.text_input("Artikelbezeichnung (optional)")
-    
-    submit_button = st.form_submit_button(label="Verkauf speichern")
-    
-    if submit_button:
-        if sap_input.strip() == "":
-            st.warning("Bitte geben Sie eine SAP-Nummer ein.")
+uploaded_file = st.file_uploader("Wählen Sie eine Excel- oder CSV-Datei aus", type=["xlsx", "csv"])
+
+if uploaded_file is not None:
+    try:
+        import pandas as pd
+        
+        # Читаем файл в зависимости от его формата
+        if uploaded_file.name.endswith('.csv'):
+            df_upload = pd.read_csv(uploaded_file)
         else:
-            try:
-                if 'supabase' in globals() and supabase is not None:
-                    # Подготавливаем данные для вставки в таблицу sale_items
-                    new_item_data = {
-                        "date": sale_date_input.strftime("%Y-%m-%d"),
-                        "sap_number": sap_input.strip(),
-                        "product_name": product_name_input.strip(),
-                        "quantity": int(qty_input),
-                        "brand": brand_input
-                    }
-                    
-                    # Отправляем в Supabase в таблицу sale_items
-                    response = supabase.table("sale_items").insert(new_item_data).execute()
-                    
-                    st.success(f"Erfolgreich gespeichert: {qty_input} Stk. von SAP {sap_input}!")
-                    st.rerun() # Перезагружаем страницу, чтобы обновить статистику
-                else:
-                    st.error("Keine Verbindung zu Supabase.")
-            except Exception as e:
-                st.error(f"Fehler beim Speichern: {e}")
+            df_upload = pd.read_excel(uploaded_file)
+            
+        st.write("**Vorschau der hochgeladenen Daten:**")
+        st.dataframe(df_upload.head())
+        
+        # Кнопка для импорта данных в Supabase
+        if st.button("Daten in Datenbank importieren"):
+            if 'supabase' in globals() and supabase is not None:
+                success_count = 0
+                
+                with st.spinner("Importiere Daten..."):
+                    for index, row in df_upload.iterrows():
+                        # Преобразуем строчку из DataFrame в словарь для Supabase
+                        # (Убедитесь, что названия колонок в файле совпадают с вашими или настройте их ниже)
+                        item_record = {
+                            "date": str(row.get("date", datetime.date.today().strftime("%Y-%m-%d"))),
+                            "sap_number": str(row.get("sap_number", "")),
+                            "product_name": str(row.get("product_name", "")),
+                            "quantity": int(row.get("quantity", 1)),
+                            "brand": str(row.get("brand", "Sonstige"))
+                        }
+                        
+                        # Отправляем в таблицу sale_items
+                        res = supabase.table("sale_items").insert(item_record).execute()
+                        if res:
+                            success_count += 1
+                            
+                st.success(f"Erfolgreich {success_count} Datensätze in die Tabelle 'sale_items' importiert!")
+                st.rerun()
+            else:
+                st.error("Keine Verbindung zu Supabase.")
+                
+    except Exception as e:
+        st.error(f"Fehler beim Lesen der Datei: {e}")
 # ==========================================
 # DYNAMISCHES INFO-BANNER / AKTIONEN (Aus 'news' Tabelle)
 # ==========================================
