@@ -506,11 +506,25 @@ if search_sap:
                 st.metric("Diesen Monat", f"{int(qty_month)} Stk.")
             with col3:
                 st.metric("Gesamt (Historie)", f"{int(total_qty)} Stk.")
-                
-            # Показываем детальную историю продаж этого артикула, если записи нашлись
+       # Показываем детальную историю продаж этого артикула, если записи нашлись
             if found_records:
                 with st.expander("Details zu den Verkäufen anzeigen"):
                     st.dataframe(found_records)
+                
+                # ==========================================
+                # 📈 НАГЛЯДНЫЙ ГРАФИК ПРОДАЖ ПО ДАТАМ
+                # ==========================================
+                import pandas as pd
+                df_chart = pd.DataFrame(found_records)
+                
+                # Группируем продажи по датам и суммируем количество штук
+                if 'date' in df_chart.columns and 'quantity' in df_chart.columns:
+                    df_grouped = df_chart.groupby('date')['quantity'].sum().reset_index()
+                    df_grouped['date'] = pd.to_datetime(df_grouped['date'])
+                    df_grouped = df_grouped.set_index('date')
+                    
+                    st.markdown("#### 📈 Verkaufsverlauf im Zeitverlauf")
+                    st.bar_chart(df_grouped['quantity'])
             else:
                 st.info("Keine Verkäufe für diesen Artikel gefunden.")
                 
