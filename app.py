@@ -457,7 +457,7 @@ try:
                 
 except Exception as err:
     st.error(f"Fehler beim Laden der Analytik: {err}")
-    # ==========================================
+# ==========================================
 # 📦 СТАТИСТИКА ПРОДАЖ ПО SAP-НОМЕРУ И ШТУКАМ
 # ==========================================
 st.markdown("### 📦 Artikel-Verkaufsstatistik nach SAP-Nummer")
@@ -474,14 +474,15 @@ if search_sap:
     
     try:
         if 'supabase' in globals() and supabase is not None:
-            # Запрашиваем данные из новой таблицы sale_items
+            # Запрашиваем данные из таблицы sale_items
             res_items = supabase.table("sale_items").select("*").execute()
             items_rows = res_items.data if res_items and res_items.data else []
             
             found_records = []
             for row in items_rows:
-                item_sap = str(row.get("sap_number", ""))
-                item_name = str(row.get("product_name", ""))
+                # ИСПРАВЛЕНО: читаем ключи "sap" и "name", как в базе Supabase
+                item_sap = str(row.get("sap", ""))
+                item_name = str(row.get("name", ""))
                 sale_date = str(row.get("date", ""))
                 
                 # Ищем совпадение по SAP-номеру или названию товара
@@ -489,7 +490,7 @@ if search_sap:
                     q = float(row.get("quantity", 0))
                     total_qty += q
                     
-                    if sale_date == today_str:
+                    if sale_date.startswith(today_str):
                         qty_today += q
                     if sale_date.startswith(current_month_str):
                         qty_month += q
