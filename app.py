@@ -515,6 +515,48 @@ if search_sap:
                 
     except Exception as err:
         st.error(f"Fehler bei der Artikelsuche: {err}")
+        # ==========================================
+# 📝 ФОРМА ДЛЯ ВВОДА ПРОДАННЫХ ТОВАРОВ (ПО ШТУКАМ И SAP)
+# ==========================================
+st.markdown("### ✍️ Artikelverkauf erfassen (nach SAP)")
+
+with st.form("sale_item_form"):
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
+        sale_date_input = st.date_input("Verkaufsdatum", datetime.date.today())
+        sap_input = st.text_input("SAP-Nummer")
+    with col_f2:
+        brand_input = st.selectbox("Marke", ["Iittala", "Royal Copenhagen", "Arabia", "Georg Jensen", "Sonstige"])
+        qty_input = st.number_input("Menge (Stück)", min_value=1, value=1, step=1)
+    
+    product_name_input = st.text_input("Artikelbezeichnung (optional)")
+    
+    submit_button = st.form_submit_button(label="Verkauf speichern")
+    
+    if submit_button:
+        if sap_input.strip() == "":
+            st.warning("Bitte geben Sie eine SAP-Nummer ein.")
+        else:
+            try:
+                if 'supabase' in globals() and supabase is not None:
+                    # Подготавливаем данные для вставки в таблицу sale_items
+                    new_item_data = {
+                        "date": sale_date_input.strftime("%Y-%m-%d"),
+                        "sap_number": sap_input.strip(),
+                        "product_name": product_name_input.strip(),
+                        "quantity": int(qty_input),
+                        "brand": brand_input
+                    }
+                    
+                    # Отправляем в Supabase в таблицу sale_items
+                    response = supabase.table("sale_items").insert(new_item_data).execute()
+                    
+                    st.success(f"Erfolgreich gespeichert: {qty_input} Stk. von SAP {sap_input}!")
+                    st.rerun() # Перезагружаем страницу, чтобы обновить статистику
+                else:
+                    st.error("Keine Verbindung zu Supabase.")
+            except Exception as e:
+                st.error(f"Fehler beim Speichern: {e}")
 # ==========================================
 # DYNAMISCHES INFO-BANNER / AKTIONEN (Aus 'news' Tabelle)
 # ==========================================
