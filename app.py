@@ -2914,10 +2914,10 @@ if pep_df_view is not None:
         st.info("ℹ️ Schichtplan konnte nicht im Detail dargestellt werden, aber die Zugriffsprüfung funktioniert.")
 else:
     st.warning("⚠️ Schichtplan-Datei (pep 10.2026.xlsx) wurde im Repository nicht gefunden.")
-    # ==========================================
-# 🥧 КРУГОВАЯ ДИАГРАММА: ДОЛЯ ПРОДАЖ ПО АССОРТИМЕНТУ
 # ==========================================
-st.markdown("### 🥧 Verkaufsanteil des gesamten Sortiments")
+# 🥧 КРУГОВАЯ ДИАГРАММА С ФИЛЬТРОМ ПО ДАТАМ
+# ==========================================
+st.markdown("### 🥧 Verkaufsanteil des Sortiments nach Zeitraum")
 
 if 'supabase' in globals() and supabase is not None:
     try:
@@ -2926,39 +2926,64 @@ if 'supabase' in globals() and supabase is not None:
         all_rows = res_all.data if res_all and res_all.data else []
         
         if all_rows:
+            import pandas as pd
+            import plotly.express as px
+            
             df_all = pd.DataFrame(all_rows)
             
-            # Проверяем наличие нужных колонок (в вашей базе они называются 'name' и 'quantity')
-            if 'name' in df_all.columns and 'quantity' in df_all.columns:
-                # Группируем по названию товара и суммируем проданные штуки
-                df_pie = df_all.groupby('name')['quantity'].sum().reset_index()
-                df_pie = df_pie.sort_values(by='quantity', ascending=False)
+            # Проверяем наличие нужных колонок
+            if 'date' in df_all.columns and 'name' in df_all.columns and 'quantity' in df_all.columns:
+                # Преобразуем колонку с датами в формат datetime
+                df_all['date_dt'] = pd.to_datetime(df_all['date']).dt.date
                 
-                # Если товаров много, берем топ-8, а остальные объединяем в "Sonstige",
-                # чтобы диаграмма оставалась аккуратной и читаемой
-                if len(df_pie) > 8:
-                    top_n = df_pie.head(8)
-                    other_sum = df_pie.iloc[8:]['quantity'].sum()
-                    other_row = pd.DataFrame({'name': ['Sonstige (Andere)'], 'quantity': [other_sum]})
-                    df_pie = pd.concat([top_n, other_row], ignore_index=True)
+                min_date = df_all['date_dt'].min()
+                max_date = df_all['date_dt'].max()
                 
-                # Строим интерактивную кольцевую диаграмму (donut chart)
-                fig = px.pie(
-                    df_pie, 
-                    names='name', 
-                    values='quantity', 
-                    hole=0.4, 
-                    title="Anteil der verkauften Artikel am Gesamtvolumen"
+                # Добавляем выбор диапазона дат (календарь)
+                date_range = st.date_input(
+                    "Wählen Sie den Zeitraum aus:",
+                    value=(min_date, max_date),
+                    min_value=min_date,
+                    max_value=max_date,
+                    key="pie_chart_date_range"
                 )
                 
-                # Настраиваем отображение процентов и названий внутри секторов
-                fig.update_traces(textposition='inside', textinfo='percent+label')
+                # Фильтруем данные по выбранному периоду
+                if isinstance(date_range, tuple) and len(date_range) == 2:
+                    start_d, end_d = date_range
+                    df_filtered = df_all[(df_all['date_dt'] >= start_d) & (df_all['date_dt'] <= end_d)]
+                else:
+                    df_filtered = df_all
                 
-                st.plotly_chart(fig, use_container_width=True)
+                if not df_filtered.empty:
+                    # Группируем отфильтрованные данные по названию товара
+                    df_pie = df_filtered.groupby('name')['quantity'].sum().reset_index()
+                    df_pie = df_pie.sort_values(by='quantity', ascending=False)
+                    
+                    # Ограничиваем топ-8 позиций, остальные в "Sonstige"
+                    if len(df_pie) > 8:
+                        top_n = df_pie.head(8)
+                        other_sum = df_pie.iloc[8:]['quantity'].sum()
+                        other_row = pd.DataFrame({'name': ['Sonstige (Andere)'], 'quantity': [other_sum]})
+                        df_pie = pd.concat([top_n, other_row], ignore_index=True)
+                    
+                    # Строим кольцевую диаграмму с учетом выбранных дат в заголовке
+                    fig = px.pie(
+                        df_pie, 
+                        names='name', 
+                        values='quantity', 
+                        hole=0.4, 
+                        title=f"Verkaufsanteil im Zeitraum: {start_d} bis {end_d}"
+                    )
+                    
+                    fig.update_traces(textposition='inside', textinfo='percent+label')
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.warning("Keine Verkäufe im ausgewählten Zeitraum gefunden.")
             else:
-                st.info("Die erforderlichen Spalten ('name', 'quantity') wurden in der Tabelle nicht gefunden.")
+                st.info("Die erforderlichen Spalten wurden in der Tabelle nicht gefunden.")
         else:
-            st.info("Noch keine Verkaufsdaten für die Diagramm-Anzeige vorhanden.")
+            st.info("Noch keine Verkäufe für die Diagramm-Anzeige vorhanden.")
             
     except Exception as e:
         st.error(f"Fehler beim Erstellen des Diagramms: {e}")
