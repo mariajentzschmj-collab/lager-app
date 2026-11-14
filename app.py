@@ -2914,6 +2914,54 @@ if pep_df_view is not None:
         st.info("ℹ️ Schichtplan konnte nicht im Detail dargestellt werden, aber die Zugriffsprüfung funktioniert.")
 else:
     st.warning("⚠️ Schichtplan-Datei (pep 10.2026.xlsx) wurde im Repository nicht gefunden.")
+    # ==========================================
+# 🥧 КРУГОВАЯ ДИАГРАММА: ДОЛЯ ПРОДАЖ ПО АССОРТИМЕНТУ
+# ==========================================
+st.markdown("### 🥧 Verkaufsanteil des gesamten Sortiments")
+
+if 'supabase' in globals() and supabase is not None:
+    try:
+        # Загружаем все продажи из базы
+        res_all = supabase.table("sale_items").select("*").execute()
+        all_rows = res_all.data if res_all and res_all.data else []
+        
+        if all_rows:
+            df_all = pd.DataFrame(all_rows)
+            
+            # Проверяем наличие нужных колонок (в вашей базе они называются 'name' и 'quantity')
+            if 'name' in df_all.columns and 'quantity' in df_all.columns:
+                # Группируем по названию товара и суммируем проданные штуки
+                df_pie = df_all.groupby('name')['quantity'].sum().reset_index()
+                df_pie = df_pie.sort_values(by='quantity', ascending=False)
+                
+                # Если товаров много, берем топ-8, а остальные объединяем в "Sonstige",
+                # чтобы диаграмма оставалась аккуратной и читаемой
+                if len(df_pie) > 8:
+                    top_n = df_pie.head(8)
+                    other_sum = df_pie.iloc[8:]['quantity'].sum()
+                    other_row = pd.DataFrame({'name': ['Sonstige (Andere)'], 'quantity': [other_sum]})
+                    df_pie = pd.concat([top_n, other_row], ignore_index=True)
+                
+                # Строим интерактивную кольцевую диаграмму (donut chart)
+                fig = px.pie(
+                    df_pie, 
+                    names='name', 
+                    values='quantity', 
+                    hole=0.4, 
+                    title="Anteil der verkauften Artikel am Gesamtvolumen"
+                )
+                
+                # Настраиваем отображение процентов и названий внутри секторов
+                fig.update_traces(textposition='inside', textinfo='percent+label')
+                
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("Die erforderlichen Spalten ('name', 'quantity') wurden in der Tabelle nicht gefunden.")
+        else:
+            st.info("Noch keine Verkaufsdaten für die Diagramm-Anzeige vorhanden.")
+            
+    except Exception as e:
+        st.error(f"Fehler beim Erstellen des Diagramms: {e}")
 # FOOTER / COPYRIGHT
 # ==========================================
 st.markdown("---")
