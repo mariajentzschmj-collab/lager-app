@@ -1361,16 +1361,16 @@ elif action == "📥 Auto-Abverkauf per Bericht":
       st.error(f"Fehler beim Verarbeiten des Berichts: {e}")
 
 # ==========================================
-# 6. KATALOG AUS DATEI HOCHLADEN (ВКЛЮЧАЯ 0 ЗНАЧЕНИЯ)
+# 6. KATALOG AUS DATEI HOCHLADEN (ВКЛЮЧАЯ 0 ЗНАЧЕНИЯ И ЗАКАЗЫ)
 # ==========================================
 elif action == "📁 Katalog aus Datei hochladen":
   is_manager = st.session_state.get("role") == "manager"
   st.header("📂 Gesamtkatalog hochladen (inkl. 0 Bestände)" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
-  st.markdown("Laden Sie eine vollständige Excel- oder CSV-Datei des Katalogs hoch. Artikel mit Bestand `0` und Mindestbestellmengen werden ebenfalls korrekt übernommen.")
+  st.markdown("Laden Sie eine vollständige Excel- oder CSV-Datei des Katalogs hoch. Bestände, Mindestbestellmengen und bereits bestellte Mengen werden aktualisiert.")
 
-  # Добавлена графа "min_order" в шаблон
-  template_df = pd.DataFrame(columns=["article", "name", "brand", "quantity", "preis", "sap", "barcode", "location", "min_order"])
-  template_df.loc[0] = ["10001", "Teema Teller 21cm", "Iittala", 0, 19.50, "SAP001", "641192000001", "Etage 5 Lager", 4]
+  # Шаблон с новыми графами min_order и ordered_qty
+  template_df = pd.DataFrame(columns=["article", "name", "brand", "quantity", "preis", "sap", "barcode", "location", "min_order", "ordered_qty"])
+  template_df.loc[0] = ["10001", "Teema Teller 21cm", "Iittala", 0, 19.50, "SAP001", "641192000001", "Etage 5 Lager", 4, 0]
 
   out_tmpl = io.BytesIO()
   with pd.ExcelWriter(out_tmpl, engine="openpyxl") as writer:
@@ -1405,14 +1405,15 @@ elif action == "📁 Katalog aus Datei hochladen":
               "sap": str(row.get("sap", "")),
               "barcode": str(row.get("barcode", "")),
               "location": str(row.get("location", "Etage 5 Lager")),
-              "min_order": int(row.get("min_order", 1))  # <-- Считываем минимальный заказ / коробку
+              "min_order": int(row.get("min_order", 1)),
+              "ordered_qty": int(row.get("ordered_qty", 0))
           })
 
         if is_manager:
           if supabase is not None:
             for item in catalog_items:
               supabase.table("inventory").upsert(item, on_conflict="article").execute()
-            st.success("✅ Gesamter Katalog erfolgreich aktualisiert (inkl. 0-Bestände & Mindestbestellmengen)!")
+            st.success("✅ Gesamter Katalog erfolgreich aktualisiert (inkl. Bestellungen & VE)!")
             st.rerun()
         else:
           payload = {"items": catalog_items}
@@ -1420,7 +1421,6 @@ elif action == "📁 Katalog aus Datei hochladen":
 
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten des Katalogs: {e}")
-
 # 7. LIVE-KAMERA-SCANNER
 elif action == "📷 Live-Kamera-Scanner":
   is_manager = st.session_state.get("role") == "manager"
