@@ -1360,14 +1360,17 @@ elif action == "📥 Auto-Abverkauf per Bericht":
     except Exception as e:
       st.error(f"Fehler beim Verarbeiten des Berichts: {e}")
 
+# ==========================================
 # 6. KATALOG AUS DATEI HOCHLADEN (ВКЛЮЧАЯ 0 ЗНАЧЕНИЯ)
+# ==========================================
 elif action == "📁 Katalog aus Datei hochladen":
   is_manager = st.session_state.get("role") == "manager"
   st.header("📂 Gesamtkatalog hochladen (inkl. 0 Bestände)" + ("" if is_manager else " (Wartet auf Manager-Freigabe)"))
-  st.markdown("Laden Sie eine vollständige Excel- oder CSV-Datei des Katalogs hoch. Artikel mit Bestand `0` werden ebenfalls korrekt mit 0 eingetragen oder aktualisiert.")
+  st.markdown("Laden Sie eine vollständige Excel- oder CSV-Datei des Katalogs hoch. Artikel mit Bestand `0` und Mindestbestellmengen werden ebenfalls korrekt übernommen.")
 
-  template_df = pd.DataFrame(columns=["article", "name", "brand", "quantity", "preis", "sap", "barcode", "location"])
-  template_df.loc[0] = ["10001", "Teema Teller 21cm", "Iittala", 0, 19.50, "SAP001", "641192000001", "Etage 5 Lager"]
+  # Добавлена графа "min_order" в шаблон
+  template_df = pd.DataFrame(columns=["article", "name", "brand", "quantity", "preis", "sap", "barcode", "location", "min_order"])
+  template_df.loc[0] = ["10001", "Teema Teller 21cm", "Iittala", 0, 19.50, "SAP001", "641192000001", "Etage 5 Lager", 4]
 
   out_tmpl = io.BytesIO()
   with pd.ExcelWriter(out_tmpl, engine="openpyxl") as writer:
@@ -1401,14 +1404,15 @@ elif action == "📁 Katalog aus Datei hochladen":
               "preis": float(row.get("preis", 0.0)),
               "sap": str(row.get("sap", "")),
               "barcode": str(row.get("barcode", "")),
-              "location": str(row.get("location", "Etage 5 Lager"))
+              "location": str(row.get("location", "Etage 5 Lager")),
+              "min_order": int(row.get("min_order", 1))  # <-- Считываем минимальный заказ / коробку
           })
 
         if is_manager:
           if supabase is not None:
             for item in catalog_items:
               supabase.table("inventory").upsert(item, on_conflict="article").execute()
-            st.success("✅ Gesamter Katalog erfolgreich aktualisiert (inkl. 0-Bestände)!")
+            st.success("✅ Gesamter Katalog erfolgreich aktualisiert (inkl. 0-Bestände & Mindestbestellmengen)!")
             st.rerun()
         else:
           payload = {"items": catalog_items}
