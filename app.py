@@ -2594,18 +2594,22 @@ try:
     else:
         df_inv = pd.DataFrame(inv_data)
 
-        # Numerische Spalten umwandeln
-        numeric_cols = ["quantity", "min_stock", "max_stock", "preis"]
+        # Numerische Spalten umwandeln (inklusive min_order und ordered_qty)
+        numeric_cols = ["quantity", "min_stock", "max_stock", "preis", "min_order", "ordered_qty"]
         for col in numeric_cols:
             if col in df_inv.columns:
                 df_inv[col] = pd.to_numeric(df_inv[col], errors="coerce").fillna(0)
+            else:
+                if col == "min_order":
+                    df_inv[col] = 1
+                elif col == "ordered_qty":
+                    df_inv[col] = 0
 
         # -----------------------------------------------------
         # 1. WARNUNGEN FÜR KRITISCHE BESTÄNDE (LOW STOCK)
         # -----------------------------------------------------
         st.subheader("⚠️ Kritische Bestände (Unter Min-Stock)")
 
-        # Filtern: Bestand <= min_stock und min_stock > 0
         low_stock_df = df_inv[
             (df_inv["quantity"] <= df_inv["min_stock"]) & (df_inv["min_stock"] > 0)
         ]
@@ -2619,9 +2623,10 @@ try:
         m3.metric("Ausverkauft (0 Stk.)", len(out_of_stock_df), delta_color="inverse")
 
         if not low_stock_df.empty:
-            st.error(f"🚨 Achtung: **{len(low_stock_df)}** Positionen müssen dringend nachbestellt werden!")
+            st.error(f"🚨 Achtung: **{len(low_stock_df)}** Positionen müssen geprüft werden!")
             
-            display_cols = [c for c in ["article", "sap", "name", "brand", "quantity", "min_stock", "location"] if c in low_stock_df.columns]
+            display_cols = [c for c in ["article", "sap", "name", "brand", "quantity", "min_stock", "min_order", "ordered_qty", "location"] if c in low_stock_df.columns]
+            
             st.dataframe(
                 low_stock_df[display_cols].rename(columns={
                     "article": "Artikel-Nr.",
@@ -2630,6 +2635,8 @@ try:
                     "brand": "Marke",
                     "quantity": "Bestand (Stk.)",
                     "min_stock": "Min.-Bestand",
+                    "min_order": "Karton (VE)",
+                    "ordered_qty": "Bereits bestellt (In Lieferung)",
                     "location": "Lagerort"
                 }),
                 use_container_width=True
@@ -2637,6 +2644,8 @@ try:
         else:
             st.success("✅ Alle Artikel liegen im normalen Bereich (über Min-Stock).")
 
+except Exception as e:
+    st.error(f"Fehler bei der Lageranalyse: {e}")
         # -----------------------------------------------------
         # 2. INTERAKTIVE DIAGRAMME UND ANALYSE
         # -----------------------------------------------------
